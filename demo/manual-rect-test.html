@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    body {
+      margin: 0;
+      padding: 40px;
+      background:
+        repeating-linear-gradient(0deg, #000 0px, #000 1px, transparent 1px, transparent 50px),
+        repeating-linear-gradient(90deg, #000 0px, #000 1px, transparent 1px, transparent 50px),
+        #fff;
+    }
+    .test-box {
+      width: 300px;
+      height: 200px;
+      border: 2px solid red;
+      border-radius: 24px;
+      backdrop-filter: url(#rect-filter);
+      -webkit-backdrop-filter: url(#rect-filter);
+    }
+    h3 { background: white; padding: 5px; margin: 10px 0; }
+    canvas { border: 1px solid #666; margin: 5px; }
+  </style>
+</head>
+<body>
+  <svg style="position:absolute;width:0;height:0;overflow:hidden" aria-hidden="true">
+    <defs>
+      <filter id="rect-filter" x="0" y="0" width="100%" height="100%"
+              filterUnits="objectBoundingBox" primitiveUnits="userSpaceOnUse"
+              color-interpolation-filters="sRGB">
+        <feImage id="manual-disp" x="0" y="0" width="300" height="200"
+                 preserveAspectRatio="none" result="dispMap" />
+        <feDisplacementMap in="SourceGraphic" in2="dispMap"
+                           scale="40" xChannelSelector="R" yChannelSelector="G" />
+      </filter>
+    </defs>
+  </svg>
+
+  <h3>Test with manually created RECTANGULAR displacement map</h3>
+  <div class="test-box"></div>
+
+  <h3>Manual rectangular displacement map (pure gradients):</h3>
+  <canvas id="manual-canvas" width="300" height="200"></canvas>
+
+  <h3>Current generator output:</h3>
+  <canvas id="gen-canvas" width="300" height="200"></canvas>
+
+  <script type="module">
+    import { generateDisplacementMap } from '../src/core/displacement/generator.ts';
+
+    const width = 300;
+    const height = 200;
+
+    // Create a PURELY rectangular displacement map manually
+    const manualCanvas = document.getElementById('manual-canvas');
+    const manualCtx = manualCanvas.getContext('2d');
+    const manualData = manualCtx.createImageData(width, height);
+
+    for (let py = 0; py < height; py++) {
+      for (let px = 0; px < width; px++) {
+        const idx = (py * width + px) * 4;
+
+        // Calculate rectangular distance from edges
+        const distLeft = px;
+        const distRight = width - 1 - px;
+        const distTop = py;
+        const distBottom = height - 1 - py;
+
+        // Minimum distance to any edge (rectangular metric)
+        const minDistX = Math.min(distLeft, distRight);
+        const minDistY = Math.min(distTop, distBottom);
+
+        // Normalized edge proximity (0 at center, 1 at edge)
+        const edgeProxX = 1.0 - (minDistX / (width / 2));
+        const edgeProxY = 1.0 - (minDistY / (height / 2));
+
+        // Direction toward nearest edge
+        const dirX = distLeft < distRight ? -1 : 1;
+        const dirY = distTop < distBottom ? -1 : 1;
+
+        // Magnitude based on edge proximity (stronger near edges)
+        const magX = Math.max(0, edgeProxX) * 0.5;
+        const magY = Math.max(0, edgeProxY) * 0.5;
+
+        // Encode: 128 = neutral, deviation = displacement
+        // X displacement only affects horizontal, Y only affects vertical
+        const r = Math.round(128 + dirX * magX * 127);
+        const g = Math.round(128 + dirY * magY * 127);
+
+        manualData.data[idx] = r;
+        manualData.data[idx + 1] = g;
+        manualData.data[idx + 2] = 0;
+        manualData.data[idx + 3] = 255;
+      }
+    }
+
+    manualCtx.putImageData(manualData, 0, 0);
+
+    // Set this as the displacement map
+    const feImage = document.getElementById('manual-disp');
+    feImage.setAttribute('href', manualCanvas.toDataURL());
+
+    // Also show current generator output for comparison
+    const result = generateDisplacementMap({
+      width, height,
+      profile: 'squircle',
+      refractiveIndex: 1.5,
+      thickness: 1.0,
+      refractionLevel: 1.0,
+      borderRadius: 24
+    });
+
+    const genCanvas = document.getElementById('gen-canvas');
+    const genCtx = genCanvas.getContext('2d');
+    genCtx.drawImage(result.canvas, 0, 0);
+  </script>
+</body>
+</html>

@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    body {
+      margin: 0;
+      padding: 20px;
+      background: #222;
+      color: white;
+      font-family: sans-serif;
+    }
+    .container {
+      display: flex;
+      gap: 20px;
+      flex-wrap: wrap;
+    }
+    .panel {
+      text-align: center;
+    }
+    .panel h3 {
+      margin-bottom: 10px;
+    }
+    canvas, img {
+      border: 1px solid #666;
+    }
+  </style>
+</head>
+<body>
+  <h1>Displacement Map Debug</h1>
+  <div class="container">
+    <div class="panel">
+      <h3>Generated Displacement Map</h3>
+      <canvas id="disp-canvas" width="300" height="200"></canvas>
+    </div>
+    <div class="panel">
+      <h3>Red Channel (X displacement)</h3>
+      <canvas id="red-canvas" width="300" height="200"></canvas>
+    </div>
+    <div class="panel">
+      <h3>Green Channel (Y displacement)</h3>
+      <canvas id="green-canvas" width="300" height="200"></canvas>
+    </div>
+  </div>
+  <p id="info"></p>
+
+  <script type="module">
+    import { generateDisplacementMap } from '../src/core/displacement/generator.ts';
+
+    const width = 300;
+    const height = 200;
+
+    const result = generateDisplacementMap({
+      width,
+      height,
+      profile: 'squircle',
+      refractiveIndex: 1.5,
+      thickness: 1.0,
+      refractionLevel: 1.0,
+      borderRadius: 24
+    });
+
+    // Show the full displacement map
+    const dispCanvas = document.getElementById('disp-canvas');
+    const dispCtx = dispCanvas.getContext('2d');
+    dispCtx.drawImage(result.canvas, 0, 0);
+
+    // Extract and show individual channels
+    const imageData = dispCtx.getImageData(0, 0, width, height);
+    const data = imageData.data;
+
+    // Red channel visualization
+    const redCanvas = document.getElementById('red-canvas');
+    const redCtx = redCanvas.getContext('2d');
+    const redData = redCtx.createImageData(width, height);
+
+    // Green channel visualization
+    const greenCanvas = document.getElementById('green-canvas');
+    const greenCtx = greenCanvas.getContext('2d');
+    const greenData = greenCtx.createImageData(width, height);
+
+    let minR = 255, maxR = 0, minG = 255, maxG = 0;
+
+    for (let i = 0; i < data.length; i += 4) {
+      const r = data[i];
+      const g = data[i + 1];
+
+      minR = Math.min(minR, r);
+      maxR = Math.max(maxR, r);
+      minG = Math.min(minG, g);
+      maxG = Math.max(maxG, g);
+
+      // Red channel as grayscale
+      redData.data[i] = r;
+      redData.data[i + 1] = r;
+      redData.data[i + 2] = r;
+      redData.data[i + 3] = 255;
+
+      // Green channel as grayscale
+      greenData.data[i] = g;
+      greenData.data[i + 1] = g;
+      greenData.data[i + 2] = g;
+      greenData.data[i + 3] = 255;
+    }
+
+    redCtx.putImageData(redData, 0, 0);
+    greenCtx.putImageData(greenData, 0, 0);
+
+    document.getElementById('info').textContent =
+      `R channel range: ${minR}-${maxR} (128=neutral), G channel range: ${minG}-${maxG} (128=neutral)`;
+  </script>
+</body>
+</html>

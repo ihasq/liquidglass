@@ -1,0 +1,22 @@
+
+    <!DOCTYPE html>
+    <html>
+    <body>
+    <canvas id="output"></canvas>
+    <script type="module">
+      import { generateDisplacementMap } from '/src/core/displacement/generator.ts';
+      const result = generateDisplacementMap({
+        width: 420,
+        height: 300,
+        profile: 'squircle',
+        refractiveIndex: 1.5,
+        thickness: 1.0,
+        refractionLevel: 0.8,
+        borderRadius: 60
+      });
+      document.getElementById('output').replaceWith(result.canvas);
+      window.mapDataUrl = result.dataUrl;
+    </script>
+    </body>
+    </html>
+  

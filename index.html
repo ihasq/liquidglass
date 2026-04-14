@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Liquid Glass Demo</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      min-height: 100vh;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      padding: 40px;
+      background-color: #1a1a2e;
+    }
+
+    .background-content {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      overflow: hidden;
+      background-image:
+        linear-gradient(rgba(255, 255, 255, 0.1) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.1) 1px, transparent 1px),
+        linear-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.05) 1px, transparent 1px),
+        linear-gradient(135deg, #667eea 0%, #764ba2 30%, #f093fb 60%, #5ee7df 100%);
+      background-size:
+        100px 100px,
+        100px 100px,
+        20px 20px,
+        20px 20px,
+        100% 100%;
+      background-position:
+        -1px -1px,
+        -1px -1px,
+        -1px -1px,
+        -1px -1px,
+        0 0;
+    }
+
+    .background-content::before {
+      content: '';
+      position: absolute;
+      width: 400px;
+      height: 400px;
+      background: radial-gradient(circle, rgba(255, 100, 150, 0.6) 0%, transparent 70%);
+      border-radius: 50%;
+      top: 10%;
+      left: 15%;
+      animation: floatOrb1 8s ease-in-out infinite;
+    }
+
+    .background-content::after {
+      content: '';
+      position: absolute;
+      width: 500px;
+      height: 500px;
+      background: radial-gradient(circle, rgba(100, 200, 255, 0.5) 0%, transparent 70%);
+      border-radius: 50%;
+      bottom: 10%;
+      right: 10%;
+      animation: floatOrb2 10s ease-in-out infinite;
+    }
+
+    @keyframes floatOrb1 {
+      0%, 100% { transform: translate(0, 0) scale(1); }
+      50% { transform: translate(50px, 30px) scale(1.1); }
+    }
+
+    @keyframes floatOrb2 {
+      0%, 100% { transform: translate(0, 0) scale(1); }
+      50% { transform: translate(-40px, -20px) scale(1.15); }
+    }
+
+    .grid-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      pointer-events: none;
+      background-image:
+        repeating-linear-gradient(
+          0deg,
+          transparent,
+          transparent 99px,
+          rgba(255, 255, 255, 0.15) 99px,
+          rgba(255, 255, 255, 0.15) 100px
+        ),
+        repeating-linear-gradient(
+          90deg,
+          transparent,
+          transparent 99px,
+          rgba(255, 255, 255, 0.15) 99px,
+          rgba(255, 255, 255, 0.15) 100px
+        );
+    }
+
+    .demo-container {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 40px;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    h1 {
+      color: white;
+      text-align: center;
+      font-weight: 600;
+      text-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+    }
+
+    .demo-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 30px;
+    }
+
+    /* Style the liquid-glass custom element */
+    liquid-glass {
+      display: block;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+    }
+
+    .demo-card {
+      padding: 30px;
+      min-height: 200px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      color: white;
+      text-align: center;
+    }
+
+    .demo-card h3 {
+      font-size: 1.2rem;
+      margin-bottom: 10px;
+    }
+
+    .demo-card p {
+      font-size: 0.9rem;
+      opacity: 0.8;
+    }
+
+    #panel-squircle {
+      width: 300px;
+      height: 200px;
+    }
+
+    #panel-circle {
+      width: 200px;
+      height: 200px;
+    }
+
+    #panel-lip {
+      width: 280px;
+      height: 180px;
+    }
+
+    .controls-content {
+      padding: 20px;
+      color: white;
+    }
+
+    .controls-content h2 {
+      font-size: 1rem;
+      margin-bottom: 20px;
+    }
+
+    .control-group {
+      margin-bottom: 15px;
+    }
+
+    .control-group label {
+      display: block;
+      margin-bottom: 5px;
+      font-size: 0.85rem;
+    }
+
+    .control-group input[type="range"] {
+      width: 100%;
+    }
+
+    .control-group select {
+      width: 100%;
+      padding: 8px;
+      border-radius: 8px;
+      border: 1px solid rgba(255, 255, 255, 0.3);
+      background: rgba(255, 255, 255, 0.1);
+      color: white;
+    }
+
+    .control-group select option {
+      color: black;
+    }
+
+    .value-display {
+      float: right;
+      font-family: monospace;
+    }
+
+    .support-content {
+      padding: 20px;
+      color: white;
+    }
+
+    .support-content h2 {
+      font-size: 1rem;
+      margin-bottom: 10px;
+    }
+  </style>
+</head>
+<body>
+  <div class="background-content"></div>
+  <div class="grid-overlay"></div>
+
+  <div class="demo-container">
+    <h1>Liquid Glass Effect Demo</h1>
+
+    <div class="demo-grid">
+      <!-- Squircle Panel -->
+      <liquid-glass
+        id="panel-squircle"
+        profile="squircle"
+        refractive-index="1.5"
+        refraction-level="1.0"
+        specular-opacity="0.4"
+        background-opacity="0.08"
+        border-radius="24"
+        data-testid="panel-squircle"
+      >
+        <div class="demo-card">
+          <h3>Squircle Panel</h3>
+          <p>Apple's preferred soft curvature profile</p>
+        </div>
+      </liquid-glass>
+
+      <!-- Circle Panel -->
+      <liquid-glass
+        id="panel-circle"
+        profile="circle"
+        refractive-index="1.5"
+        refraction-level="1.0"
+        specular-opacity="0.4"
+        background-opacity="0.08"
+        border-radius="100"
+        style="border-radius: 50%;"
+        data-testid="panel-circle"
+      >
+        <div class="demo-card">
+          <h3>Circle</h3>
+          <p>Spherical lens effect</p>
+        </div>
+      </liquid-glass>
+
+      <!-- Lip Panel -->
+      <liquid-glass
+        id="panel-lip"
+        profile="lip"
+        refractive-index="1.5"
+        refraction-level="1.0"
+        specular-opacity="0.4"
+        background-opacity="0.08"
+        border-radius="24"
+        data-testid="panel-lip"
+      >
+        <div class="demo-card">
+          <h3>Lip Profile</h3>
+          <p>Convex center, concave edge</p>
+        </div>
+      </liquid-glass>
+    </div>
+
+    <!-- Controls -->
+    <liquid-glass
+      id="controls"
+      profile="squircle"
+      refractive-index="1.3"
+      refraction-level="0.5"
+      specular-opacity="0.25"
+      background-opacity="0.05"
+      border-radius="16"
+    >
+      <div class="controls-content">
+        <h2>Adjust Parameters</h2>
+
+        <div class="control-group">
+          <label>
+            Profile
+            <select id="ctrl-profile">
+              <option value="squircle">Squircle</option>
+              <option value="circle">Circle</option>
+              <option value="lip">Lip</option>
+              <option value="parabolic">Parabolic</option>
+              <option value="concave">Concave</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="control-group">
+          <label>
+            Refractive Index
+            <span class="value-display" id="val-ri">1.5</span>
+          </label>
+          <input type="range" id="ctrl-ri" min="1.0" max="2.5" step="0.1" value="1.5">
+        </div>
+
+        <div class="control-group">
+          <label>
+            Refraction Level
+            <span class="value-display" id="val-refraction">1.0</span>
+          </label>
+          <input type="range" id="ctrl-refraction" min="0" max="1.5" step="0.05" value="1.0">
+        </div>
+
+        <div class="control-group">
+          <label>
+            Specular Opacity
+            <span class="value-display" id="val-specular">0.4</span>
+          </label>
+          <input type="range" id="ctrl-specular" min="0" max="1" step="0.05" value="0.4">
+        </div>
+
+        <div class="control-group">
+          <label>
+            Background Opacity
+            <span class="value-display" id="val-bg">0.08</span>
+          </label>
+          <input type="range" id="ctrl-bg" min="0" max="0.5" step="0.02" value="0.08">
+        </div>
+      </div>
+    </liquid-glass>
+
+    <!-- Browser support info -->
+    <liquid-glass
+      id="support-info"
+      profile="squircle"
+      refractive-index="1.2"
+      refraction-level="0.3"
+      specular-opacity="0.2"
+      background-opacity="0.05"
+      border-radius="16"
+    >
+      <div class="support-content">
+        <h2>Browser Support</h2>
+        <p id="support-status">Checking...</p>
+      </div>
+    </liquid-glass>
+  </div>
+
+  <script type="module">
+    import { registerLiquidGlassElement, LiquidGlassElement } from './src/index.ts';
+
+    // Register the custom element
+    registerLiquidGlassElement();
+
+    // Get all liquid-glass panels
+    const allPanels = document.querySelectorAll('liquid-glass');
+
+    // Setup controls
+    const ctrlProfile = document.getElementById('ctrl-profile');
+    const ctrlRi = document.getElementById('ctrl-ri');
+    const ctrlRefraction = document.getElementById('ctrl-refraction');
+    const ctrlSpecular = document.getElementById('ctrl-specular');
+    const ctrlBg = document.getElementById('ctrl-bg');
+
+    function updateAllPanels() {
+      // Update display values
+      document.getElementById('val-ri').textContent = ctrlRi.value;
+      document.getElementById('val-refraction').textContent = ctrlRefraction.value;
+      document.getElementById('val-specular').textContent = ctrlSpecular.value;
+      document.getElementById('val-bg').textContent = ctrlBg.value;
+
+      // Update all panels via WebComponent properties
+      allPanels.forEach(panel => {
+        panel.profile = ctrlProfile.value;
+        panel.refractiveIndex = parseFloat(ctrlRi.value);
+        panel.refractionLevel = parseFloat(ctrlRefraction.value);
+        panel.specularOpacity = parseFloat(ctrlSpecular.value);
+        panel.backgroundOpacity = parseFloat(ctrlBg.value);
+      });
+    }
+
+    ctrlProfile.addEventListener('change', updateAllPanels);
+    ctrlRi.addEventListener('input', updateAllPanels);
+    ctrlRefraction.addEventListener('input', updateAllPanels);
+    ctrlSpecular.addEventListener('input', updateAllPanels);
+    ctrlBg.addEventListener('input', updateAllPanels);
+
+    // Check browser support
+    const supportStatus = document.getElementById('support-status');
+    if (LiquidGlassElement.isSupported()) {
+      supportStatus.textContent = 'Full SVG filter support (Chrome/Edge)';
+      supportStatus.style.color = '#4ade80';
+    } else {
+      supportStatus.textContent = 'Fallback mode (blur only) - Firefox/Safari';
+      supportStatus.style.color = '#fbbf24';
+    }
+
+    // Expose for E2E testing
+    window.__liquidGlass = {
+      panels: {
+        squircle: document.getElementById('panel-squircle'),
+        circle: document.getElementById('panel-circle'),
+        lip: document.getElementById('panel-lip'),
+        all: allPanels
+      },
+      LiquidGlassElement
+    };
+  </script>
+</body>
+</html>

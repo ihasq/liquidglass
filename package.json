@@ -1,0 +1,44 @@
+{
+  "name": "liquid-glass",
+  "version": "0.1.0",
+  "description": "Physics-based liquid glass refraction effect using CSS and SVG filters",
+  "type": "module",
+  "main": "dist/liquid-glass.js",
+  "module": "dist/liquid-glass.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/liquid-glass.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "test:e2e": "node --experimental-vm-modules e2e/run-tests.js",
+    "test:e2e:update": "node --experimental-vm-modules e2e/run-tests.js --update-snapshots"
+  },
+  "devDependencies": {
+    "pixelmatch": "^7.1.0",
+    "pngjs": "^7.0.0",
+    "puppeteer": "^22.0.0",
+    "sharp": "^0.34.5",
+    "typescript": "^5.4.0",
+    "vite": "^5.2.0",
+    "vite-plugin-dts": "^3.8.0",
+    "z3-solver": "^4.16.0"
+  },
+  "keywords": [
+    "liquid-glass",
+    "glass-effect",
+    "refraction",
+    "svg-filter",
+    "backdrop-filter",
+    "css"
+  ],
+  "license": "MIT"
+}

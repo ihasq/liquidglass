@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Kube.io Exact Reproduction Test</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: system-ui, sans-serif;
+      background: #1a1a2e;
+      color: white;
+      padding: 40px;
+    }
+    h1 { text-align: center; margin-bottom: 40px; font-weight: 300; }
+    h2 { font-size: 14px; color: #888; margin-bottom: 16px; text-align: center; }
+
+    .comparison {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 40px;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    .panel { display: flex; flex-direction: column; align-items: center; }
+
+    /* Exact kube.io hero container styling */
+    .hero-container {
+      position: relative;
+      height: 400px;
+      width: 100%;
+      max-width: 500px;
+      overflow: hidden;
+      border-radius: 12px;
+      background-color: rgba(100, 116, 139, 0.2);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background-image: url(https://images.unsplash.com/photo-1688494930098-e88c53c26e3a?auto=format&q=80&fit=crop&w=1400&h=1600&crop=focalpoint&fp-x=0.3&fp-y=0.5&fp-z=1);
+      background-size: 700px auto;
+      background-position-x: center;
+      background-position-y: -60px;
+    }
+
+    /* Exact kube.io glass SVG styling */
+    .glass-svg {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 200px;
+      height: 200px;
+      overflow: hidden;
+      pointer-events: none;
+      border-radius: 100px;
+      box-shadow: 0 16px 31px rgba(0,0,0,0.4);
+    }
+
+    .info {
+      margin-top: 16px;
+      font-size: 12px;
+      color: #666;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <h1>Kube.io Exact Reproduction Test</h1>
+
+  <div class="comparison">
+    <!-- Kube.io Original -->
+    <div class="panel">
+      <h2>Kube.io Original (their assets)</h2>
+      <div class="hero-container">
+        <svg class="glass-svg" viewBox="0 0 150 150" preserveAspectRatio="xMidYMid slice" color-interpolation-filters="sRGB">
+          <filter id="kube-original-filter">
+            <feGaussianBlur in="SourceGraphic" stdDeviation="0.2" result="blurred_source"/>
+            <feImage href="../e2e/reference/kube-assets/displacement-map-hero.png" x="0" y="0" width="150" height="150" result="displacement_map"/>
+            <feDisplacementMap in="blurred_source" in2="displacement_map" scale="133.9733637691058" xChannelSelector="R" yChannelSelector="G" result="displaced"/>
+            <feColorMatrix in="displaced" type="saturate" result="displaced_saturated" values="6"/>
+            <feImage href="../e2e/reference/kube-assets/specular-map-hero.png" x="0" y="0" width="150" height="150" result="specular_layer"/>
+            <feComposite in="displaced_saturated" in2="specular_layer" operator="in" result="specular_saturated"/>
+            <feComponentTransfer in="specular_layer" result="specular_faded">
+              <feFuncA type="linear" slope="0.2"/>
+            </feComponentTransfer>
+            <feBlend in="specular_saturated" in2="displaced" mode="normal" result="withSaturation"/>
+            <feBlend in="specular_faded" in2="withSaturation" mode="normal"/>
+          </filter>
+          <g filter="url(#kube-original-filter)">
+            <image href="https://images.unsplash.com/photo-1688494930098-e88c53c26e3a?auto=format&q=80&fit=crop&w=400&h=700&crop=focalpoint&fp-x=0.3&fp-y=0.6&fp-z=1.9"
+                   width="200px"
+                   style="transform:translateX(-29px) translateY(13px);transform-origin:50% 50%;transform-box:fill-box"/>
+          </g>
+        </svg>
+      </div>
+      <p class="info">Using kube.io's pre-generated displacement & specular maps</p>
+    </div>
+
+    <!-- Our Implementation -->
+    <div class="panel">
+      <h2>Our Implementation (generated maps)</h2>
+      <div class="hero-container">
+        <svg class="glass-svg" viewBox="0 0 150 150" preserveAspectRatio="xMidYMid slice" color-interpolation-filters="sRGB" id="our-svg">
+          <!-- Filter will be injected by JS -->
+          <g id="our-g">
+            <image href="https://images.unsplash.com/photo-1688494930098-e88c53c26e3a?auto=format&q=80&fit=crop&w=400&h=700&crop=focalpoint&fp-x=0.3&fp-y=0.6&fp-z=1.9"
+                   width="200px"
+                   style="transform:translateX(-29px) translateY(13px);transform-origin:50% 50%;transform-box:fill-box"/>
+          </g>
+        </svg>
+      </div>
+      <p class="info">Using programmatically generated maps (150x150)</p>
+    </div>
+  </div>
+
+  <script type="module">
+    import { generateDisplacementMap }  from '../src/core/displacement/generator.ts';
+    import { generateSpecularMap } from '../src/core/specular/highlight.ts';
+
+    // Generate our maps at exactly 150x150 to match kube.io
+    const dispResult = generateDisplacementMap({
+      width: 150,
+      height: 150,
+      profile: 'circle',
+      refractiveIndex: 1.5,
+      thickness: 1.0,
+      refractionLevel: 1.0,
+      borderRadius: 75  // Full circle
+    });
+
+    const specResult = generateSpecularMap({
+      width: 150,
+      height: 150,
+      profile: 'circle',
+      lightDirection: { x: 0.6, y: -0.8 },
+      intensity: 0.3,
+      saturation: 0,
+      borderRadius: 75
+    });
+
+    // Create filter with our generated maps
+    const svg = document.getElementById('our-svg');
+    const g = document.getElementById('our-g');
+
+    const filter = document.createElementNS('http://www.w3.org/2000/svg', 'filter');
+    filter.setAttribute('id', 'our-filter');
+    filter.innerHTML = `
+      <feGaussianBlur in="SourceGraphic" stdDeviation="0.2" result="blurred_source"/>
+      <feImage href="${dispResult.dataUrl}" x="0" y="0" width="150" height="150" result="displacement_map"/>
+      <feDisplacementMap in="blurred_source" in2="displacement_map" scale="133.9733637691058" xChannelSelector="R" yChannelSelector="G" result="displaced"/>
+      <feColorMatrix in="displaced" type="saturate" result="displaced_saturated" values="6"/>
+      <feImage href="${specResult.dataUrl}" x="0" y="0" width="150" height="150" result="specular_layer"/>
+      <feComposite in="displaced_saturated" in2="specular_layer" operator="in" result="specular_saturated"/>
+      <feComponentTransfer in="specular_layer" result="specular_faded">
+        <feFuncA type="linear" slope="0.2"/>
+      </feComponentTransfer>
+      <feBlend in="specular_saturated" in2="displaced" mode="normal" result="withSaturation"/>
+      <feBlend in="specular_faded" in2="withSaturation" mode="normal"/>
+    `;
+
+    svg.insertBefore(filter, g);
+    g.setAttribute('filter', 'url(#our-filter)');
+
+    console.log('Displacement map:', dispResult.dataUrl.substring(0, 100) + '...');
+    console.log('Specular map:', specResult.dataUrl.substring(0, 100) + '...');
+  </script>
+</body>
+</html>

@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    body {
+      margin: 0;
+      padding: 40px;
+      background:
+        repeating-linear-gradient(0deg, #000 0px, #000 1px, transparent 1px, transparent 50px),
+        repeating-linear-gradient(90deg, #000 0px, #000 1px, transparent 1px, transparent 50px),
+        #fff;
+    }
+    liquid-glass {
+      display: block;
+      width: 300px;
+      height: 200px;
+      border: 2px solid red;
+    }
+  </style>
+</head>
+<body>
+  <liquid-glass
+    profile="squircle"
+    border-radius="24"
+    refractive-index="1.5"
+    refraction-level="1.0"
+    specular-opacity="0"
+    background-opacity="0"
+  ></liquid-glass>
+  <script type="module">
+    import { registerLiquidGlassElement } from '../src/index.ts';
+    registerLiquidGlassElement();
+  </script>
+</body>
+</html>
