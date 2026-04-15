@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback } from 'react'
 import { Copy, Check } from 'lucide-react'
 import 'liquidglass.css'
 import './index.css'
@@ -69,7 +69,6 @@ function App() {
         {SLIDERS.map((s, i) => {
           const value = values[s.name]
           const isLast = i === SLIDERS.length - 1
-          const displayValue = s.unit ? `${value}${s.unit}` : String(value)
 
           return (
             <span key={s.name}>
@@ -182,7 +181,7 @@ function App() {
             ③
           </span>
           <div className="flex flex-col gap-4 md:gap-[19px] flex-1 lg:w-[586px] lg:flex-none pl-px">
-            {SLIDERS.map((slider, i) => {
+            {SLIDERS.map((slider) => {
               const value = values[slider.name]
               const percent = (value - slider.min) / (slider.max - slider.min)
               const displayValue = slider.unit ? `${value}${slider.unit}` : String(value)
