@@ -5,18 +5,13 @@
 <h1 align="center">liquidglass.css</h1>
 
 <p align="center">
-  <strong>Physics-based liquid glass refraction for the modern web</strong>
+  <strong>Liquid glass as a CSS property. As it should be.</strong>
 </p>
 
 <p align="center">
   <a href="https://www.npmjs.com/package/liquidglass.css"><img src="https://img.shields.io/npm/v/liquidglass.css.svg?style=flat-square&color=00d4ff" alt="npm version"></a>
   <a href="https://bundlephobia.com/package/liquidglass.css"><img src="https://img.shields.io/bundlephobia/minzip/liquidglass.css?style=flat-square&color=00d4ff" alt="bundle size"></a>
   <a href="https://github.com/user/liquidglass/blob/main/LICENSE"><img src="https://img.shields.io/npm/l/liquidglass.css?style=flat-square&color=00d4ff" alt="license"></a>
-</p>
-
-<p align="center">
-  Real-time lens distortion effects with WASM-accelerated displacement maps.<br>
-  Zero dependencies. Framework agnostic. Just works.
 </p>
 
 <br>
@@ -27,14 +22,51 @@
 
 ---
 
+## Why liquidglass.css?
+
+Other liquid glass libraries force you into their world:
+
+```jsx
+// ❌ React dependency, class instantiation, imperative API
+import { LiquidGlass } from "some-liquid-glass-lib";
+
+const glass = new LiquidGlass({
+  element: ref.current,
+  refraction: 0.8,
+  thickness: 0.5,
+  onReady: () => { /* ... */ }
+});
+
+useEffect(() => {
+  glass.init();
+  return () => glass.destroy();
+}, []);
+```
+
+**liquidglass.css works like CSS should work:**
+
+```css
+/* ✅ Just CSS. Any element. Any framework. */
+.glass-panel {
+  --liquidglass-refraction: 80;
+  border-radius: 20px;
+}
+```
+
+No React. No hooks. No class instantiation. No lifecycle management.
+Just properties that work everywhere CSS works.
+
+---
+
 ## Features
 
-- **Physics-Based Refraction** — Authentic lens distortion using Snell's law, not fake blur
-- **WASM SIMD Acceleration** — Real-time displacement map generation at 60fps
-- **Two Integration Paths** — Web Components or pure CSS Custom Properties
-- **Adaptive Performance** — Smart throttling based on element count and visibility
-- **Morph Transitions** — Smooth crossfade between displacement states
-- **Zero Config** — Just import and go. Sensible defaults out of the box
+- **CSS-Native API** — Style with `--liquidglass-*` properties like any other CSS
+- **Physics-Based Refraction** — Real lens distortion using Snell's law, not fake blur
+- **WASM SIMD Acceleration** — Displacement maps generated in <5ms
+- **Framework Agnostic** — React, Vue, Svelte, vanilla... or no JS at all
+- **Zero Configuration** — Import once, style anywhere
+- **Morph Transitions** — Smooth crossfade between states
+- **Adaptive Performance** — Smart throttling at scale
 
 ## Quick Start
 
@@ -278,13 +310,16 @@ requestIdleCallback(() => preloadWasm());
 
 ## Comparison
 
-| Feature | liquidglass.css | CSS blur | Three.js |
-|---------|-----------------|----------|----------|
-| True refraction | Yes | No | Yes |
-| Bundle size | ~33KB | 0 | ~150KB+ |
-| Setup complexity | None | None | High |
-| Works with DOM | Yes | Yes | No |
-| Mobile performance | Good | Great | Variable |
+| | liquidglass.css | Other libs | CSS blur | Three.js |
+|---|:---:|:---:|:---:|:---:|
+| **API Style** | CSS Properties | JS Classes | CSS | JS |
+| **Framework dependency** | None | React/Vue | None | None |
+| **True refraction** | Yes | Yes | No | Yes |
+| **Setup code** | 0 lines | 10+ lines | 0 lines | 50+ lines |
+| **Bundle size** | ~33KB | ~50KB+ | 0 | ~150KB+ |
+| **Works with any element** | Yes | Limited | Yes | No |
+| **Responds to CSS changes** | Yes | Manual update | Yes | No |
+| **`:hover` / media queries** | Just works | Manual | Just works | Manual |
 
 ## Roadmap
 
