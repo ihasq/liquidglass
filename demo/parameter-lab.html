@@ -25,14 +25,13 @@
       overflow: hidden;
     }
 
-    /* Animated Background - CSS tiling with background-position */
+    /* Animated Background - SVG pattern with transform */
     .background-content {
       position: fixed;
-      inset: 0;
+      inset: -300px;
       z-index: -1;
-      background-repeat: repeat;
-      background-size: auto;
-      will-change: background-position;
+      will-change: transform;
+      pointer-events: none;
     }
 
     /* Control Panel */
@@ -327,6 +326,36 @@
       opacity: 1;
     }
 
+    /* Delete Button */
+    .delete-handle {
+      position: absolute;
+      top: -12px;
+      right: -12px;
+      width: 24px;
+      height: 24px;
+      background: #e94560;
+      border: 2px solid #fff;
+      border-radius: 50%;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      font-weight: bold;
+      color: #fff;
+      opacity: 0;
+      transition: opacity 0.2s, transform 0.15s;
+      z-index: 100;
+    }
+    .delete-handle:hover {
+      transform: scale(1.15);
+      background: #ff6b6b;
+    }
+    .interactive-element.selected .delete-handle,
+    .interactive-element:hover .delete-handle {
+      opacity: 1;
+    }
+
     /* Code Output */
     .code-output {
       position: fixed;
@@ -476,6 +505,46 @@
       text-align: center;
     }
 
+    /* View Mode Toggle */
+    .view-mode-toggle {
+      display: flex;
+      gap: 4px;
+    }
+
+    .view-mode-btn {
+      flex: 1;
+      padding: 6px 8px;
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 6px;
+      background: rgba(255,255,255,0.05);
+      color: var(--text-dim);
+      font-size: 10px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .view-mode-btn:hover {
+      background: rgba(255,255,255,0.1);
+    }
+
+    .view-mode-btn.active {
+      background: var(--highlight);
+      border-color: var(--highlight);
+      color: white;
+    }
+
+    /* Displacement Map Overlay */
+    .displacement-overlay {
+      position: absolute;
+      inset: 0;
+      border-radius: inherit;
+      background-size: 100% 100%;
+      background-repeat: no-repeat;
+      pointer-events: none;
+      z-index: 10;
+    }
+
     /* Responsive */
     @media (max-width: 900px) {
       body { flex-direction: column; }
@@ -556,6 +625,15 @@
         </div>
         <div class="control-desc">Color vibrancy through the glass</div>
         <input type="range" id="saturation" min="0" max="100" value="45">
+      </div>
+
+      <div class="control">
+        <div class="control-header">
+          <span class="control-label">Edge Dispersion</span>
+          <span class="control-value" id="dispersion-val">30</span>
+        </div>
+        <div class="control-desc">Blur at steep refraction angles - simulates light scattering</div>
+        <input type="range" id="dispersion" min="0" max="100" value="30">
       </div>
     </section>
 
@@ -657,12 +735,24 @@
       </div>
     </div>
 
+    <!-- View Mode Toggle -->
+    <div class="bg-control" style="top: 140px;">
+      <div class="bg-control-header">
+        <div class="bg-control-title">View Mode</div>
+      </div>
+      <div class="view-mode-toggle">
+        <button class="view-mode-btn active" data-mode="lens">Lens</button>
+        <button class="view-mode-btn" data-mode="displacement">Displacement Map</button>
+      </div>
+    </div>
+
     <!-- Interactive Element 1 -->
     <div class="interactive-element" id="element-1" data-x="50%" data-y="40%" data-w="320" data-h="200" data-r="0" data-radius="24">
       <liquid-glass style="width: 320px; height: 200px; border-radius: 24px;">
         <h2>Liquid Glass</h2>
         <p>Drag, resize, rotate me!</p>
       </liquid-glass>
+      <div class="delete-handle" data-action="delete">×</div>
       <div class="rotate-handle" data-action="rotate"></div>
       <div class="resize-handle nw" data-action="resize" data-dir="nw"></div>
       <div class="resize-handle ne" data-action="resize" data-dir="ne"></div>
@@ -681,6 +771,7 @@
         <h2>Small</h2>
         <p>150px</p>
       </liquid-glass>
+      <div class="delete-handle" data-action="delete">×</div>
       <div class="rotate-handle" data-action="rotate"></div>
       <div class="resize-handle nw" data-action="resize" data-dir="nw"></div>
       <div class="resize-handle ne" data-action="resize" data-dir="ne"></div>
@@ -699,6 +790,7 @@
         <h2>Medium</h2>
         <p>200×140</p>
       </liquid-glass>
+      <div class="delete-handle" data-action="delete">×</div>
       <div class="rotate-handle" data-action="rotate"></div>
       <div class="resize-handle nw" data-action="resize" data-dir="nw"></div>
       <div class="resize-handle ne" data-action="resize" data-dir="ne"></div>
@@ -737,56 +829,74 @@
   gloss="50"
   softness="10"
   saturation="45"
+  dispersion="30"
   style="border-radius: 24px"
 &gt;&lt;/liquid-glass&gt;</code>
     <button class="copy-btn" id="copy-btn">Copy to Clipboard</button>
   </div>
 
-  <!-- Generate Background Tile Pattern -->
+  <!-- Generate Background Tile Pattern (SVG for crisp vector rendering) -->
   <script>
     (function() {
-      // Create a 3x2 tile (6 colors) with text labels
       const cellSize = 62;
       const cols = 3;
       const rows = 2;
-      const canvas = document.createElement('canvas');
-      canvas.width = cellSize * cols;
-      canvas.height = cellSize * rows;
-      const ctx = canvas.getContext('2d');
+      const patternW = cellSize * cols;
+      const patternH = cellSize * rows;
 
       const colors = ['#ff0000', '#00ff00', '#0000ff', '#ffff00', '#00ffff', '#ff00ff'];
       const textColors = ['#000', '#000', '#fff', '#000', '#000', '#000'];
       const chars = 'ABCDEF';
 
-      for (let i = 0; i < 6; i++) {
-        const x = (i % cols) * cellSize;
-        const y = Math.floor(i / cols) * cellSize;
+      // Calculate how many tiles needed to cover viewport + buffer
+      const tilesX = Math.ceil((window.innerWidth + 600) / patternW) + 1;
+      const tilesY = Math.ceil((window.innerHeight + 600) / patternH) + 1;
 
-        // Fill cell
-        ctx.fillStyle = colors[i];
-        ctx.fillRect(x, y, cellSize, cellSize);
+      // Build SVG
+      let svgContent = '';
 
-        // Border
-        ctx.strokeStyle = '#000';
-        ctx.lineWidth = 1;
-        ctx.strokeRect(x + 0.5, y + 0.5, cellSize - 1, cellSize - 1);
+      // Create pattern cells
+      for (let ty = 0; ty < tilesY; ty++) {
+        for (let tx = 0; tx < tilesX; tx++) {
+          const offsetX = tx * patternW;
+          const offsetY = ty * patternH;
 
-        // Text
-        ctx.fillStyle = textColors[i];
-        ctx.font = 'bold 20px -apple-system, BlinkMacSystemFont, sans-serif';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(chars[i], x + cellSize / 2, y + cellSize / 2);
+          for (let i = 0; i < 6; i++) {
+            const cx = (i % cols) * cellSize + offsetX;
+            const cy = Math.floor(i / cols) * cellSize + offsetY;
+
+            // Cell rectangle
+            svgContent += `<rect x="${cx}" y="${cy}" width="${cellSize}" height="${cellSize}" fill="${colors[i]}" stroke="#000" stroke-width="1"/>`;
+            // Text label
+            svgContent += `<text x="${cx + cellSize/2}" y="${cy + cellSize/2}" fill="${textColors[i]}" font-family="-apple-system, BlinkMacSystemFont, sans-serif" font-size="20" font-weight="bold" text-anchor="middle" dominant-baseline="central">${chars[i]}</text>`;
+          }
+        }
       }
 
-      // Set as repeating background
+      const totalW = tilesX * patternW;
+      const totalH = tilesY * patternH;
+
+      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      svg.setAttribute('width', totalW);
+      svg.setAttribute('height', totalH);
+      svg.setAttribute('viewBox', `0 0 ${totalW} ${totalH}`);
+      svg.style.shapeRendering = 'crispEdges';
+      svg.innerHTML = svgContent;
+
       const bgContent = document.getElementById('bg-content');
-      bgContent.style.backgroundImage = `url(${canvas.toDataURL()})`;
+      bgContent.appendChild(svg);
     })();
   </script>
 
   <script type="module">
-    import { LiquidGlassElement } from '../src/index.ts';
+    import { LiquidGlassElement, registerLiquidGlassElement } from '../src/index.ts';
+    import { generateWasmDisplacementMap, preloadWasm } from '../src/core/displacement/wasm-generator.ts';
+
+    // Register custom element
+    registerLiquidGlassElement();
+
+    // Preload WASM for displacement map generation
+    await preloadWasm();
 
     // ============================================================
     // State
@@ -813,6 +923,7 @@
       thickness: document.getElementById('thickness'),
       softness: document.getElementById('softness'),
       saturation: document.getElementById('saturation'),
+      dispersion: document.getElementById('dispersion'),
       gloss: document.getElementById('gloss'),
       radius: document.getElementById('radius'),
       width: document.getElementById('width'),
@@ -825,13 +936,76 @@
 
     // Presets
     const presets = {
-      default: { refraction: 50, thickness: 50, gloss: 50, softness: 10, saturation: 45, radius: 24 },
-      subtle: { refraction: 30, thickness: 40, gloss: 30, softness: 5, saturation: 30, radius: 16 },
-      bold: { refraction: 80, thickness: 70, gloss: 70, softness: 15, saturation: 60, radius: 32 },
-      frosted: { refraction: 40, thickness: 50, gloss: 40, softness: 50, saturation: 20, radius: 20 },
-      crystal: { refraction: 70, thickness: 60, gloss: 80, softness: 0, saturation: 70, radius: 28 },
-      ios: { refraction: 45, thickness: 55, gloss: 55, softness: 20, saturation: 50, radius: 22 }
+      default: { refraction: 50, thickness: 50, gloss: 50, softness: 10, saturation: 45, dispersion: 30, radius: 24 },
+      subtle: { refraction: 30, thickness: 40, gloss: 30, softness: 5, saturation: 30, dispersion: 20, radius: 16 },
+      bold: { refraction: 80, thickness: 70, gloss: 70, softness: 15, saturation: 60, dispersion: 50, radius: 32 },
+      frosted: { refraction: 40, thickness: 50, gloss: 40, softness: 50, saturation: 20, dispersion: 60, radius: 20 },
+      crystal: { refraction: 70, thickness: 60, gloss: 80, softness: 0, saturation: 70, dispersion: 40, radius: 28 },
+      ios: { refraction: 45, thickness: 55, gloss: 55, softness: 20, saturation: 50, dispersion: 35, radius: 22 }
     };
+
+    // View mode state
+    let viewMode = 'lens'; // 'lens' or 'displacement'
+
+    // ============================================================
+    // View Mode Toggle
+    // ============================================================
+    async function setViewMode(mode) {
+      viewMode = mode;
+
+      // Update button states
+      document.querySelectorAll('.view-mode-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.mode === mode);
+      });
+
+      if (mode === 'displacement') {
+        // Show displacement map overlays
+        await updateDisplacementOverlays();
+        allGlasses.forEach(glass => {
+          glass.setAttribute('disabled', '');
+        });
+      } else {
+        // Remove overlays and enable glass effect
+        document.querySelectorAll('.displacement-overlay').forEach(el => el.remove());
+        allGlasses.forEach(glass => {
+          glass.removeAttribute('disabled');
+        });
+      }
+    }
+
+    async function updateDisplacementOverlays() {
+      const thickness = parseFloat(controls.thickness.value);
+      const edgeWidthRatio = (thickness / 100) * 0.8 + 0.1; // 0.1-0.9
+
+      for (const el of interactiveElements) {
+        const glass = el.querySelector('liquid-glass');
+        if (!glass) continue;
+
+        const w = parseFloat(el.dataset.w);
+        const h = parseFloat(el.dataset.h);
+        const radius = parseFloat(el.dataset.radius) || 20;
+
+        // Generate displacement map
+        const dispResult = await generateWasmDisplacementMap({
+          width: Math.round(w),
+          height: Math.round(h),
+          borderRadius: radius,
+          edgeWidthRatio
+        });
+
+        if (!dispResult) continue;
+
+        // Find or create overlay
+        let overlay = glass.querySelector('.displacement-overlay');
+        if (!overlay) {
+          overlay = document.createElement('div');
+          overlay.className = 'displacement-overlay';
+          glass.appendChild(overlay);
+        }
+
+        overlay.style.backgroundImage = `url(${dispResult.dataUrl})`;
+      }
+    }
 
     // ============================================================
     // Element Positioning
@@ -1002,9 +1176,21 @@
     // ============================================================
     // Event Listeners for Interaction
     // ============================================================
+    function deleteElement(el) {
+      if (selectedElement === el) {
+        selectElement(null);
+      }
+      el.remove(); // disconnectedCallback handles all cleanup
+    }
+
     interactiveElements.forEach(el => {
-      // Click to select
+      // Click to select or delete
       el.addEventListener('mousedown', (e) => {
+        if (e.target.dataset.action === 'delete') {
+          e.stopPropagation();
+          deleteElement(el);
+          return;
+        }
         if (e.target.dataset.action) {
           startDrag(e, el, e.target.dataset.action, e.target.dataset.dir);
         } else {
@@ -1015,6 +1201,14 @@
 
     document.addEventListener('mousemove', onDrag);
     document.addEventListener('mouseup', endDrag);
+
+    // Keyboard delete
+    document.addEventListener('keydown', (e) => {
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedElement) {
+        e.preventDefault();
+        deleteElement(selectedElement);
+      }
+    });
 
     // Deselect when clicking outside
     previewArea.addEventListener('mousedown', (e) => {
@@ -1032,7 +1226,8 @@
         thickness: controls.thickness.value,
         gloss: controls.gloss.value,
         softness: controls.softness.value,
-        saturation: controls.saturation.value
+        saturation: controls.saturation.value,
+        dispersion: controls.dispersion.value
       };
 
       allGlasses.forEach(glass => {
@@ -1041,6 +1236,7 @@
         glass.setAttribute('gloss', values.gloss);
         glass.setAttribute('softness', values.softness);
         glass.setAttribute('saturation', values.saturation);
+        glass.setAttribute('dispersion', values.dispersion);
       });
 
       // Update selected element size/radius
@@ -1080,12 +1276,18 @@
       document.getElementById('gloss-val').textContent = values.gloss;
       document.getElementById('softness-val').textContent = values.softness;
       document.getElementById('saturation-val').textContent = values.saturation;
+      document.getElementById('dispersion-val').textContent = values.dispersion;
       document.getElementById('radius-val').textContent = controls.radius.value;
       document.getElementById('width-val').textContent = controls.width.value;
       document.getElementById('height-val').textContent = controls.height.value;
       document.getElementById('tint-opacity-val').textContent = controls.tintOpacity.value;
 
       updateCodeOutput(values);
+
+      // Update displacement overlays if in displacement mode
+      if (viewMode === 'displacement') {
+        updateDisplacementOverlays();
+      }
     }
 
     function updateCodeOutput(values) {
@@ -1095,6 +1297,7 @@
   gloss="${values.gloss}"
   softness="${values.softness}"
   saturation="${values.saturation}"
+  dispersion="${values.dispersion}"
   style="border-radius: ${controls.radius.value}px"
 ></liquid-glass>`;
       codeOutput.textContent = code;
@@ -1142,8 +1345,8 @@
         bgAnim.x += moveX;
         bgAnim.y += moveY;
 
-        // Use background-position for seamless CSS tiling
-        bgContent.style.backgroundPosition = `${bgAnim.x}px ${bgAnim.y}px`;
+        // Use transform for seamless SVG tiling
+        bgContent.style.transform = `translate(${bgAnim.x % 186}px, ${bgAnim.y % 124}px)`;
       }
 
       bgAnim.frameId = requestAnimationFrame(animateBackground);
@@ -1180,6 +1383,7 @@
       controls.gloss.value = preset.gloss;
       controls.softness.value = preset.softness;
       controls.saturation.value = preset.saturation;
+      controls.dispersion.value = preset.dispersion;
 
       document.querySelectorAll('.preset-btn[data-preset]').forEach(btn => {
         btn.classList.toggle('active', btn.dataset.preset === name);
@@ -1217,6 +1421,7 @@
       controls.bgDirection.value = 135;
       updateBackgroundAnimation();
       updateAllGlasses();
+      setViewMode('lens');
     }
 
     // ============================================================
@@ -1236,6 +1441,11 @@
 
     document.getElementById('reset-positions-btn').addEventListener('click', resetPositions);
     document.getElementById('reset-all-btn').addEventListener('click', resetAll);
+
+    // View mode toggle buttons
+    document.querySelectorAll('.view-mode-btn').forEach(btn => {
+      btn.addEventListener('click', () => setViewMode(btn.dataset.mode));
+    });
 
     document.getElementById('copy-btn').addEventListener('click', () => {
       navigator.clipboard.writeText(codeOutput.textContent);

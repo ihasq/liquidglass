@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Slope-Based Blur Test</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'SF Mono', Monaco, monospace;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      padding: 20px;
+    }
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    h1 {
+      color: white;
+      font-size: 18px;
+      margin-bottom: 20px;
+      text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+    }
+    .controls {
+      background: rgba(255,255,255,0.1);
+      backdrop-filter: blur(10px);
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 20px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 20px;
+    }
+    .control {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .control label {
+      color: white;
+      font-size: 11px;
+      opacity: 0.8;
+    }
+    .control input {
+      width: 150px;
+    }
+    .control span {
+      color: white;
+      font-size: 12px;
+    }
+    .demo-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+      gap: 20px;
+    }
+    .demo-card {
+      background: rgba(255,255,255,0.15);
+      border-radius: 16px;
+      padding: 20px;
+      backdrop-filter: blur(10px);
+    }
+    .demo-card h2 {
+      color: white;
+      font-size: 14px;
+      margin-bottom: 12px;
+    }
+    .glass-container {
+      position: relative;
+      width: 320px;
+      height: 200px;
+      border-radius: 24px;
+      overflow: hidden;
+    }
+    .background-pattern {
+      position: absolute;
+      inset: -50px;
+      background:
+        linear-gradient(45deg, #ff6b6b 25%, transparent 25%),
+        linear-gradient(-45deg, #ff6b6b 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, #4ecdc4 75%),
+        linear-gradient(-45deg, transparent 75%, #4ecdc4 75%);
+      background-size: 40px 40px;
+      background-position: 0 0, 0 20px, 20px -20px, -20px 0px;
+      animation: movePattern 3s linear infinite;
+    }
+    @keyframes movePattern {
+      from { transform: translate(0, 0); }
+      to { transform: translate(40px, 40px); }
+    }
+    .glass-element {
+      position: absolute;
+      inset: 0;
+      border-radius: 24px;
+    }
+    .info {
+      margin-top: 12px;
+      font-size: 11px;
+      color: rgba(255,255,255,0.7);
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Slope-Based Blur Test - Displacement Magnitude Controls Blur</h1>
+
+    <div class="controls">
+      <div class="control">
+        <label>Slope Blur (stdDeviation)</label>
+        <input type="range" id="slopeBlur" min="0" max="10" step="0.5" value="2">
+        <span id="slopeBlur-val">2.0</span>
+      </div>
+      <div class="control">
+        <label>Slope Blur Intensity</label>
+        <input type="range" id="slopeIntensity" min="0" max="3" step="0.1" value="1.5">
+        <span id="slopeIntensity-val">1.5</span>
+      </div>
+      <div class="control">
+        <label>Displacement Scale</label>
+        <input type="range" id="dispScale" min="0" max="100" step="5" value="30">
+        <span id="dispScale-val">30</span>
+      </div>
+      <div class="control">
+        <label>Border Radius</label>
+        <input type="range" id="borderRadius" min="0" max="100" step="4" value="24">
+        <span id="borderRadius-val">24</span>
+      </div>
+    </div>
+
+    <div class="demo-grid">
+      <div class="demo-card">
+        <h2>With Slope Blur</h2>
+        <div class="glass-container">
+          <div class="background-pattern"></div>
+          <div class="glass-element" id="glass-slope"></div>
+        </div>
+        <div class="info" id="info-slope">Loading...</div>
+      </div>
+
+      <div class="demo-card">
+        <h2>Without Slope Blur (slopeBlur=0)</h2>
+        <div class="glass-container">
+          <div class="background-pattern"></div>
+          <div class="glass-element" id="glass-no-slope"></div>
+        </div>
+        <div class="info" id="info-no-slope">Loading...</div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { createLiquidGlassFilter, updateFilterScale, updateSlopeBlur } from '../src/renderer/svg-filter.ts';
+    import { generateWasmDisplacementMap, preloadWasm } from '../src/core/displacement/wasm-generator.ts';
+
+    await preloadWasm();
+
+    const width = 320;
+    const height = 200;
+    let currentRadius = 24;
+    let slopeFilter = null;
+    let noSlopeFilter = null;
+
+    async function createFilters() {
+      // Clean up existing filters
+      if (slopeFilter) slopeFilter.cleanup();
+      if (noSlopeFilter) noSlopeFilter.cleanup();
+
+      const slopeBlur = parseFloat(document.getElementById('slopeBlur').value);
+      const slopeIntensity = parseFloat(document.getElementById('slopeIntensity').value);
+      const dispScale = parseFloat(document.getElementById('dispScale').value);
+      currentRadius = parseFloat(document.getElementById('borderRadius').value);
+
+      // Update display values
+      document.getElementById('slopeBlur-val').textContent = slopeBlur.toFixed(1);
+      document.getElementById('slopeIntensity-val').textContent = slopeIntensity.toFixed(1);
+      document.getElementById('dispScale-val').textContent = dispScale;
+      document.getElementById('borderRadius-val').textContent = currentRadius;
+
+      // Generate displacement map
+      const dispResult = await generateWasmDisplacementMap({
+        width, height,
+        borderRadius: currentRadius,
+        edgeWidthRatio: 0.5
+      });
+
+      if (!dispResult) {
+        document.getElementById('info-slope').textContent = 'WASM failed';
+        return;
+      }
+
+      // Create dummy specular map (white with alpha gradient)
+      const specCanvas = document.createElement('canvas');
+      specCanvas.width = width;
+      specCanvas.height = height;
+      const specCtx = specCanvas.getContext('2d');
+      const grad = specCtx.createLinearGradient(0, 0, width, height);
+      grad.addColorStop(0, 'rgba(255,255,255,0.3)');
+      grad.addColorStop(0.5, 'rgba(255,255,255,0.1)');
+      grad.addColorStop(1, 'rgba(255,255,255,0.2)');
+      specCtx.fillStyle = grad;
+      specCtx.beginPath();
+      specCtx.roundRect(0, 0, width, height, currentRadius);
+      specCtx.fill();
+      const specUrl = specCanvas.toDataURL();
+
+      // Filter with slope blur
+      slopeFilter = createLiquidGlassFilter({
+        displacementMapUrl: dispResult.dataUrl,
+        specularMapUrl: specUrl,
+        width, height,
+        scale: dispScale,
+        slopeBlur: slopeBlur,
+        slopeBlurIntensity: slopeIntensity
+      });
+
+      // Filter without slope blur
+      noSlopeFilter = createLiquidGlassFilter({
+        displacementMapUrl: dispResult.dataUrl,
+        specularMapUrl: specUrl,
+        width, height,
+        scale: dispScale,
+        slopeBlur: 0,
+        slopeBlurIntensity: 0
+      });
+
+      document.getElementById('glass-slope').style.backdropFilter = slopeFilter.filterUrl;
+      document.getElementById('glass-no-slope').style.backdropFilter = noSlopeFilter.filterUrl;
+
+      document.getElementById('info-slope').textContent = `Filter: ${slopeFilter.filterId} | slopeBlur: ${slopeBlur}, intensity: ${slopeIntensity}`;
+      document.getElementById('info-no-slope').textContent = `Filter: ${noSlopeFilter.filterId} | slopeBlur: 0`;
+    }
+
+    // Initial creation
+    await createFilters();
+
+    // Update on slider change
+    ['slopeBlur', 'slopeIntensity', 'dispScale', 'borderRadius'].forEach(id => {
+      document.getElementById(id).addEventListener('input', createFilters);
+    });
+  </script>
+</body>
+</html>

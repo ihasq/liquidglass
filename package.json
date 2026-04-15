@@ -1,16 +1,13 @@
 {
-  "name": "liquid-glass",
-  "version": "0.1.0",
+  "name": "liquidglass.css",
+  "version": "0.0.3",
   "description": "Physics-based liquid glass refraction effect using CSS and SVG filters",
   "type": "module",
-  "main": "dist/liquid-glass.js",
-  "module": "dist/liquid-glass.js",
-  "types": "dist/index.d.ts",
+  "main": "dist/liquidglass.js",
+  "module": "dist/liquidglass.js",
+  "types": "dist/liquidglass.d.ts",
   "exports": {
-    ".": {
-      "import": "./dist/liquid-glass.js",
-      "types": "./dist/index.d.ts"
-    }
+    ".": "./dist/liquidglass.js"
   },
   "files": [
     "dist"

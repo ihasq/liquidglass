@@ -1,25 +1,49 @@
 /**
  * Liquid Glass - Physics-based glass refraction effect
  *
- * @example
- * ```ts
- * import { LiquidGlass } from 'liquid-glass';
+ * Two ways to use:
  *
- * const element = document.querySelector('.glass-panel');
- * const glass = new LiquidGlass(element, {
- *   profile: 'squircle',
- *   refractiveIndex: 1.5,
- *   refractionLevel: 0.8,
- *   specularOpacity: 0.5
- * });
+ * 1. Web Component:
+ * ```html
+ * <liquid-glass refraction="80" style="border-radius: 20px;">
+ *   Content
+ * </liquid-glass>
+ * ```
+ *
+ * 2. CSS Custom Properties:
+ * ```css
+ * .glass-panel {
+ *   --liquidglass-refraction: 80;
+ *   --liquidglass-thickness: 50;
+ *   border-radius: 20px;
+ * }
  * ```
  */
 
+// === Core Filter API ===
+export {
+  FilterManager,
+  getDefaultManager,
+  supportsBackdropSvgFilter,
+  preloadWasm,
+  DEFAULT_PARAMS,
+} from './core/filter';
+
+export type {
+  LiquidGlassParams,
+  FilterManagerOptions,
+  FilterCallbacks,
+} from './core/filter';
+
+// === Web Component Driver ===
+export { LiquidGlassElement, registerLiquidGlassElement } from './drivers/web-component';
+
+// === CSS Properties Driver ===
+export { CSSPropertiesDriver, getCSSDriver, initCSSDriver } from './drivers/css-properties';
+
+// === Legacy API (backward compatibility) ===
 export { LiquidGlass } from './liquid-glass';
 export type { LiquidGlassOptions } from './liquid-glass';
-
-// Web Component (auto-registers as <liquid-glass>)
-export { LiquidGlassElement } from './liquid-glass-element';
 
 // Core math exports
 export type { ProfileType } from './core/math/profiles';
@@ -32,12 +56,12 @@ export { generateDisplacementMap, generateSquircleDisplacementMap } from './core
 export type { DisplacementMapOptions, DisplacementMapResult } from './core/displacement/generator';
 
 // WASM accelerated displacement (per-element encoding)
-export { generateWasmDisplacementMap, preloadWasm, isWasmSimdSupported } from './core/displacement/wasm-generator';
+export { generateWasmDisplacementMap, isWasmSimdSupported } from './core/displacement/wasm-generator';
 
 // Specular exports
 export { generateSpecularMap, generateDefaultSpecularMap } from './core/specular/highlight';
 export type { SpecularMapOptions, SpecularMapResult } from './core/specular/highlight';
 
 // Renderer exports
-export { createLiquidGlassFilter, supportsBackdropSvgFilter } from './renderer/svg-filter';
+export { createLiquidGlassFilter } from './renderer/svg-filter';
 export { applyLiquidGlassCss, generateLiquidGlassCssClass } from './renderer/css-bridge';

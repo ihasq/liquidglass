@@ -8,13 +8,23 @@ build/
 # Test results
 test-results/
 
-# E2E screenshots
+# E2E test outputs
 e2e/screenshots/
 e2e/snapshots/
 e2e/results/
 e2e/debug/
 e2e/comparison/
 e2e/reference/
+
+# Development test environment
+dev/
+
+# Analysis scripts output
+scripts/*.json
+
+# Screenshots and test outputs
+*.png
+parameter-lab-test.png
 
 # Vite temp files
 vite.config.ts.timestamp-*.mjs
@@ -32,3 +42,7 @@ Thumbs.db
 # Logs
 *.log
 npm-debug.log*
+
+# Temporary files
+*.tmp
+*.temp

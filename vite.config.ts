@@ -8,9 +8,9 @@ export default defineConfig({
   ],
   build: {
     lib: {
-      entry: resolve(__dirname, 'src/index.ts'),
+      entry: resolve(__dirname, 'src/liquidglass.ts'),
       name: 'LiquidGlass',
-      fileName: 'liquid-glass'
+      fileName: 'liquidglass'
     },
     rollupOptions: {
       external: [],

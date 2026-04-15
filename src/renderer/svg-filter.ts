@@ -1,14 +1,19 @@
 /**
  * SVG Filter builder for liquid glass effect
- * Reconstructed from kube.io's implementation
+ * Reconstructed from kube.io's implementation with slope-based blur
  *
  * Filter chain:
- * 1. feGaussianBlur - slight blur on source
- * 2. feDisplacementMap - apply refraction
- * 3. feColorMatrix (saturate) - boost saturation on displaced
- * 4. feComposite (in) - mask saturated with specular
- * 5. feComponentTransfer - fade specular alpha
- * 6. feBlend x2 - composite final result
+ * 1. Load displacement map
+ * 2-4. Calculate slope magnitude from displacement map (R,G → alpha)
+ * 5. Base Gaussian blur on source
+ * 6. Heavy Gaussian blur for slope-dependent effect
+ * 7-8. Blend blurs based on slope magnitude (more blur where slope is steep)
+ * 9. feDisplacementMap - apply refraction
+ * 10. feColorMatrix (saturate) - boost saturation on displaced
+ * 11. Load specular map
+ * 12. feComposite (in) - mask saturated with specular
+ * 13. feComponentTransfer - fade specular alpha
+ * 14-15. feBlend x2 - composite final result
  */
 
 let filterIdCounter = 0;
@@ -45,6 +50,8 @@ export interface FilterOptions {
   saturation?: number;       // Color saturation boost (default: 6)
   specularSlope?: number;    // Specular alpha slope (default: 0.3)
   blurStdDev?: number;       // Initial blur (default: 0.2)
+  slopeBlur?: number;        // Slope-based blur strength (default: 2.0)
+  slopeBlurIntensity?: number; // How much slope affects blur (default: 1.5)
 }
 
 export interface FilterResult {
@@ -65,7 +72,9 @@ export function createLiquidGlassFilter(options: FilterOptions): FilterResult {
     scale,
     saturation = 6,
     specularSlope = 0.3,
-    blurStdDev = 0.2
+    blurStdDev = 0.2,
+    slopeBlur = 2.0,
+    slopeBlurIntensity = 1.5
   } = options;
 
   const filterId = `liquid-glass-filter-${++filterIdCounter}`;
@@ -81,14 +90,7 @@ export function createLiquidGlassFilter(options: FilterOptions): FilterResult {
   filter.setAttribute('primitiveUnits', 'userSpaceOnUse');
   filter.setAttribute('color-interpolation-filters', 'sRGB');
 
-  // Step 1: Slight Gaussian blur on source
-  const feBlur = document.createElementNS('http://www.w3.org/2000/svg', 'feGaussianBlur');
-  feBlur.setAttribute('in', 'SourceGraphic');
-  feBlur.setAttribute('stdDeviation', String(blurStdDev));
-  feBlur.setAttribute('result', 'blurred_source');
-  filter.appendChild(feBlur);
-
-  // Step 2: Load displacement map
+  // Step 1: Load displacement map
   const feImageDisp = document.createElementNS('http://www.w3.org/2000/svg', 'feImage');
   feImageDisp.setAttribute('href', displacementMapUrl);
   feImageDisp.setAttribute('x', '0');
@@ -99,9 +101,95 @@ export function createLiquidGlassFilter(options: FilterOptions): FilterResult {
   feImageDisp.setAttribute('result', 'displacement_map');
   filter.appendChild(feImageDisp);
 
-  // Step 3: Apply displacement
+  // Conditionally add slope-based blur only when slopeBlur > 0
+  const useDispersion = slopeBlur > 0;
+  // Result name for blur output (used by displacement map)
+  const blurResultName = useDispersion ? 'blurred_source' : 'base_blurred';
+
+  if (useDispersion) {
+    // Step 2: Calculate slope magnitude from displacement map
+    // Displacement map: R,G centered at 128 (0.5). Convert to signed values.
+    const feMagnitude1 = document.createElementNS('http://www.w3.org/2000/svg', 'feColorMatrix');
+    feMagnitude1.setAttribute('in', 'displacement_map');
+    feMagnitude1.setAttribute('type', 'matrix');
+    feMagnitude1.setAttribute('values', `
+      2 0 0 0 -1
+      0 2 0 0 -1
+      0 0 0 0 0
+      0 0 0 0 0
+    `.trim());
+    feMagnitude1.setAttribute('result', 'slope_signed');
+    filter.appendChild(feMagnitude1);
+
+    // Step 3: Convert signed values to absolute magnitude using component transfer
+    const feAbsolute = document.createElementNS('http://www.w3.org/2000/svg', 'feComponentTransfer');
+    feAbsolute.setAttribute('in', 'slope_signed');
+    feAbsolute.setAttribute('result', 'slope_abs');
+    const feFuncR = document.createElementNS('http://www.w3.org/2000/svg', 'feFuncR');
+    feFuncR.setAttribute('type', 'table');
+    feFuncR.setAttribute('tableValues', '1 0.8 0.6 0.4 0.2 0 0.2 0.4 0.6 0.8 1');
+    const feFuncG = document.createElementNS('http://www.w3.org/2000/svg', 'feFuncG');
+    feFuncG.setAttribute('type', 'table');
+    feFuncG.setAttribute('tableValues', '1 0.8 0.6 0.4 0.2 0 0.2 0.4 0.6 0.8 1');
+    feAbsolute.appendChild(feFuncR);
+    feAbsolute.appendChild(feFuncG);
+    filter.appendChild(feAbsolute);
+
+    // Step 4: Combine R and G absolute values into alpha channel as slope magnitude
+    const feMagnitude2 = document.createElementNS('http://www.w3.org/2000/svg', 'feColorMatrix');
+    feMagnitude2.setAttribute('in', 'slope_abs');
+    feMagnitude2.setAttribute('type', 'matrix');
+    const intensityScale = slopeBlurIntensity * 0.5;
+    feMagnitude2.setAttribute('values', `
+      0 0 0 0 1
+      0 0 0 0 1
+      0 0 0 0 1
+      ${intensityScale} ${intensityScale} 0 0 0
+    `.trim());
+    feMagnitude2.setAttribute('result', 'slope_magnitude');
+    filter.appendChild(feMagnitude2);
+
+    // Step 5: Base Gaussian blur on source
+    const feBlur = document.createElementNS('http://www.w3.org/2000/svg', 'feGaussianBlur');
+    feBlur.setAttribute('in', 'SourceGraphic');
+    feBlur.setAttribute('stdDeviation', String(blurStdDev));
+    feBlur.setAttribute('result', 'base_blurred');
+    filter.appendChild(feBlur);
+
+    // Step 6: Heavy blur for slope-dependent blur effect
+    const feSlopeBlur = document.createElementNS('http://www.w3.org/2000/svg', 'feGaussianBlur');
+    feSlopeBlur.setAttribute('in', 'SourceGraphic');
+    feSlopeBlur.setAttribute('stdDeviation', String(slopeBlur));
+    feSlopeBlur.setAttribute('result', 'slope_blurred_heavy');
+    filter.appendChild(feSlopeBlur);
+
+    // Step 7: Mask heavy blur with slope magnitude
+    const feSlopeMask = document.createElementNS('http://www.w3.org/2000/svg', 'feComposite');
+    feSlopeMask.setAttribute('in', 'slope_blurred_heavy');
+    feSlopeMask.setAttribute('in2', 'slope_magnitude');
+    feSlopeMask.setAttribute('operator', 'in');
+    feSlopeMask.setAttribute('result', 'slope_blur_masked');
+    filter.appendChild(feSlopeMask);
+
+    // Step 8: Blend base blur with masked slope blur
+    const feSlopeBlend = document.createElementNS('http://www.w3.org/2000/svg', 'feBlend');
+    feSlopeBlend.setAttribute('in', 'slope_blur_masked');
+    feSlopeBlend.setAttribute('in2', 'base_blurred');
+    feSlopeBlend.setAttribute('mode', 'normal');
+    feSlopeBlend.setAttribute('result', 'blurred_source');
+    filter.appendChild(feSlopeBlend);
+  } else {
+    // No dispersion: just apply base blur
+    const feBlur = document.createElementNS('http://www.w3.org/2000/svg', 'feGaussianBlur');
+    feBlur.setAttribute('in', 'SourceGraphic');
+    feBlur.setAttribute('stdDeviation', String(blurStdDev));
+    feBlur.setAttribute('result', 'base_blurred');
+    filter.appendChild(feBlur);
+  }
+
+  // Step 9: Apply displacement
   const feDisplacement = document.createElementNS('http://www.w3.org/2000/svg', 'feDisplacementMap');
-  feDisplacement.setAttribute('in', 'blurred_source');
+  feDisplacement.setAttribute('in', blurResultName);
   feDisplacement.setAttribute('in2', 'displacement_map');
   feDisplacement.setAttribute('scale', String(scale));
   feDisplacement.setAttribute('xChannelSelector', 'R');
@@ -109,7 +197,7 @@ export function createLiquidGlassFilter(options: FilterOptions): FilterResult {
   feDisplacement.setAttribute('result', 'displaced');
   filter.appendChild(feDisplacement);
 
-  // Step 4: Boost saturation on displaced image
+  // Step 10: Boost saturation on displaced image
   const feColorMatrix = document.createElementNS('http://www.w3.org/2000/svg', 'feColorMatrix');
   feColorMatrix.setAttribute('in', 'displaced');
   feColorMatrix.setAttribute('type', 'saturate');
@@ -117,7 +205,7 @@ export function createLiquidGlassFilter(options: FilterOptions): FilterResult {
   feColorMatrix.setAttribute('result', 'displaced_saturated');
   filter.appendChild(feColorMatrix);
 
-  // Step 5: Load specular map
+  // Step 11: Load specular map
   const feImageSpec = document.createElementNS('http://www.w3.org/2000/svg', 'feImage');
   feImageSpec.setAttribute('href', specularMapUrl);
   feImageSpec.setAttribute('x', '0');
@@ -128,7 +216,7 @@ export function createLiquidGlassFilter(options: FilterOptions): FilterResult {
   feImageSpec.setAttribute('result', 'specular_layer');
   filter.appendChild(feImageSpec);
 
-  // Step 6: Composite - use specular as mask for saturated
+  // Step 12: Composite - use specular as mask for saturated
   const feComposite = document.createElementNS('http://www.w3.org/2000/svg', 'feComposite');
   feComposite.setAttribute('in', 'displaced_saturated');
   feComposite.setAttribute('in2', 'specular_layer');
@@ -136,7 +224,7 @@ export function createLiquidGlassFilter(options: FilterOptions): FilterResult {
   feComposite.setAttribute('result', 'specular_saturated');
   filter.appendChild(feComposite);
 
-  // Step 7: Fade specular alpha
+  // Step 13: Fade specular alpha
   const feComponentTransfer = document.createElementNS('http://www.w3.org/2000/svg', 'feComponentTransfer');
   feComponentTransfer.setAttribute('in', 'specular_layer');
   feComponentTransfer.setAttribute('result', 'specular_faded');
@@ -146,7 +234,7 @@ export function createLiquidGlassFilter(options: FilterOptions): FilterResult {
   feComponentTransfer.appendChild(feFuncA);
   filter.appendChild(feComponentTransfer);
 
-  // Step 8: Blend saturated specular with displaced
+  // Step 14: Blend saturated specular with displaced
   const feBlend1 = document.createElementNS('http://www.w3.org/2000/svg', 'feBlend');
   feBlend1.setAttribute('in', 'specular_saturated');
   feBlend1.setAttribute('in2', 'displaced');
@@ -154,7 +242,7 @@ export function createLiquidGlassFilter(options: FilterOptions): FilterResult {
   feBlend1.setAttribute('result', 'withSaturation');
   filter.appendChild(feBlend1);
 
-  // Step 9: Blend faded specular on top
+  // Step 15: Blend faded specular on top
   const feBlend2 = document.createElementNS('http://www.w3.org/2000/svg', 'feBlend');
   feBlend2.setAttribute('in', 'specular_faded');
   feBlend2.setAttribute('in2', 'withSaturation');
@@ -182,6 +270,38 @@ export function updateFilterScale(filterId: string, scale: number): void {
   const displacement = filter.querySelector('feDisplacementMap');
   if (displacement) {
     displacement.setAttribute('scale', String(scale));
+  }
+}
+
+/**
+ * Update slope blur parameters on an existing filter
+ */
+export function updateSlopeBlur(filterId: string, slopeBlur: number, slopeBlurIntensity?: number): void {
+  const filter = document.getElementById(filterId);
+  if (!filter) return;
+
+  // Update heavy blur stdDeviation
+  const blurElements = filter.querySelectorAll('feGaussianBlur');
+  blurElements.forEach(blur => {
+    if (blur.getAttribute('result') === 'slope_blurred_heavy') {
+      blur.setAttribute('stdDeviation', String(slopeBlur));
+    }
+  });
+
+  // Update intensity if provided
+  if (slopeBlurIntensity !== undefined) {
+    const colorMatrices = filter.querySelectorAll('feColorMatrix');
+    colorMatrices.forEach(cm => {
+      if (cm.getAttribute('result') === 'slope_magnitude') {
+        const intensityScale = slopeBlurIntensity * 0.5;
+        cm.setAttribute('values', `
+          0 0 0 0 1
+          0 0 0 0 1
+          0 0 0 0 1
+          ${intensityScale} ${intensityScale} 0 0 0
+        `.trim());
+      }
+    });
   }
 }
 

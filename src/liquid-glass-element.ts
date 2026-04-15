@@ -470,7 +470,8 @@ const _mutationTracking: MutationTrackingState = {
  * Handle mutation for a specific element
  */
 function handleElementMutation(element: LiquidGlassElement): void {
-  const currentRadius = getComputedStyle(element).borderRadius;
+  // Use individual corner property for computed pixel value (handles %, em, etc.)
+  const currentRadius = getComputedStyle(element).borderTopLeftRadius;
   const lastRadius = _mutationTracking.lastBorderRadius.get(element) ?? '';
 
   if (currentRadius !== lastRadius) {
@@ -537,7 +538,7 @@ function registerMutationTracking(element: LiquidGlassElement): void {
 
   if (!_mutationTracking.elements.has(element)) {
     _mutationTracking.elements.add(element);
-    _mutationTracking.lastBorderRadius.set(element, getComputedStyle(element).borderRadius);
+    _mutationTracking.lastBorderRadius.set(element, getComputedStyle(element).borderTopLeftRadius);
     observer.observe(element, {
       attributes: true,
       attributeFilter: ['style', 'class']
@@ -577,6 +578,7 @@ interface FilterState {
   gloss: number;
   softness: number;
   saturation: number;
+  dispersion: number;
   // Timestamp of last PNG encoding
   lastEncodeTime: number;
   // Pending deferred render timeout
@@ -643,7 +645,7 @@ function getStyleSheet(): CSSStyleSheet {
 }
 
 // Observed attributes - minimal, user-facing only
-const ATTRIBUTES = ['refraction', 'thickness', 'gloss', 'softness', 'saturation', 'disabled'] as const;
+const ATTRIBUTES = ['refraction', 'thickness', 'gloss', 'softness', 'saturation', 'dispersion', 'disabled'] as const;
 type Attribute = typeof ATTRIBUTES[number];
 
 export class LiquidGlassElement extends HTMLElement {
@@ -653,6 +655,7 @@ export class LiquidGlassElement extends HTMLElement {
   #gloss = 50;         // 0-100, maps to specular alpha 0-1
   #softness = 10;      // 0-100, maps to blur 0-5
   #saturation = 45;    // 0-100, maps to saturation 0-20
+  #dispersion = 30;    // 0-100, maps to slope blur 0-6
   #disabled = false;
   #resizeObserver: ResizeObserver | null = null;
   // MutationObserver is now global (single observer for all elements)
@@ -707,6 +710,9 @@ export class LiquidGlassElement extends HTMLElement {
       case 'saturation':
         this.#saturation = value ? parseFloat(value) : 45;
         break;
+      case 'dispersion':
+        this.#dispersion = value ? parseFloat(value) : 30;
+        break;
       case 'disabled':
         this.#disabled = value !== null;
         break;
@@ -752,6 +758,13 @@ export class LiquidGlassElement extends HTMLElement {
   set saturation(v: number) {
     this.#saturation = v;
     this.setAttribute('saturation', String(v));
+  }
+
+  /** Edge dispersion / refraction blur (0-100, default 30) */
+  get dispersion(): number { return this.#dispersion; }
+  set dispersion(v: number) {
+    this.#dispersion = v;
+    this.setAttribute('dispersion', String(v));
   }
 
   /** Disable the effect */
@@ -945,12 +958,13 @@ export class LiquidGlassElement extends HTMLElement {
     if (width <= 0 || height <= 0) return;
 
     // Read border-radius from computed style (developer sets via CSS)
+    // Use individual corner property to get computed pixel value (handles %, em, etc.)
     const computedStyle = getComputedStyle(this);
-    const borderRadiusStr = computedStyle.borderRadius;
+    const borderRadiusStr = computedStyle.borderTopLeftRadius;
     // Update global mutation tracking's last known radius
     _mutationTracking.lastBorderRadius.set(this, borderRadiusStr);
 
-    // Parse border-radius (take first value for simplicity, handles "20px" or "20px 10px...")
+    // Computed style returns resolved pixel value (e.g., "20px" even if CSS was "50%")
     const borderRadius = parseFloat(borderRadiusStr) || 0;
 
     if (this.#disabled) {
@@ -979,6 +993,7 @@ export class LiquidGlassElement extends HTMLElement {
         gloss: 0,
         softness: 0,
         saturation: 0,
+        dispersion: 0,
         lastEncodeTime: 0,
         deferredRenderTimeout: null,
         adaptiveInterval: ENCODE_INTERVAL_MIN_MS,
@@ -1020,6 +1035,7 @@ export class LiquidGlassElement extends HTMLElement {
         gloss: 0,
         softness: 0,
         saturation: 0,
+        dispersion: 0,
         lastEncodeTime: 0,
         deferredRenderTimeout: null,
         adaptiveInterval: ENCODE_INTERVAL_MIN_MS,
@@ -1104,7 +1120,8 @@ export class LiquidGlassElement extends HTMLElement {
       stateForUpdate.thickness === this.#thickness &&
       stateForUpdate.gloss === this.#gloss &&
       stateForUpdate.softness === this.#softness &&
-      stateForUpdate.saturation === this.#saturation;
+      stateForUpdate.saturation === this.#saturation &&
+      stateForUpdate.dispersion === this.#dispersion;
 
     if (canFastUpdate) {
       // Fast path with smooth morphing transition
@@ -1213,6 +1230,7 @@ export class LiquidGlassElement extends HTMLElement {
       gloss: this.#gloss,
       softness: this.#softness,
       saturation: this.#saturation,
+      dispersion: this.#dispersion,
       lastEncodeTime: performance.now(),
       deferredRenderTimeout: null,
       adaptiveInterval: ENCODE_INTERVAL_MIN_MS,
@@ -1236,6 +1254,8 @@ export class LiquidGlassElement extends HTMLElement {
     const blurStdDev = (this.#softness / 100) * 5;               // 0-100 → 0-5
     const saturationVal = (this.#saturation / 100) * 20;         // 0-100 → 0-20
     const specAlpha = (this.#gloss / 100);                       // 0-100 → 0-1
+    const slopeBlurStdDev = (this.#dispersion / 100) * 6;        // 0-100 → 0-6
+    const slopeIntensity = (this.#dispersion / 100) * 1.5;       // 0-100 → 0-1.5
 
     const filter = document.createElementNS('http://www.w3.org/2000/svg', 'filter');
     filter.id = id;
@@ -1248,20 +1268,59 @@ export class LiquidGlassElement extends HTMLElement {
     filter.setAttribute('color-interpolation-filters', 'sRGB');
 
     // SVG-based filter chain with morphing support
-    // Two displacement map images + feComposite for smooth crossfade
-    filter.innerHTML = `
-      <feGaussianBlur in="SourceGraphic" stdDeviation="${blurStdDev}" result="b"/>
+    // Conditionally include slope-based blur only when dispersion > 0
+    const useDispersion = this.#dispersion > 0;
+
+    // Build filter chain dynamically
+    let filterChain = `
+      <!-- Load displacement maps for morphing -->
       <feImage href="${dispUrl}" x="0" y="0" width="${width}" height="${height}" preserveAspectRatio="none" result="dOld"/>
       <feImage href="${dispUrl}" x="0" y="0" width="${width}" height="${height}" preserveAspectRatio="none" result="dNew"/>
       <feComposite in="dOld" in2="dNew" operator="arithmetic" k1="0" k2="0" k3="1" k4="0" result="d"/>
+    `;
+
+    if (useDispersion) {
+      // Slope blur: more blur where displacement is steep (refraction edges)
+      filterChain += `
+      <!-- Calculate slope magnitude: R,G centered at 0.5, convert to absolute magnitude -->
+      <feColorMatrix in="d" type="matrix" values="2 0 0 0 -1  0 2 0 0 -1  0 0 0 0 0  0 0 0 0 0" result="dSigned"/>
+      <feComponentTransfer in="dSigned" result="dAbs">
+        <feFuncR type="table" tableValues="1 0.8 0.6 0.4 0.2 0 0.2 0.4 0.6 0.8 1"/>
+        <feFuncG type="table" tableValues="1 0.8 0.6 0.4 0.2 0 0.2 0.4 0.6 0.8 1"/>
+      </feComponentTransfer>
+      <feColorMatrix in="dAbs" type="matrix" values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  ${slopeIntensity * 0.5} ${slopeIntensity * 0.5} 0 0 0" result="slopeMag"/>
+
+      <!-- Base blur -->
+      <feGaussianBlur in="SourceGraphic" stdDeviation="${blurStdDev}" result="baseBlur"/>
+      <!-- Heavy blur for slope regions -->
+      <feGaussianBlur in="SourceGraphic" stdDeviation="${slopeBlurStdDev}" result="slopeBlur"/>
+      <!-- Mask heavy blur with slope magnitude -->
+      <feComposite in="slopeBlur" in2="slopeMag" operator="in" result="slopeMasked"/>
+      <!-- Blend base + slope blur -->
+      <feBlend in="slopeMasked" in2="baseBlur" mode="normal" result="b"/>
+      `;
+    } else {
+      // No dispersion: just apply base blur
+      filterChain += `
+      <!-- Base blur only (no slope-based dispersion) -->
+      <feGaussianBlur in="SourceGraphic" stdDeviation="${blurStdDev}" result="b"/>
+      `;
+    }
+
+    filterChain += `
+      <!-- Apply displacement -->
       <feDisplacementMap in="b" in2="d" scale="${scale}" xChannelSelector="R" yChannelSelector="G" result="r"/>
       <feColorMatrix in="r" type="saturate" values="${saturationVal}" result="s"/>
+
+      <!-- Specular layer -->
       <feImage href="${specUrl}" x="0" y="0" width="${width}" height="${height}" preserveAspectRatio="none" result="sp"/>
       <feComposite in="s" in2="sp" operator="in" result="ss"/>
       <feComponentTransfer in="sp" result="sf"><feFuncA type="linear" slope="${specAlpha * 0.75}"/></feComponentTransfer>
       <feBlend in="ss" in2="r" mode="normal" result="w"/>
       <feBlend in="sf" in2="w" mode="normal"/>
     `;
+
+    filter.innerHTML = filterChain;
 
     defs.appendChild(filter);
     return filter;

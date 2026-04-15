@@ -1,0 +1,53 @@
+/**
+ * Liquid Glass CSS Custom Properties
+ *
+ * Import this file to enable --liquidglass-* properties on any element.
+ *
+ * Usage:
+ * ```css
+ * @import 'liquid-glass/css';
+ *
+ * .my-element {
+ *   --liquidglass-refraction: 80;
+ *   --liquidglass-thickness: 50;
+ *   border-radius: 20px;
+ * }
+ * ```
+ */
+
+/* @property definitions for typed CSS custom properties */
+@property --liquidglass-refraction {
+  syntax: '<number>';
+  inherits: true;
+  initial-value: -9999;
+}
+
+@property --liquidglass-thickness {
+  syntax: '<number>';
+  inherits: true;
+  initial-value: -9999;
+}
+
+@property --liquidglass-gloss {
+  syntax: '<number>';
+  inherits: true;
+  initial-value: -9999;
+}
+
+@property --liquidglass-softness {
+  syntax: '<number>';
+  inherits: true;
+  initial-value: -9999;
+}
+
+@property --liquidglass-saturation {
+  syntax: '<number>';
+  inherits: true;
+  initial-value: -9999;
+}
+
+@property --liquidglass-dispersion {
+  syntax: '<number>';
+  inherits: true;
+  initial-value: -9999;
+}
