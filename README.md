@@ -5,6 +5,10 @@
 <h1 align="center">liquidglass.css</h1>
 
 <p align="center">
+  <strong>Liquid glass effect, as CSS properties. As it should be.</strong>
+</p>
+
+<p align="center">
   <a href="https://www.npmjs.com/package/liquidglass.css"><img src="https://img.shields.io/npm/v/liquidglass.css.svg?style=flat-square&color=00d4ff" alt="npm version"></a>
   <a href="https://bundlephobia.com/package/liquidglass.css"><img src="https://img.shields.io/bundlephobia/minzip/liquidglass.css?style=flat-square&color=00d4ff" alt="bundle size"></a>
   <a href="https://github.com/user/liquidglass/blob/main/LICENSE"><img src="https://img.shields.io/npm/l/liquidglass.css?style=flat-square&color=00d4ff" alt="license"></a>
@@ -15,6 +19,11 @@
 ```css
 .card {
   --liquidglass-refraction: 80;
+  --liquidglass-thickness: 50;
+  --liquidglass-softness: 15;
+  --liquidglass-gloss: 60;
+  --liquidglass-saturation: 45;
+  --liquidglass-dispersion: 30;
   border-radius: 20px;
 }
 ```
