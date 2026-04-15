@@ -1,112 +1,137 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Displacement Map Debug View</title>
   <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
-      margin: 0;
+      font-family: 'SF Mono', Monaco, monospace;
+      background: #111;
+      color: #eee;
       padding: 20px;
-      background: #222;
-      color: white;
-      font-family: sans-serif;
+      min-height: 100vh;
     }
-    .container {
-      display: flex;
-      gap: 20px;
-      flex-wrap: wrap;
-    }
+    h1 { font-size: 16px; color: #888; margin-bottom: 20px; }
+    .container { display: flex; gap: 40px; flex-wrap: wrap; }
     .panel {
-      text-align: center;
+      background: #1a1a1a;
+      border: 1px solid #333;
+      border-radius: 8px;
+      padding: 20px;
     }
-    .panel h3 {
-      margin-bottom: 10px;
-    }
-    canvas, img {
-      border: 1px solid #666;
-    }
+    .panel h2 { font-size: 13px; color: #4ecdc4; margin-bottom: 12px; }
+    canvas { border: 1px solid #444; }
+    .info { margin-top: 10px; font-size: 11px; color: #888; }
+    .controls { margin-bottom: 20px; display: flex; gap: 20px; align-items: center; }
+    .control { display: flex; align-items: center; gap: 8px; }
+    .control label { font-size: 12px; color: #888; }
+    .control input { width: 100px; }
+    .control span { font-size: 12px; color: #4ecdc4; min-width: 50px; }
   </style>
 </head>
 <body>
-  <h1>Displacement Map Debug</h1>
-  <div class="container">
-    <div class="panel">
-      <h3>Generated Displacement Map</h3>
-      <canvas id="disp-canvas" width="300" height="200"></canvas>
+  <h1>Raw Displacement Map (WASM SDF Algorithm)</h1>
+  <div class="controls">
+    <div class="control">
+      <label>Width:</label>
+      <input type="range" id="width" min="100" max="400" value="320">
+      <span id="width-val">320</span>
     </div>
-    <div class="panel">
-      <h3>Red Channel (X displacement)</h3>
-      <canvas id="red-canvas" width="300" height="200"></canvas>
+    <div class="control">
+      <label>Height:</label>
+      <input type="range" id="height" min="100" max="300" value="200">
+      <span id="height-val">200</span>
     </div>
-    <div class="panel">
-      <h3>Green Channel (Y displacement)</h3>
-      <canvas id="green-canvas" width="300" height="200"></canvas>
+    <div class="control">
+      <label>Border Radius:</label>
+      <input type="range" id="radius" min="0" max="100" value="24">
+      <span id="radius-val">24</span>
     </div>
   </div>
-  <p id="info"></p>
-
+  <div class="container">
+    <div class="panel">
+      <h2>Displacement Map (Raw)</h2>
+      <canvas id="disp-canvas"></canvas>
+      <div class="info" id="disp-info">Loading WASM...</div>
+    </div>
+    <div class="panel">
+      <h2>Direction Field</h2>
+      <canvas id="dir-canvas"></canvas>
+    </div>
+    <div class="panel">
+      <h2>Magnitude Heat Map</h2>
+      <canvas id="mag-canvas"></canvas>
+    </div>
+  </div>
   <script type="module">
-    import { generateDisplacementMap } from '../src/core/displacement/generator.ts';
+    import { generateWasmDisplacementMap, preloadWasm } from '../src/core/displacement/wasm-generator.ts';
 
-    const width = 300;
-    const height = 200;
+    await preloadWasm();
+    document.getElementById('disp-info').textContent = 'WASM Ready';
 
-    const result = generateDisplacementMap({
-      width,
-      height,
-      profile: 'squircle',
-      refractiveIndex: 1.5,
-      thickness: 1.0,
-      refractionLevel: 1.0,
-      borderRadius: 24
-    });
-
-    // Show the full displacement map
-    const dispCanvas = document.getElementById('disp-canvas');
-    const dispCtx = dispCanvas.getContext('2d');
-    dispCtx.drawImage(result.canvas, 0, 0);
-
-    // Extract and show individual channels
-    const imageData = dispCtx.getImageData(0, 0, width, height);
-    const data = imageData.data;
-
-    // Red channel visualization
-    const redCanvas = document.getElementById('red-canvas');
-    const redCtx = redCanvas.getContext('2d');
-    const redData = redCtx.createImageData(width, height);
-
-    // Green channel visualization
-    const greenCanvas = document.getElementById('green-canvas');
-    const greenCtx = greenCanvas.getContext('2d');
-    const greenData = greenCtx.createImageData(width, height);
-
-    let minR = 255, maxR = 0, minG = 255, maxG = 0;
-
-    for (let i = 0; i < data.length; i += 4) {
-      const r = data[i];
-      const g = data[i + 1];
-
-      minR = Math.min(minR, r);
-      maxR = Math.max(maxR, r);
-      minG = Math.min(minG, g);
-      maxG = Math.max(maxG, g);
-
-      // Red channel as grayscale
-      redData.data[i] = r;
-      redData.data[i + 1] = r;
-      redData.data[i + 2] = r;
-      redData.data[i + 3] = 255;
-
-      // Green channel as grayscale
-      greenData.data[i] = g;
-      greenData.data[i + 1] = g;
-      greenData.data[i + 2] = g;
-      greenData.data[i + 3] = 255;
+    function renderDirectionField(src, dst) {
+      const w = src.width, h = src.height;
+      dst.width = w; dst.height = h;
+      const sCtx = src.getContext('2d'), dCtx = dst.getContext('2d');
+      const data = sCtx.getImageData(0,0,w,h).data;
+      dCtx.fillStyle = '#1a1a1a'; dCtx.fillRect(0,0,w,h);
+      dCtx.strokeStyle = '#4ecdc4'; dCtx.lineWidth = 1;
+      const step = 10;
+      for (let y = step/2; y < h; y += step) {
+        for (let x = step/2; x < w; x += step) {
+          const i = (Math.floor(y)*w + Math.floor(x))*4;
+          const dx = (data[i]-128)/127, dy = (data[i+1]-128)/127;
+          const m = Math.sqrt(dx*dx + dy*dy);
+          if (m < 0.01) continue;
+          const len = m * step * 0.8;
+          dCtx.beginPath(); dCtx.moveTo(x,y); dCtx.lineTo(x+dx/m*len, y+dy/m*len); dCtx.stroke();
+        }
+      }
     }
 
-    redCtx.putImageData(redData, 0, 0);
-    greenCtx.putImageData(greenData, 0, 0);
+    function renderMagnitude(src, dst) {
+      const w = src.width, h = src.height;
+      dst.width = w; dst.height = h;
+      const sCtx = src.getContext('2d'), dCtx = dst.getContext('2d');
+      const sD = sCtx.getImageData(0,0,w,h), dD = dCtx.createImageData(w,h);
+      for (let i = 0; i < sD.data.length; i += 4) {
+        const dx = (sD.data[i]-128)/127, dy = (sD.data[i+1]-128)/127;
+        const m = Math.min(Math.sqrt(dx*dx+dy*dy)*3, 1);
+        dD.data[i] = Math.round(m*255);
+        dD.data[i+1] = Math.round((1-Math.abs(m-0.5)*2)*255);
+        dD.data[i+2] = Math.round((1-m)*255);
+        dD.data[i+3] = 255;
+      }
+      dCtx.putImageData(dD, 0, 0);
+    }
 
-    document.getElementById('info').textContent =
-      `R channel range: ${minR}-${maxR} (128=neutral), G channel range: ${minG}-${maxG} (128=neutral)`;
+    async function update() {
+      const width = +document.getElementById('width').value;
+      const height = +document.getElementById('height').value;
+      const borderRadius = +document.getElementById('radius').value;
+      document.getElementById('width-val').textContent = width;
+      document.getElementById('height-val').textContent = height;
+      document.getElementById('radius-val').textContent = borderRadius;
+
+      const result = await generateWasmDisplacementMap({ width, height, borderRadius, edgeWidthRatio: 0.5 });
+      if (!result) {
+        document.getElementById('disp-info').textContent = 'WASM generation failed';
+        return;
+      }
+
+      const dc = document.getElementById('disp-canvas');
+      dc.width = width; dc.height = height;
+      dc.getContext('2d').drawImage(result.canvas, 0, 0);
+      document.getElementById('disp-info').textContent = `${result.generationTime.toFixed(2)}ms (WASM SIMD)`;
+
+      renderDirectionField(result.canvas, document.getElementById('dir-canvas'));
+      renderMagnitude(result.canvas, document.getElementById('mag-canvas'));
+    }
+
+    ['width','height','radius'].forEach(id => document.getElementById(id).addEventListener('input', update));
+    update();
   </script>
 </body>
 </html>
