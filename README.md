@@ -54,10 +54,6 @@ One import. That's it.
 import "liquidglass.css";
 ```
 
-Now use either approach:
-
-### CSS Custom Properties
-
 ```css
 .glass-panel {
   --liquidglass-refraction: 60;
@@ -72,17 +68,6 @@ Now use either approach:
   Your content here
 </div>
 ```
-
-### Web Component
-
-```html
-<liquid-glass refraction="70" thickness="50" style="border-radius: 20px;">
-  <h2>Glass Card</h2>
-  <p>Content with lens effect</p>
-</liquid-glass>
-```
-
-Both work simultaneously. No configuration needed.
 
 ## Parameters
 
@@ -112,7 +97,7 @@ Parameters respond to any CSS change:
   }
 }
 
-/* Complex selectors work too */
+/* Complex selectors */
 .container > div:nth-child(2) {
   --liquidglass-refraction: 60;
 }
@@ -150,7 +135,6 @@ The displacement map encodes refraction vectors:
 ### React
 
 ```tsx
-// main.tsx or App.tsx
 import "liquidglass.css";
 
 function GlassCard({ children }) {
@@ -160,14 +144,13 @@ function GlassCard({ children }) {
     </div>
   );
 }
+```
 
-// Or use the Web Component directly
-function GlassBox() {
-  return (
-    <liquid-glass refraction="70" style={{ borderRadius: 20 }}>
-      Content
-    </liquid-glass>
-  );
+```css
+.glass-card {
+  --liquidglass-refraction: 70;
+  --liquidglass-gloss: 60;
+  border-radius: 20px;
 }
 ```
 
@@ -182,11 +165,6 @@ import "liquidglass.css";
   <div class="glass-panel">
     <slot />
   </div>
-
-  <!-- Or use Web Component -->
-  <liquid-glass refraction="80">
-    Content
-  </liquid-glass>
 </template>
 
 <style scoped>
@@ -205,19 +183,13 @@ import "liquidglass.css";
   import "https://unpkg.com/liquidglass.css";
 </script>
 
-<!-- CSS approach -->
 <div style="
   --liquidglass-refraction: 80;
   --liquidglass-softness: 20;
   border-radius: 24px;
 ">
-  CSS Custom Properties
+  Content
 </div>
-
-<!-- Web Component approach -->
-<liquid-glass refraction="80" style="border-radius: 24px;">
-  Web Component
-</liquid-glass>
 ```
 
 ## Browser Support
@@ -245,7 +217,6 @@ import "liquidglass.css";
 - [ ] CSS Houdini paint worklet
 - [ ] Animated displacement maps
 - [ ] Custom displacement textures
-- [ ] React/Vue component wrappers
 
 ## Contributing
 
@@ -260,5 +231,4 @@ Open `http://localhost:5173/demo/parameter-lab.html` to experiment.
 
 ## License
 
-MIT License. Use it anywhere.
-
+MIT License.

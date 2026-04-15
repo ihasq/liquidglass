@@ -140,7 +140,11 @@
       transform: translate(-50%, -50%);
     }
 
-    liquid-glass {
+    .glass-panel {
+      --liquidglass-refraction: 50;
+      --liquidglass-thickness: 50;
+      --liquidglass-softness: 10;
+      --liquidglass-gloss: 50;
       position: absolute;
       display: flex;
       align-items: center;
@@ -149,6 +153,7 @@
       font-weight: 600;
       font-size: 14px;
       text-shadow: 0 1px 3px rgba(0,0,0,0.5);
+      background: rgba(255, 255, 255, 0.08);
     }
 
     .frame-graph {
@@ -252,7 +257,7 @@
   </script>
 
   <script type="module">
-    import { LiquidGlassElement } from '../src/index.ts';
+    import '../src/liquidglass.ts';
 
     // State
     let running = false;
@@ -300,7 +305,8 @@
       const startX = -((count - 1) * spacing) / 2;
 
       for (let i = 0; i < count; i++) {
-        const el = document.createElement('liquid-glass');
+        const el = document.createElement('div');
+        el.className = 'glass-panel';
         el.style.width = baseSize + 'px';
         el.style.height = baseSize + 'px';
         el.style.borderRadius = '20px';
@@ -308,8 +314,6 @@
         el.style.top = '0px';
         el.style.transform = 'translate(-50%, -50%)';
         el.textContent = `#${i + 1}`;
-        el.setAttribute('refraction', '50');
-        el.setAttribute('thickness', '50');
 
         testArea.appendChild(el);
         elements.push({

@@ -5,24 +5,27 @@
     body {
       margin: 0;
       padding: 40px;
-      background: 
+      background:
         repeating-linear-gradient(0deg, #000 0px, #000 1px, transparent 1px, transparent 50px),
         repeating-linear-gradient(90deg, #000 0px, #000 1px, transparent 1px, transparent 50px),
         #fff;
     }
-    liquid-glass {
+    .glass-panel {
+      --liquidglass-refraction: 75;
+      --liquidglass-thickness: 50;
+      --liquidglass-softness: 10;
       display: block;
       width: 300px;
       height: 200px;
       border: 2px solid red;
+      border-radius: 24px;
     }
   </style>
 </head>
 <body>
-  <liquid-glass profile="squircle" border-radius="24" refractive-index="1.5" refraction-level="1.0"></liquid-glass>
+  <div class="glass-panel"></div>
   <script type="module">
-    import { registerLiquidGlassElement } from '../src/index.ts';
-    registerLiquidGlassElement();
+    import '../src/liquidglass.ts';
   </script>
 </body>
 </html>

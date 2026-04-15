@@ -19,13 +19,17 @@
         repeating-linear-gradient(0deg, transparent, transparent 19px, rgba(255,255,255,0.3) 19px, rgba(255,255,255,0.3) 20px),
         repeating-linear-gradient(90deg, transparent, transparent 19px, rgba(255,255,255,0.3) 19px, rgba(255,255,255,0.3) 20px);
     }
-    liquid-glass {
+    .glass-panel {
+      --liquidglass-refraction: 50;
+      --liquidglass-thickness: 50;
+      --liquidglass-gloss: 50;
       position: absolute;
       top: 50px;
       left: 50px;
       width: 200px;
       height: 100px;
       border-radius: 16px;
+      background: rgba(255, 255, 255, 0.08);
     }
     #results {
       margin-top: 20px;
@@ -39,12 +43,12 @@
 </head>
 <body>
   <div class="test-container" id="container">
-    <liquid-glass id="test-element" refraction="50" thickness="50" gloss="50"></liquid-glass>
+    <div class="glass-panel" id="test-element"></div>
   </div>
   <div id="results">Loading...</div>
 
   <script type="module">
-    import { LiquidGlassElement } from '../src/index.ts';
+    import '../src/liquidglass.ts';
 
     async function runTest() {
       const results = document.getElementById('results');

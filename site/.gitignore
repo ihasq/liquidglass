@@ -1,0 +1,37 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Debug/comparison outputs
+screenshots/
+public/compare_*.png
+public/demo_*.png
+public/site_*.png
+public/diff_*.png
+
+# Analysis script outputs
+scripts/*.json
+
+# Original video files (keep compressed webm)
+public/*.mp4

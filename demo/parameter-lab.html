@@ -199,10 +199,10 @@
     }
 
     /*
-     * Critical: liquid-glass needs its own stacking context for backdrop-filter.
+     * Critical: glass-panel needs its own stacking context for backdrop-filter.
      * The parent's transform is applied via a wrapper div instead.
      */
-    .interactive-element liquid-glass {
+    .interactive-element .glass-panel {
       /* Force GPU layer for backdrop-filter stability */
       -webkit-transform: translate3d(0, 0, 0);
       transform: translate3d(0, 0, 0);
@@ -283,7 +283,13 @@
     .rotate-handle:active { cursor: grabbing; }
 
     /* Glass Element */
-    liquid-glass {
+    .glass-panel {
+      --liquidglass-refraction: 50;
+      --liquidglass-thickness: 50;
+      --liquidglass-softness: 10;
+      --liquidglass-gloss: 50;
+      --liquidglass-saturation: 45;
+      --liquidglass-dispersion: 30;
       display: flex;
       flex-direction: column;
       align-items: center;
@@ -291,10 +297,10 @@
       padding: 32px 48px;
       color: white;
       text-align: center;
-      /* No default shadow - clean visual testing */
+      background: rgba(255, 255, 255, 0.08);
     }
 
-    liquid-glass h2 {
+    .glass-panel h2 {
       font-size: 18px;
       font-weight: 600;
       margin-bottom: 8px;
@@ -302,7 +308,7 @@
       pointer-events: none;
     }
 
-    liquid-glass p {
+    .glass-panel p {
       font-size: 13px;
       opacity: 0.8;
       pointer-events: none;
@@ -748,10 +754,10 @@
 
     <!-- Interactive Element 1 -->
     <div class="interactive-element" id="element-1" data-x="50%" data-y="40%" data-w="320" data-h="200" data-r="0" data-radius="24">
-      <liquid-glass style="width: 320px; height: 200px; border-radius: 24px;">
+      <div class="glass-panel" style="width: 320px; height: 200px; border-radius: 24px;">
         <h2>Liquid Glass</h2>
         <p>Drag, resize, rotate me!</p>
-      </liquid-glass>
+      </div>
       <div class="delete-handle" data-action="delete">×</div>
       <div class="rotate-handle" data-action="rotate"></div>
       <div class="resize-handle nw" data-action="resize" data-dir="nw"></div>
@@ -767,10 +773,10 @@
 
     <!-- Interactive Element 2 -->
     <div class="interactive-element" id="element-2" data-x="25%" data-y="70%" data-w="150" data-h="150" data-r="0" data-radius="20">
-      <liquid-glass style="width: 150px; height: 150px; border-radius: 20px;">
+      <div class="glass-panel" style="width: 150px; height: 150px; border-radius: 20px;">
         <h2>Small</h2>
         <p>150px</p>
-      </liquid-glass>
+      </div>
       <div class="delete-handle" data-action="delete">×</div>
       <div class="rotate-handle" data-action="rotate"></div>
       <div class="resize-handle nw" data-action="resize" data-dir="nw"></div>
@@ -786,10 +792,10 @@
 
     <!-- Interactive Element 3 -->
     <div class="interactive-element" id="element-3" data-x="75%" data-y="65%" data-w="200" data-h="140" data-r="0" data-radius="16">
-      <liquid-glass style="width: 200px; height: 140px; border-radius: 16px;">
+      <div class="glass-panel" style="width: 200px; height: 140px; border-radius: 16px;">
         <h2>Medium</h2>
         <p>200×140</p>
-      </liquid-glass>
+      </div>
       <div class="delete-handle" data-action="delete">×</div>
       <div class="rotate-handle" data-action="rotate"></div>
       <div class="resize-handle nw" data-action="resize" data-dir="nw"></div>
@@ -822,16 +828,16 @@
 
   <!-- Code Output -->
   <div class="code-output">
-    <div class="code-output-title">Generated Code</div>
-    <code id="code-output">&lt;liquid-glass
-  refraction="50"
-  thickness="50"
-  gloss="50"
-  softness="10"
-  saturation="45"
-  dispersion="30"
-  style="border-radius: 24px"
-&gt;&lt;/liquid-glass&gt;</code>
+    <div class="code-output-title">Generated CSS</div>
+    <code id="code-output">.glass-panel {
+  --liquidglass-refraction: 50;
+  --liquidglass-thickness: 50;
+  --liquidglass-gloss: 50;
+  --liquidglass-softness: 10;
+  --liquidglass-saturation: 45;
+  --liquidglass-dispersion: 30;
+  border-radius: 24px;
+}</code>
     <button class="copy-btn" id="copy-btn">Copy to Clipboard</button>
   </div>
 
@@ -889,7 +895,7 @@
   </script>
 
   <script type="module">
-    // Auto-registers Web Component and CSS driver
+    // Auto-initializes CSS Custom Properties driver
     import '../src/liquidglass.ts';
     import { generateWasmDisplacementMap } from '../src/core/displacement/wasm-generator.ts';
 
@@ -898,7 +904,7 @@
     // ============================================================
     const previewArea = document.getElementById('preview-area');
     const bgContent = document.querySelector('.background-content');
-    const allGlasses = document.querySelectorAll('liquid-glass');
+    const allGlasses = document.querySelectorAll('.glass-panel');
     const interactiveElements = document.querySelectorAll('.interactive-element');
     const codeOutput = document.getElementById('code-output');
 
@@ -973,7 +979,7 @@
       const edgeWidthRatio = (thickness / 100) * 0.8 + 0.1; // 0.1-0.9
 
       for (const el of interactiveElements) {
-        const glass = el.querySelector('liquid-glass');
+        const glass = el.querySelector('.glass-panel');
         if (!glass) continue;
 
         const w = parseFloat(el.dataset.w);
@@ -1025,8 +1031,8 @@
       el.style.left = left + 'px';
       el.style.top = top + 'px';
 
-      // Apply rotation to liquid-glass directly to preserve backdrop-filter
-      const glass = el.querySelector('liquid-glass');
+      // Apply rotation to .glass-panel directly to preserve backdrop-filter
+      const glass = el.querySelector('.glass-panel');
       glass.style.width = w + 'px';
       glass.style.height = h + 'px';
       glass.style.borderRadius = radius + 'px';
@@ -1051,7 +1057,7 @@
       e.stopPropagation();
 
       const rect = element.getBoundingClientRect();
-      const glass = element.querySelector('liquid-glass');
+      const glass = element.querySelector('.glass-panel');
       const glassRect = glass.getBoundingClientRect();
 
       dragState = {
@@ -1099,7 +1105,7 @@
         if (dir.includes('s')) newH = Math.max(60, startH + dy);
         if (dir.includes('n')) { newH = Math.max(60, startH - dy); offsetY = startH - newH; }
 
-        const glass = element.querySelector('liquid-glass');
+        const glass = element.querySelector('.glass-panel');
         glass.style.width = newW + 'px';
         glass.style.height = newH + 'px';
 
@@ -1125,8 +1131,8 @@
           rotation = Math.round(rotation / 15) * 15;
         }
 
-        // Apply rotation to liquid-glass element directly to preserve backdrop-filter
-        const glass = element.querySelector('liquid-glass');
+        // Apply rotation to .glass-panel element directly to preserve backdrop-filter
+        const glass = element.querySelector('.glass-panel');
         glass.style.transform = `rotate(${rotation}deg)`;
         element.dataset.r = rotation;
 
@@ -1226,17 +1232,17 @@
       };
 
       allGlasses.forEach(glass => {
-        glass.setAttribute('refraction', values.refraction);
-        glass.setAttribute('thickness', values.thickness);
-        glass.setAttribute('gloss', values.gloss);
-        glass.setAttribute('softness', values.softness);
-        glass.setAttribute('saturation', values.saturation);
-        glass.setAttribute('dispersion', values.dispersion);
+        glass.style.setProperty('--liquidglass-refraction', values.refraction);
+        glass.style.setProperty('--liquidglass-thickness', values.thickness);
+        glass.style.setProperty('--liquidglass-gloss', values.gloss);
+        glass.style.setProperty('--liquidglass-softness', values.softness);
+        glass.style.setProperty('--liquidglass-saturation', values.saturation);
+        glass.style.setProperty('--liquidglass-dispersion', values.dispersion);
       });
 
       // Update selected element size/radius
       if (selectedElement) {
-        const glass = selectedElement.querySelector('liquid-glass');
+        const glass = selectedElement.querySelector('.glass-panel');
         const w = controls.width.value;
         const h = controls.height.value;
         const radius = controls.radius.value;
@@ -1286,15 +1292,15 @@
     }
 
     function updateCodeOutput(values) {
-      const code = `<liquid-glass
-  refraction="${values.refraction}"
-  thickness="${values.thickness}"
-  gloss="${values.gloss}"
-  softness="${values.softness}"
-  saturation="${values.saturation}"
-  dispersion="${values.dispersion}"
-  style="border-radius: ${controls.radius.value}px"
-></liquid-glass>`;
+      const code = `.glass-panel {
+  --liquidglass-refraction: ${values.refraction};
+  --liquidglass-thickness: ${values.thickness};
+  --liquidglass-gloss: ${values.gloss};
+  --liquidglass-softness: ${values.softness};
+  --liquidglass-saturation: ${values.saturation};
+  --liquidglass-dispersion: ${values.dispersion};
+  border-radius: ${controls.radius.value}px;
+}`;
       codeOutput.textContent = code;
     }
 

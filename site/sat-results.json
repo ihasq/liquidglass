@@ -1,0 +1,14 @@
+{
+  "params": {
+    "titleTop": 68,
+    "titleFontSize": 38,
+    "step1Top": 182,
+    "step2Top": 247,
+    "step3Top": 315,
+    "step4Top": 691,
+    "codeBlockHeight": 40,
+    "sliderLineWidth": 350,
+    "sliderTextOffset": 279
+  },
+  "score": 0.9092190589486019
+}

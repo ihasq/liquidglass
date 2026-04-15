@@ -20,9 +20,12 @@
         repeating-linear-gradient(0deg, transparent, transparent 19px, rgba(255,255,255,0.4) 19px, rgba(255,255,255,0.4) 20px),
         repeating-linear-gradient(90deg, transparent, transparent 19px, rgba(255,255,255,0.4) 19px, rgba(255,255,255,0.4) 20px);
     }
-    liquid-glass {
+    .glass-panel {
+      --liquidglass-refraction: 50;
+      --liquidglass-thickness: 50;
       position: absolute;
       transition: none;
+      background: rgba(255, 255, 255, 0.08);
     }
     #results {
       margin-top: 20px;
@@ -44,14 +47,14 @@
   <div id="status">Initializing...</div>
 
   <div class="container">
-    <liquid-glass id="el1" style="left:20px;top:20px;width:150px;height:100px;border-radius:16px;" refraction="50" thickness="50"></liquid-glass>
-    <liquid-glass id="el2" style="left:200px;top:150px;width:120px;height:80px;border-radius:12px;" refraction="50" thickness="50"></liquid-glass>
+    <div class="glass-panel" id="el1" style="left:20px;top:20px;width:150px;height:100px;border-radius:16px;"></div>
+    <div class="glass-panel" id="el2" style="left:200px;top:150px;width:120px;height:80px;border-radius:12px;"></div>
   </div>
 
   <div id="results"></div>
 
   <script type="module">
-    import { LiquidGlassElement } from '../src/index.ts';
+    import '../src/liquidglass.ts';
     import { generateCanvasDisplacementMap } from '../src/core/displacement/canvas-generator.ts';
 
     const status = document.getElementById('status');

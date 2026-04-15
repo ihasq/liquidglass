@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>liquid-glass Element Test</title>
+<title>Liquid Glass CSS Test</title>
 <style>
 * { box-sizing: border-box; }
 body {
@@ -45,19 +45,25 @@ h1 { color: white; margin-bottom: 20px; }
   overflow: hidden;
 }
 
-/* Content inside liquid-glass */
-liquid-glass {
+/* Glass panel with CSS Custom Properties */
+.glass-panel {
+  --liquidglass-refraction: 50;
+  --liquidglass-thickness: 50;
+  --liquidglass-gloss: 50;
+  --liquidglass-softness: 10;
+  --liquidglass-saturation: 45;
+  --liquidglass-dispersion: 30;
   width: 100%;
   height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 20px;
-  /* border-radius is set via CSS - filter adapts automatically! */
   border-radius: 30px;
+  background: rgba(255, 255, 255, 0.08);
 }
 
-liquid-glass .content {
+.glass-panel .content {
   color: #333;
   text-align: center;
   text-shadow: 0 1px 1px rgba(255,255,255,0.5);
@@ -92,19 +98,19 @@ liquid-glass .content {
 </head>
 <body>
 
-<h1>&lt;liquid-glass&gt; Web Component Test</h1>
+<h1>Liquid Glass CSS Custom Properties Test</h1>
 
 <div class="demo-grid">
   <div class="demo-item">
     <div class="test-bg">
-      <liquid-glass id="test-element">
+      <div class="glass-panel" id="test-element">
         <div class="content">
           <h3>Liquid Glass</h3>
-          <p>WebP-based (100% match)</p>
+          <p>CSS Custom Properties</p>
         </div>
-      </liquid-glass>
+      </div>
     </div>
-    <label>WebP + SVG Filter</label>
+    <label>CSS Custom Properties + SVG Filter</label>
   </div>
 
   <div class="demo-item">
@@ -162,26 +168,25 @@ liquid-glass .content {
 
 <div class="comparison">
   <h2>Developer View</h2>
-  <p>Open DevTools and inspect the &lt;liquid-glass&gt; element. You should see:</p>
+  <p>Open DevTools and inspect the .glass-panel element. You should see:</p>
   <ul>
-    <li>Clean element with no special attributes</li>
+    <li>Clean element with CSS custom properties</li>
     <li>No visible internal IDs (filter IDs are randomized)</li>
-    <li>Styles via :has() selector in adopted stylesheet</li>
+    <li>Styles via :has() selector</li>
     <li><strong>border-radius works like normal CSS</strong> - filter adapts automatically!</li>
   </ul>
   <p style="margin-top: 15px; opacity: 0.8;">
     Try changing the Border Radius slider above. The element's CSS border-radius
-    is modified, and the filter automatically detects the change via MutationObserver.
+    is modified, and the filter automatically detects the change.
   </p>
 </div>
 
 <script type="module">
-// Import the component (auto-registers)
-import '../src/liquid-glass-element.ts';
+import '../src/liquidglass.ts';
 
 const el = document.getElementById('test-element');
 
-// Wire up Liquid Glass effect parameters
+// Wire up parameters via CSS custom properties
 const params = ['refraction', 'thickness', 'gloss', 'softness', 'saturation'];
 
 params.forEach(param => {
@@ -189,12 +194,12 @@ params.forEach(param => {
   const val = document.getElementById('val-' + param);
 
   ctrl.addEventListener('input', () => {
-    el[param] = parseFloat(ctrl.value);
+    el.style.setProperty('--liquidglass-' + param, ctrl.value);
     val.textContent = ctrl.value;
   });
 });
 
-// Border radius is set via CSS - filter adapts automatically!
+// Border radius
 const radiusCtrl = document.getElementById('ctrl-radius');
 const radiusVal = document.getElementById('val-radius');
 radiusCtrl.addEventListener('input', () => {
@@ -202,9 +207,6 @@ radiusCtrl.addEventListener('input', () => {
   el.style.borderRadius = px;
   radiusVal.textContent = px;
 });
-
-// Log support status
-console.log('Browser support:', LiquidGlassElement.supported ? 'Full effect' : 'Fallback only');
 </script>
 </body>
 </html>

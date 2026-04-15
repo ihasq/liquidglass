@@ -117,20 +117,25 @@
       justify-content: center;
     }
 
-    liquid-glass {
+    .glass-panel {
+      --liquidglass-refraction: 50;
+      --liquidglass-thickness: 50;
+      --liquidglass-softness: 10;
+      --liquidglass-gloss: 50;
       padding: 30px;
       color: white;
       font-weight: 600;
       text-align: center;
       cursor: grab;
       user-select: none;
+      background: rgba(255, 255, 255, 0.08);
     }
 
-    liquid-glass:active {
+    .glass-panel:active {
       cursor: grabbing;
     }
 
-    liquid-glass.draggable {
+    .glass-panel.draggable {
       position: absolute;
       transition: none;
     }
@@ -219,7 +224,7 @@
     <div class="demo-card">
       <h3>Fixed: 200x100, radius 20px</h3>
       <div class="glass-container">
-        <liquid-glass id="glass1">Liquid Glass</liquid-glass>
+        <div class="glass-panel" id="glass1">Liquid Glass</div>
       </div>
       <div class="info" id="info1">Loading...</div>
     </div>
@@ -227,7 +232,7 @@
     <div class="demo-card">
       <h3>Circle: 150x150, radius 50px</h3>
       <div class="glass-container">
-        <liquid-glass id="glass2">Circle</liquid-glass>
+        <div class="glass-panel" id="glass2">Circle</div>
       </div>
       <div class="info" id="info2">Loading...</div>
     </div>
@@ -235,7 +240,7 @@
     <div class="demo-card">
       <h3>Wide: 250x80, radius 10px</h3>
       <div class="glass-container">
-        <liquid-glass id="glass3">Wide Panel</liquid-glass>
+        <div class="glass-panel" id="glass3">Wide Panel</div>
       </div>
       <div class="info" id="info3">Loading...</div>
     </div>
@@ -243,7 +248,7 @@
     <div class="demo-card">
       <h3>Dynamic (controlled by sliders)</h3>
       <div class="glass-container">
-        <liquid-glass id="glass4">Dynamic</liquid-glass>
+        <div class="glass-panel" id="glass4">Dynamic</div>
       </div>
       <div class="info" id="info4">Loading...</div>
     </div>
@@ -267,7 +272,7 @@
   </script>
 
   <script type="module">
-    import { LiquidGlassElement } from '../src/index.ts';
+    import '../src/liquidglass.ts';
 
     // Update info for each glass element
     function updateInfo(id) {
@@ -316,25 +321,23 @@
     document.getElementById('refraction').addEventListener('input', e => {
       const val = e.target.value;
       document.getElementById('refraction-val').textContent = val;
-      glass4.setAttribute('refraction', val);
+      glass4.style.setProperty('--liquidglass-refraction', val);
     });
 
     document.getElementById('gloss').addEventListener('input', e => {
       const val = e.target.value;
       document.getElementById('gloss-val').textContent = val;
-      glass4.setAttribute('gloss', val);
+      glass4.style.setProperty('--liquidglass-gloss', val);
     });
 
     document.getElementById('thickness').addEventListener('input', e => {
       const val = e.target.value;
       document.getElementById('thickness-val').textContent = val;
-      glass4.setAttribute('thickness', val);
+      glass4.style.setProperty('--liquidglass-thickness', val);
     });
 
-    console.log('LiquidGlassElement supported:', LiquidGlassElement.supported);
-
     // Drag functionality
-    document.querySelectorAll('liquid-glass').forEach(el => {
+    document.querySelectorAll('.glass-panel').forEach(el => {
       el.classList.add('draggable');
 
       // Set initial position
