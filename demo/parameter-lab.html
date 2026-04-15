@@ -1,0 +1,1278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Liquid Glass - Parameter Lab</title>
+  <style>
+    :root {
+      --bg-primary: #1a1a2e;
+      --bg-secondary: #16213e;
+      --accent: #0f3460;
+      --highlight: #e94560;
+      --text: #eaeaea;
+      --text-dim: #8892b0;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      min-height: 100vh;
+      font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg-primary);
+      color: var(--text);
+      display: flex;
+      overflow: hidden;
+    }
+
+    /* Animated Background - CSS tiling with background-position */
+    .background-content {
+      position: fixed;
+      inset: 0;
+      z-index: -1;
+      background-repeat: repeat;
+      background-size: auto;
+      will-change: background-position;
+    }
+
+    /* Control Panel */
+    .control-panel {
+      width: 380px;
+      min-width: 380px;
+      background: rgba(22, 33, 62, 0.95);
+      border-right: 1px solid rgba(255,255,255,0.1);
+      padding: 24px;
+      overflow-y: auto;
+      max-height: 100vh;
+    }
+
+    .panel-header {
+      margin-bottom: 24px;
+    }
+
+    .panel-header h1 {
+      font-size: 20px;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+
+    .panel-header p {
+      font-size: 12px;
+      color: var(--text-dim);
+    }
+
+    .section {
+      margin-bottom: 28px;
+    }
+
+    .section-title {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--text-dim);
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .section-title::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: rgba(255,255,255,0.1);
+    }
+
+    .control {
+      margin-bottom: 16px;
+    }
+
+    .control-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+
+    .control-label {
+      font-size: 13px;
+      font-weight: 500;
+    }
+
+    .control-value {
+      font-size: 12px;
+      color: var(--highlight);
+      font-family: 'SF Mono', Monaco, monospace;
+      background: rgba(233, 69, 96, 0.15);
+      padding: 2px 8px;
+      border-radius: 4px;
+    }
+
+    .control-desc {
+      font-size: 11px;
+      color: var(--text-dim);
+      margin-bottom: 8px;
+    }
+
+    input[type="range"] {
+      width: 100%;
+      height: 6px;
+      -webkit-appearance: none;
+      background: rgba(255,255,255,0.1);
+      border-radius: 3px;
+      outline: none;
+    }
+
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 16px;
+      height: 16px;
+      background: var(--highlight);
+      border-radius: 50%;
+      cursor: pointer;
+      box-shadow: 0 2px 6px rgba(233, 69, 96, 0.4);
+    }
+
+    input[type="color"] {
+      width: 100%;
+      height: 36px;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      background: transparent;
+    }
+
+    .preset-buttons {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    .preset-btn {
+      padding: 10px 12px;
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 8px;
+      background: rgba(255,255,255,0.05);
+      color: var(--text);
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .preset-btn:hover {
+      background: rgba(233, 69, 96, 0.2);
+      border-color: var(--highlight);
+    }
+
+    .preset-btn.active {
+      background: var(--highlight);
+      border-color: var(--highlight);
+    }
+
+    /* Preview Area */
+    .preview-area {
+      flex: 1;
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* Interactive Element Wrapper */
+    .interactive-element {
+      position: absolute;
+      cursor: move;
+      user-select: none;
+    }
+
+    .interactive-element.selected::before {
+      content: '';
+      position: absolute;
+      inset: -4px;
+      border: 2px solid var(--highlight);
+      border-radius: inherit;
+      pointer-events: none;
+    }
+
+    .interactive-element.dragging {
+      z-index: 1000;
+    }
+
+    /*
+     * Critical: liquid-glass needs its own stacking context for backdrop-filter.
+     * The parent's transform is applied via a wrapper div instead.
+     */
+    .interactive-element liquid-glass {
+      /* Force GPU layer for backdrop-filter stability */
+      -webkit-transform: translate3d(0, 0, 0);
+      transform: translate3d(0, 0, 0);
+      -webkit-backface-visibility: hidden;
+      backface-visibility: hidden;
+    }
+
+    /* Resize Handles */
+    .resize-handle {
+      position: absolute;
+      width: 12px;
+      height: 12px;
+      background: var(--highlight);
+      border: 2px solid white;
+      border-radius: 50%;
+      opacity: 0;
+      transition: opacity 0.2s;
+      z-index: 10;
+    }
+
+    .interactive-element.selected .resize-handle,
+    .interactive-element:hover .resize-handle {
+      opacity: 1;
+    }
+
+    .resize-handle.nw { top: -6px; left: -6px; cursor: nw-resize; }
+    .resize-handle.ne { top: -6px; right: -6px; cursor: ne-resize; }
+    .resize-handle.sw { bottom: -6px; left: -6px; cursor: sw-resize; }
+    .resize-handle.se { bottom: -6px; right: -6px; cursor: se-resize; }
+    .resize-handle.n { top: -6px; left: 50%; transform: translateX(-50%); cursor: n-resize; }
+    .resize-handle.s { bottom: -6px; left: 50%; transform: translateX(-50%); cursor: s-resize; }
+    .resize-handle.e { top: 50%; right: -6px; transform: translateY(-50%); cursor: e-resize; }
+    .resize-handle.w { top: 50%; left: -6px; transform: translateY(-50%); cursor: w-resize; }
+
+    /* Rotate Handle */
+    .rotate-handle {
+      position: absolute;
+      top: -40px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 20px;
+      height: 20px;
+      background: var(--highlight);
+      border: 2px solid white;
+      border-radius: 50%;
+      cursor: grab;
+      opacity: 0;
+      transition: opacity 0.2s;
+      z-index: 10;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .rotate-handle::before {
+      content: '↻';
+      color: white;
+      font-size: 12px;
+      font-weight: bold;
+    }
+
+    .rotate-handle::after {
+      content: '';
+      position: absolute;
+      bottom: -22px;
+      left: 50%;
+      width: 2px;
+      height: 20px;
+      background: var(--highlight);
+      transform: translateX(-50%);
+    }
+
+    .interactive-element.selected .rotate-handle,
+    .interactive-element:hover .rotate-handle {
+      opacity: 1;
+    }
+
+    .rotate-handle:active { cursor: grabbing; }
+
+    /* Glass Element */
+    liquid-glass {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 32px 48px;
+      color: white;
+      text-align: center;
+      /* No default shadow - clean visual testing */
+    }
+
+    liquid-glass h2 {
+      font-size: 18px;
+      font-weight: 600;
+      margin-bottom: 8px;
+      text-shadow: 0 2px 8px rgba(0,0,0,0.3);
+      pointer-events: none;
+    }
+
+    liquid-glass p {
+      font-size: 13px;
+      opacity: 0.8;
+      pointer-events: none;
+    }
+
+    /* Element Labels */
+    .element-label {
+      position: absolute;
+      bottom: -28px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 11px;
+      color: var(--text-dim);
+      white-space: nowrap;
+      opacity: 0;
+      transition: opacity 0.2s;
+    }
+
+    .interactive-element.selected .element-label,
+    .interactive-element:hover .element-label {
+      opacity: 1;
+    }
+
+    /* Code Output */
+    .code-output {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      background: rgba(22, 33, 62, 0.95);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 12px;
+      padding: 16px;
+      max-width: 400px;
+      font-family: 'SF Mono', Monaco, monospace;
+      font-size: 12px;
+    }
+
+    .code-output-title {
+      font-size: 11px;
+      color: var(--text-dim);
+      margin-bottom: 8px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .code-output code {
+      display: block;
+      white-space: pre-wrap;
+      color: #43e97b;
+      line-height: 1.5;
+    }
+
+    .copy-btn {
+      margin-top: 12px;
+      padding: 8px 16px;
+      background: var(--highlight);
+      border: none;
+      border-radius: 6px;
+      color: white;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      width: 100%;
+    }
+
+    .copy-btn:hover {
+      opacity: 0.9;
+    }
+
+    /* Stats */
+    .stats {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      background: rgba(22, 33, 62, 0.9);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 8px;
+      padding: 12px 16px;
+      font-size: 11px;
+      font-family: 'SF Mono', Monaco, monospace;
+    }
+
+    .stat-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 4px;
+    }
+
+    .stat-row:last-child { margin-bottom: 0; }
+
+    .stat-label { color: var(--text-dim); }
+    .stat-value { color: #43e97b; }
+
+    /* Floating Background Control */
+    .bg-control {
+      position: absolute;
+      top: 16px;
+      left: 16px;
+      background: rgba(22, 33, 62, 0.9);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 8px;
+      padding: 12px 16px;
+      font-size: 11px;
+      z-index: 100;
+    }
+
+    .bg-control-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 10px;
+    }
+
+    .bg-control-title {
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-dim);
+    }
+
+    .bg-play-btn {
+      width: 24px;
+      height: 24px;
+      border: none;
+      border-radius: 4px;
+      background: rgba(255,255,255,0.1);
+      color: var(--text);
+      font-size: 12px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.2s;
+    }
+
+    .bg-play-btn:hover {
+      background: rgba(255,255,255,0.2);
+    }
+
+    .bg-play-btn.paused {
+      color: #43e97b;
+    }
+
+    .bg-control-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 6px;
+    }
+
+    .bg-control-row:last-child { margin-bottom: 0; }
+
+    .bg-control-row label {
+      font-size: 11px;
+      color: var(--text-dim);
+      min-width: 50px;
+    }
+
+    .bg-control-row input[type="range"] {
+      width: 80px;
+      height: 4px;
+    }
+
+    .bg-control-row .value {
+      font-size: 11px;
+      color: #43e97b;
+      min-width: 24px;
+      text-align: center;
+    }
+
+    /* Responsive */
+    @media (max-width: 900px) {
+      body { flex-direction: column; }
+      .control-panel {
+        width: 100%;
+        min-width: auto;
+        max-height: none;
+        border-right: none;
+        border-bottom: 1px solid rgba(255,255,255,0.1);
+      }
+    }
+  </style>
+</head>
+<body>
+  <!-- Background Content - tile pattern set via JS -->
+  <div class="background-content" id="bg-content"></div>
+
+  <!-- Control Panel -->
+  <aside class="control-panel">
+    <header class="panel-header">
+      <h1>Liquid Glass Lab</h1>
+      <p>Explore Apple-style glass effect parameters</p>
+    </header>
+
+    <!-- Presets -->
+    <section class="section">
+      <div class="section-title">Presets</div>
+      <div class="preset-buttons">
+        <button class="preset-btn" data-preset="default">Default</button>
+        <button class="preset-btn" data-preset="subtle">Subtle</button>
+        <button class="preset-btn" data-preset="bold">Bold</button>
+        <button class="preset-btn" data-preset="frosted">Frosted</button>
+        <button class="preset-btn" data-preset="crystal">Crystal</button>
+        <button class="preset-btn" data-preset="ios">iOS Style</button>
+      </div>
+    </section>
+
+    <!-- Refraction -->
+    <section class="section">
+      <div class="section-title">Refraction</div>
+
+      <div class="control">
+        <div class="control-header">
+          <span class="control-label">Refraction Intensity</span>
+          <span class="control-value" id="refraction-val">50</span>
+        </div>
+        <div class="control-desc">How much the background is distorted through the glass</div>
+        <input type="range" id="refraction" min="0" max="100" value="50">
+      </div>
+
+      <div class="control">
+        <div class="control-header">
+          <span class="control-label">Thickness / Edge Profile</span>
+          <span class="control-value" id="thickness-val">50</span>
+        </div>
+        <div class="control-desc">Steepness of the lens edge - affects refraction falloff</div>
+        <input type="range" id="thickness" min="0" max="100" value="50">
+      </div>
+    </section>
+
+    <!-- Material -->
+    <section class="section">
+      <div class="section-title">Glass Material</div>
+
+      <div class="control">
+        <div class="control-header">
+          <span class="control-label">Blur / Softness</span>
+          <span class="control-value" id="softness-val">10</span>
+        </div>
+        <div class="control-desc">Background blur amount - higher = more frosted</div>
+        <input type="range" id="softness" min="0" max="100" value="10">
+      </div>
+
+      <div class="control">
+        <div class="control-header">
+          <span class="control-label">Saturation Boost</span>
+          <span class="control-value" id="saturation-val">45</span>
+        </div>
+        <div class="control-desc">Color vibrancy through the glass</div>
+        <input type="range" id="saturation" min="0" max="100" value="45">
+      </div>
+    </section>
+
+    <!-- Specular -->
+    <section class="section">
+      <div class="section-title">Specular Highlights</div>
+
+      <div class="control">
+        <div class="control-header">
+          <span class="control-label">Gloss / Rim Light</span>
+          <span class="control-value" id="gloss-val">50</span>
+        </div>
+        <div class="control-desc">Intensity of edge highlights - creates depth illusion</div>
+        <input type="range" id="gloss" min="0" max="100" value="50">
+      </div>
+    </section>
+
+    <!-- Geometry -->
+    <section class="section">
+      <div class="section-title">Geometry</div>
+
+      <div class="control">
+        <div class="control-header">
+          <span class="control-label">Corner Radius</span>
+          <span class="control-value" id="radius-val">24</span>
+        </div>
+        <div class="control-desc">Border radius - affects displacement map shape</div>
+        <input type="range" id="radius" min="0" max="100" value="24">
+      </div>
+
+      <div class="control">
+        <div class="control-header">
+          <span class="control-label">Width</span>
+          <span class="control-value" id="width-val">320</span>
+        </div>
+        <input type="range" id="width" min="100" max="600" value="320">
+      </div>
+
+      <div class="control">
+        <div class="control-header">
+          <span class="control-label">Height</span>
+          <span class="control-value" id="height-val">200</span>
+        </div>
+        <input type="range" id="height" min="80" max="400" value="200">
+      </div>
+    </section>
+
+    <!-- Visual -->
+    <section class="section">
+      <div class="section-title">Visual</div>
+
+      <div class="control">
+        <div class="control-header">
+          <span class="control-label">Background Tint</span>
+        </div>
+        <input type="color" id="tint" value="#ffffff">
+      </div>
+
+      <div class="control">
+        <div class="control-header">
+          <span class="control-label">Tint Opacity</span>
+          <span class="control-value" id="tint-opacity-val">8</span>
+        </div>
+        <input type="range" id="tint-opacity" min="0" max="50" value="8">
+      </div>
+    </section>
+
+    <!-- Reset -->
+    <section class="section">
+      <div class="section-title">Actions</div>
+      <div class="preset-buttons">
+        <button class="preset-btn" id="reset-positions-btn" style="background: rgba(67, 233, 123, 0.2); border-color: #43e97b;">
+          Reset Positions
+        </button>
+        <button class="preset-btn" id="reset-all-btn" style="background: rgba(233, 69, 96, 0.2); border-color: #e94560;">
+          Reset All
+        </button>
+      </div>
+    </section>
+  </aside>
+
+  <!-- Preview Area -->
+  <main class="preview-area" id="preview-area">
+    <!-- Background Control -->
+    <div class="bg-control">
+      <div class="bg-control-header">
+        <div class="bg-control-title">Background</div>
+        <button class="bg-play-btn" id="bg-play-btn" title="Pause">&#9208;</button>
+      </div>
+      <div class="bg-control-row">
+        <label>Speed</label>
+        <input type="range" id="bg-speed" min="0" max="60" value="30">
+        <span class="value" id="bg-speed-val">30</span>
+      </div>
+      <div class="bg-control-row">
+        <label>Direction</label>
+        <input type="range" id="bg-direction" min="0" max="315" step="45" value="135">
+        <span class="value" id="bg-direction-val">↘</span>
+      </div>
+    </div>
+
+    <!-- Interactive Element 1 -->
+    <div class="interactive-element" id="element-1" data-x="50%" data-y="40%" data-w="320" data-h="200" data-r="0" data-radius="24">
+      <liquid-glass style="width: 320px; height: 200px; border-radius: 24px;">
+        <h2>Liquid Glass</h2>
+        <p>Drag, resize, rotate me!</p>
+      </liquid-glass>
+      <div class="rotate-handle" data-action="rotate"></div>
+      <div class="resize-handle nw" data-action="resize" data-dir="nw"></div>
+      <div class="resize-handle ne" data-action="resize" data-dir="ne"></div>
+      <div class="resize-handle sw" data-action="resize" data-dir="sw"></div>
+      <div class="resize-handle se" data-action="resize" data-dir="se"></div>
+      <div class="resize-handle n" data-action="resize" data-dir="n"></div>
+      <div class="resize-handle s" data-action="resize" data-dir="s"></div>
+      <div class="resize-handle e" data-action="resize" data-dir="e"></div>
+      <div class="resize-handle w" data-action="resize" data-dir="w"></div>
+      <div class="element-label">Main (320×200)</div>
+    </div>
+
+    <!-- Interactive Element 2 -->
+    <div class="interactive-element" id="element-2" data-x="25%" data-y="70%" data-w="150" data-h="150" data-r="0" data-radius="20">
+      <liquid-glass style="width: 150px; height: 150px; border-radius: 20px;">
+        <h2>Small</h2>
+        <p>150px</p>
+      </liquid-glass>
+      <div class="rotate-handle" data-action="rotate"></div>
+      <div class="resize-handle nw" data-action="resize" data-dir="nw"></div>
+      <div class="resize-handle ne" data-action="resize" data-dir="ne"></div>
+      <div class="resize-handle sw" data-action="resize" data-dir="sw"></div>
+      <div class="resize-handle se" data-action="resize" data-dir="se"></div>
+      <div class="resize-handle n" data-action="resize" data-dir="n"></div>
+      <div class="resize-handle s" data-action="resize" data-dir="s"></div>
+      <div class="resize-handle e" data-action="resize" data-dir="e"></div>
+      <div class="resize-handle w" data-action="resize" data-dir="w"></div>
+      <div class="element-label">Small (150×150)</div>
+    </div>
+
+    <!-- Interactive Element 3 -->
+    <div class="interactive-element" id="element-3" data-x="75%" data-y="65%" data-w="200" data-h="140" data-r="0" data-radius="16">
+      <liquid-glass style="width: 200px; height: 140px; border-radius: 16px;">
+        <h2>Medium</h2>
+        <p>200×140</p>
+      </liquid-glass>
+      <div class="rotate-handle" data-action="rotate"></div>
+      <div class="resize-handle nw" data-action="resize" data-dir="nw"></div>
+      <div class="resize-handle ne" data-action="resize" data-dir="ne"></div>
+      <div class="resize-handle sw" data-action="resize" data-dir="sw"></div>
+      <div class="resize-handle se" data-action="resize" data-dir="se"></div>
+      <div class="resize-handle n" data-action="resize" data-dir="n"></div>
+      <div class="resize-handle s" data-action="resize" data-dir="s"></div>
+      <div class="resize-handle e" data-action="resize" data-dir="e"></div>
+      <div class="resize-handle w" data-action="resize" data-dir="w"></div>
+      <div class="element-label">Medium (200×140)</div>
+    </div>
+  </main>
+
+  <!-- Stats -->
+  <div class="stats">
+    <div class="stat-row">
+      <span class="stat-label">Elements:</span>
+      <span class="stat-value" id="stat-elements">3</span>
+    </div>
+    <div class="stat-row">
+      <span class="stat-label">Visible:</span>
+      <span class="stat-value" id="stat-visible">3</span>
+    </div>
+    <div class="stat-row">
+      <span class="stat-label">FPS:</span>
+      <span class="stat-value" id="stat-fps">--</span>
+    </div>
+  </div>
+
+  <!-- Code Output -->
+  <div class="code-output">
+    <div class="code-output-title">Generated Code</div>
+    <code id="code-output">&lt;liquid-glass
+  refraction="50"
+  thickness="50"
+  gloss="50"
+  softness="10"
+  saturation="45"
+  style="border-radius: 24px"
+&gt;&lt;/liquid-glass&gt;</code>
+    <button class="copy-btn" id="copy-btn">Copy to Clipboard</button>
+  </div>
+
+  <!-- Generate Background Tile Pattern -->
+  <script>
+    (function() {
+      // Create a 3x2 tile (6 colors) with text labels
+      const cellSize = 62;
+      const cols = 3;
+      const rows = 2;
+      const canvas = document.createElement('canvas');
+      canvas.width = cellSize * cols;
+      canvas.height = cellSize * rows;
+      const ctx = canvas.getContext('2d');
+
+      const colors = ['#ff0000', '#00ff00', '#0000ff', '#ffff00', '#00ffff', '#ff00ff'];
+      const textColors = ['#000', '#000', '#fff', '#000', '#000', '#000'];
+      const chars = 'ABCDEF';
+
+      for (let i = 0; i < 6; i++) {
+        const x = (i % cols) * cellSize;
+        const y = Math.floor(i / cols) * cellSize;
+
+        // Fill cell
+        ctx.fillStyle = colors[i];
+        ctx.fillRect(x, y, cellSize, cellSize);
+
+        // Border
+        ctx.strokeStyle = '#000';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(x + 0.5, y + 0.5, cellSize - 1, cellSize - 1);
+
+        // Text
+        ctx.fillStyle = textColors[i];
+        ctx.font = 'bold 20px -apple-system, BlinkMacSystemFont, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(chars[i], x + cellSize / 2, y + cellSize / 2);
+      }
+
+      // Set as repeating background
+      const bgContent = document.getElementById('bg-content');
+      bgContent.style.backgroundImage = `url(${canvas.toDataURL()})`;
+    })();
+  </script>
+
+  <script type="module">
+    import { LiquidGlassElement } from '../src/index.ts';
+
+    // ============================================================
+    // State
+    // ============================================================
+    const previewArea = document.getElementById('preview-area');
+    const bgContent = document.querySelector('.background-content');
+    const allGlasses = document.querySelectorAll('liquid-glass');
+    const interactiveElements = document.querySelectorAll('.interactive-element');
+    const codeOutput = document.getElementById('code-output');
+
+    let selectedElement = null;
+    let dragState = null;
+
+    // Initial element positions (for reset)
+    const initialPositions = {
+      'element-1': { x: '50%', y: '40%', w: 320, h: 200, r: 0, radius: 24 },
+      'element-2': { x: '25%', y: '70%', w: 150, h: 150, r: 0, radius: 20 },
+      'element-3': { x: '75%', y: '65%', w: 200, h: 140, r: 0, radius: 16 }
+    };
+
+    // Controls
+    const controls = {
+      refraction: document.getElementById('refraction'),
+      thickness: document.getElementById('thickness'),
+      softness: document.getElementById('softness'),
+      saturation: document.getElementById('saturation'),
+      gloss: document.getElementById('gloss'),
+      radius: document.getElementById('radius'),
+      width: document.getElementById('width'),
+      height: document.getElementById('height'),
+      tint: document.getElementById('tint'),
+      tintOpacity: document.getElementById('tint-opacity'),
+      bgSpeed: document.getElementById('bg-speed'),
+      bgDirection: document.getElementById('bg-direction')
+    };
+
+    // Presets
+    const presets = {
+      default: { refraction: 50, thickness: 50, gloss: 50, softness: 10, saturation: 45, radius: 24 },
+      subtle: { refraction: 30, thickness: 40, gloss: 30, softness: 5, saturation: 30, radius: 16 },
+      bold: { refraction: 80, thickness: 70, gloss: 70, softness: 15, saturation: 60, radius: 32 },
+      frosted: { refraction: 40, thickness: 50, gloss: 40, softness: 50, saturation: 20, radius: 20 },
+      crystal: { refraction: 70, thickness: 60, gloss: 80, softness: 0, saturation: 70, radius: 28 },
+      ios: { refraction: 45, thickness: 55, gloss: 55, softness: 20, saturation: 50, radius: 22 }
+    };
+
+    // ============================================================
+    // Element Positioning
+    // ============================================================
+    function positionElement(el) {
+      const x = el.dataset.x;
+      const y = el.dataset.y;
+      const w = parseFloat(el.dataset.w);
+      const h = parseFloat(el.dataset.h);
+      const r = parseFloat(el.dataset.r) || 0;
+      const radius = parseFloat(el.dataset.radius) || 20;
+
+      // Convert percentage to pixels if needed
+      const rect = previewArea.getBoundingClientRect();
+      let left = x.includes('%') ? (parseFloat(x) / 100) * rect.width : parseFloat(x);
+      let top = y.includes('%') ? (parseFloat(y) / 100) * rect.height : parseFloat(y);
+
+      // Center the element
+      left -= w / 2;
+      top -= h / 2;
+
+      el.style.left = left + 'px';
+      el.style.top = top + 'px';
+
+      // Apply rotation to liquid-glass directly to preserve backdrop-filter
+      const glass = el.querySelector('liquid-glass');
+      glass.style.width = w + 'px';
+      glass.style.height = h + 'px';
+      glass.style.borderRadius = radius + 'px';
+      glass.style.transform = `rotate(${r}deg)`;
+
+      // Update label
+      const label = el.querySelector('.element-label');
+      if (label) {
+        label.textContent = `${Math.round(w)}×${Math.round(h)} @ ${Math.round(r)}°`;
+      }
+    }
+
+    function initializePositions() {
+      interactiveElements.forEach(el => positionElement(el));
+    }
+
+    // ============================================================
+    // Drag & Drop
+    // ============================================================
+    function startDrag(e, element, action, dir) {
+      e.preventDefault();
+      e.stopPropagation();
+
+      const rect = element.getBoundingClientRect();
+      const glass = element.querySelector('liquid-glass');
+      const glassRect = glass.getBoundingClientRect();
+
+      dragState = {
+        element,
+        action,
+        dir,
+        startX: e.clientX,
+        startY: e.clientY,
+        startLeft: rect.left - previewArea.getBoundingClientRect().left,
+        startTop: rect.top - previewArea.getBoundingClientRect().top,
+        startW: glassRect.width,
+        startH: glassRect.height,
+        startR: parseFloat(element.dataset.r) || 0,
+        centerX: rect.left + rect.width / 2,
+        centerY: rect.top + rect.height / 2
+      };
+
+      element.classList.add('dragging');
+      selectElement(element);
+    }
+
+    function onDrag(e) {
+      if (!dragState) return;
+
+      const { element, action, dir, startX, startY, startLeft, startTop, startW, startH, startR, centerX, centerY } = dragState;
+      const dx = e.clientX - startX;
+      const dy = e.clientY - startY;
+
+      if (action === 'move') {
+        element.style.left = (startLeft + dx) + 'px';
+        element.style.top = (startTop + dy) + 'px';
+        // Update data attributes
+        const rect = previewArea.getBoundingClientRect();
+        element.dataset.x = (startLeft + dx + startW / 2) + 'px';
+        element.dataset.y = (startTop + dy + startH / 2) + 'px';
+      }
+      else if (action === 'resize') {
+        let newW = startW;
+        let newH = startH;
+        let offsetX = 0;
+        let offsetY = 0;
+
+        if (dir.includes('e')) newW = Math.max(80, startW + dx);
+        if (dir.includes('w')) { newW = Math.max(80, startW - dx); offsetX = startW - newW; }
+        if (dir.includes('s')) newH = Math.max(60, startH + dy);
+        if (dir.includes('n')) { newH = Math.max(60, startH - dy); offsetY = startH - newH; }
+
+        const glass = element.querySelector('liquid-glass');
+        glass.style.width = newW + 'px';
+        glass.style.height = newH + 'px';
+
+        element.style.left = (startLeft + offsetX) + 'px';
+        element.style.top = (startTop + offsetY) + 'px';
+
+        element.dataset.w = newW;
+        element.dataset.h = newH;
+
+        // Update label
+        const label = element.querySelector('.element-label');
+        if (label) {
+          label.textContent = `${Math.round(newW)}×${Math.round(newH)} @ ${Math.round(parseFloat(element.dataset.r) || 0)}°`;
+        }
+      }
+      else if (action === 'rotate') {
+        const angle = Math.atan2(e.clientY - centerY, e.clientX - centerX);
+        const startAngle = Math.atan2(startY - centerY, startX - centerX);
+        let rotation = startR + (angle - startAngle) * (180 / Math.PI);
+
+        // Snap to 15 degree increments if shift held
+        if (e.shiftKey) {
+          rotation = Math.round(rotation / 15) * 15;
+        }
+
+        // Apply rotation to liquid-glass element directly to preserve backdrop-filter
+        const glass = element.querySelector('liquid-glass');
+        glass.style.transform = `rotate(${rotation}deg)`;
+        element.dataset.r = rotation;
+
+        // Update label
+        const label = element.querySelector('.element-label');
+        if (label) {
+          const w = parseFloat(element.dataset.w);
+          const h = parseFloat(element.dataset.h);
+          label.textContent = `${Math.round(w)}×${Math.round(h)} @ ${Math.round(rotation)}°`;
+        }
+      }
+    }
+
+    function endDrag() {
+      if (dragState) {
+        dragState.element.classList.remove('dragging');
+        dragState = null;
+      }
+    }
+
+    function selectElement(el) {
+      interactiveElements.forEach(e => e.classList.remove('selected'));
+      if (el) {
+        el.classList.add('selected');
+        selectedElement = el;
+
+        // Update controls with selected element's values
+        const w = parseFloat(el.dataset.w);
+        const h = parseFloat(el.dataset.h);
+        const radius = parseFloat(el.dataset.radius);
+        controls.width.value = w;
+        controls.height.value = h;
+        controls.radius.value = radius;
+        document.getElementById('width-val').textContent = Math.round(w);
+        document.getElementById('height-val').textContent = Math.round(h);
+        document.getElementById('radius-val').textContent = Math.round(radius);
+      } else {
+        selectedElement = null;
+      }
+    }
+
+    // ============================================================
+    // Event Listeners for Interaction
+    // ============================================================
+    interactiveElements.forEach(el => {
+      // Click to select
+      el.addEventListener('mousedown', (e) => {
+        if (e.target.dataset.action) {
+          startDrag(e, el, e.target.dataset.action, e.target.dataset.dir);
+        } else {
+          startDrag(e, el, 'move', null);
+        }
+      });
+    });
+
+    document.addEventListener('mousemove', onDrag);
+    document.addEventListener('mouseup', endDrag);
+
+    // Deselect when clicking outside
+    previewArea.addEventListener('mousedown', (e) => {
+      if (e.target === previewArea) {
+        selectElement(null);
+      }
+    });
+
+    // ============================================================
+    // Glass Parameter Updates
+    // ============================================================
+    function updateAllGlasses() {
+      const values = {
+        refraction: controls.refraction.value,
+        thickness: controls.thickness.value,
+        gloss: controls.gloss.value,
+        softness: controls.softness.value,
+        saturation: controls.saturation.value
+      };
+
+      allGlasses.forEach(glass => {
+        glass.setAttribute('refraction', values.refraction);
+        glass.setAttribute('thickness', values.thickness);
+        glass.setAttribute('gloss', values.gloss);
+        glass.setAttribute('softness', values.softness);
+        glass.setAttribute('saturation', values.saturation);
+      });
+
+      // Update selected element size/radius
+      if (selectedElement) {
+        const glass = selectedElement.querySelector('liquid-glass');
+        const w = controls.width.value;
+        const h = controls.height.value;
+        const radius = controls.radius.value;
+
+        glass.style.width = w + 'px';
+        glass.style.height = h + 'px';
+        glass.style.borderRadius = radius + 'px';
+
+        selectedElement.dataset.w = w;
+        selectedElement.dataset.h = h;
+        selectedElement.dataset.radius = radius;
+
+        const label = selectedElement.querySelector('.element-label');
+        if (label) {
+          label.textContent = `${w}×${h} @ ${Math.round(parseFloat(selectedElement.dataset.r) || 0)}°`;
+        }
+      }
+
+      // Update tint
+      const tintColor = controls.tint.value;
+      const tintOpacity = controls.tintOpacity.value / 100;
+      const r = parseInt(tintColor.slice(1, 3), 16);
+      const g = parseInt(tintColor.slice(3, 5), 16);
+      const b = parseInt(tintColor.slice(5, 7), 16);
+      allGlasses.forEach(glass => {
+        glass.style.background = `rgba(${r}, ${g}, ${b}, ${tintOpacity})`;
+      });
+
+      // Update value displays
+      document.getElementById('refraction-val').textContent = values.refraction;
+      document.getElementById('thickness-val').textContent = values.thickness;
+      document.getElementById('gloss-val').textContent = values.gloss;
+      document.getElementById('softness-val').textContent = values.softness;
+      document.getElementById('saturation-val').textContent = values.saturation;
+      document.getElementById('radius-val').textContent = controls.radius.value;
+      document.getElementById('width-val').textContent = controls.width.value;
+      document.getElementById('height-val').textContent = controls.height.value;
+      document.getElementById('tint-opacity-val').textContent = controls.tintOpacity.value;
+
+      updateCodeOutput(values);
+    }
+
+    function updateCodeOutput(values) {
+      const code = `<liquid-glass
+  refraction="${values.refraction}"
+  thickness="${values.thickness}"
+  gloss="${values.gloss}"
+  softness="${values.softness}"
+  saturation="${values.saturation}"
+  style="border-radius: ${controls.radius.value}px"
+></liquid-glass>`;
+      codeOutput.textContent = code;
+    }
+
+    // ============================================================
+    // Background Animation (requestAnimationFrame based)
+    // ============================================================
+    const bgAnim = {
+      x: 0,
+      y: 0,
+      speed: 30,
+      direction: 135,
+      playing: true,
+      lastTime: 0,
+      frameId: null
+    };
+
+    const bgPlayBtn = document.getElementById('bg-play-btn');
+
+    function updateBackgroundAnimation() {
+      bgAnim.speed = parseFloat(controls.bgSpeed.value);
+      bgAnim.direction = parseFloat(controls.bgDirection.value);
+
+      document.getElementById('bg-speed-val').textContent = bgAnim.speed;
+
+      // Direction arrows
+      const arrows = ['→', '↘', '↓', '↙', '←', '↖', '↑', '↗'];
+      const arrowIndex = Math.round(bgAnim.direction / 45) % 8;
+      document.getElementById('bg-direction-val').textContent = arrows[arrowIndex];
+    }
+
+    function animateBackground(timestamp) {
+      if (!bgAnim.lastTime) bgAnim.lastTime = timestamp;
+      const delta = timestamp - bgAnim.lastTime;
+      bgAnim.lastTime = timestamp;
+
+      if (bgAnim.playing && bgAnim.speed > 0) {
+        // Speed: pixels per second (scale 0-60 to 0-120 px/s)
+        const pxPerSec = bgAnim.speed * 2;
+        const rad = bgAnim.direction * Math.PI / 180;
+        const moveX = Math.cos(rad) * pxPerSec * (delta / 1000);
+        const moveY = Math.sin(rad) * pxPerSec * (delta / 1000);
+
+        bgAnim.x += moveX;
+        bgAnim.y += moveY;
+
+        // Use background-position for seamless CSS tiling
+        bgContent.style.backgroundPosition = `${bgAnim.x}px ${bgAnim.y}px`;
+      }
+
+      bgAnim.frameId = requestAnimationFrame(animateBackground);
+    }
+
+    function toggleBackgroundPlay() {
+      bgAnim.playing = !bgAnim.playing;
+      if (bgAnim.playing) {
+        bgAnim.lastTime = 0; // Reset delta to avoid jump
+        bgPlayBtn.innerHTML = '&#9208;'; // Pause icon
+        bgPlayBtn.title = 'Pause';
+        bgPlayBtn.classList.remove('paused');
+      } else {
+        bgPlayBtn.innerHTML = '&#9654;'; // Play icon
+        bgPlayBtn.title = 'Play';
+        bgPlayBtn.classList.add('paused');
+      }
+    }
+
+    // Start animation loop
+    bgAnim.frameId = requestAnimationFrame(animateBackground);
+
+    bgPlayBtn.addEventListener('click', toggleBackgroundPlay);
+
+    // ============================================================
+    // Presets
+    // ============================================================
+    function applyPreset(name) {
+      const preset = presets[name];
+      if (!preset) return;
+
+      controls.refraction.value = preset.refraction;
+      controls.thickness.value = preset.thickness;
+      controls.gloss.value = preset.gloss;
+      controls.softness.value = preset.softness;
+      controls.saturation.value = preset.saturation;
+
+      document.querySelectorAll('.preset-btn[data-preset]').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.preset === name);
+      });
+
+      updateAllGlasses();
+    }
+
+    // ============================================================
+    // Reset Functions
+    // ============================================================
+    function resetPositions() {
+      interactiveElements.forEach(el => {
+        const id = el.id;
+        const initial = initialPositions[id];
+        if (initial) {
+          el.dataset.x = initial.x;
+          el.dataset.y = initial.y;
+          el.dataset.w = initial.w;
+          el.dataset.h = initial.h;
+          el.dataset.r = initial.r;
+          el.dataset.radius = initial.radius;
+          positionElement(el);
+        }
+      });
+      selectElement(null);
+    }
+
+    function resetAll() {
+      resetPositions();
+      applyPreset('default');
+      controls.tint.value = '#ffffff';
+      controls.tintOpacity.value = 8;
+      controls.bgSpeed.value = 30;
+      controls.bgDirection.value = 135;
+      updateBackgroundAnimation();
+      updateAllGlasses();
+    }
+
+    // ============================================================
+    // Event Bindings
+    // ============================================================
+    Object.entries(controls).forEach(([key, control]) => {
+      if (key === 'bgSpeed' || key === 'bgDirection') {
+        control.addEventListener('input', updateBackgroundAnimation);
+      } else {
+        control.addEventListener('input', updateAllGlasses);
+      }
+    });
+
+    document.querySelectorAll('.preset-btn[data-preset]').forEach(btn => {
+      btn.addEventListener('click', () => applyPreset(btn.dataset.preset));
+    });
+
+    document.getElementById('reset-positions-btn').addEventListener('click', resetPositions);
+    document.getElementById('reset-all-btn').addEventListener('click', resetAll);
+
+    document.getElementById('copy-btn').addEventListener('click', () => {
+      navigator.clipboard.writeText(codeOutput.textContent);
+      const btn = document.getElementById('copy-btn');
+      btn.textContent = 'Copied!';
+      setTimeout(() => btn.textContent = 'Copy to Clipboard', 1500);
+    });
+
+    // ============================================================
+    // FPS Counter
+    // ============================================================
+    let lastTime = performance.now();
+    let frameCount = 0;
+    function updateFPS() {
+      frameCount++;
+      const now = performance.now();
+      if (now - lastTime >= 1000) {
+        document.getElementById('stat-fps').textContent = frameCount;
+        frameCount = 0;
+        lastTime = now;
+      }
+      requestAnimationFrame(updateFPS);
+    }
+    updateFPS();
+
+    // ============================================================
+    // Initialize
+    // ============================================================
+    initializePositions();
+    updateAllGlasses();
+    updateBackgroundAnimation();
+    applyPreset('default');
+
+    // Handle window resize
+    window.addEventListener('resize', () => {
+      initializePositions();
+    });
+  </script>
+</body>
+</html>

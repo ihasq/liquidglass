@@ -31,6 +31,9 @@ export { smoothstep, smootherstep } from './core/math/interpolation';
 export { generateDisplacementMap, generateSquircleDisplacementMap } from './core/displacement/generator';
 export type { DisplacementMapOptions, DisplacementMapResult } from './core/displacement/generator';
 
+// WASM accelerated displacement (per-element encoding)
+export { generateWasmDisplacementMap, preloadWasm, isWasmSimdSupported } from './core/displacement/wasm-generator';
+
 // Specular exports
 export { generateSpecularMap, generateDefaultSpecularMap } from './core/specular/highlight';
 export type { SpecularMapOptions, SpecularMapResult } from './core/specular/highlight';

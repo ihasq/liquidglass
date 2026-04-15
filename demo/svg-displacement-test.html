@@ -1,0 +1,1217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SVG Displacement Map - 10 Approaches Test</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      min-height: 100vh;
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+      font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+      padding: 20px;
+      color: #fff;
+    }
+
+    h1 {
+      text-align: center;
+      margin-bottom: 10px;
+      font-size: 24px;
+    }
+
+    .controls-panel {
+      background: rgba(255,255,255,0.1);
+      border-radius: 12px;
+      padding: 15px 20px;
+      margin-bottom: 20px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 20px;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .control-group {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .control-group label {
+      font-size: 13px;
+      color: #aaa;
+      min-width: 80px;
+    }
+
+    .control-group input[type="range"] {
+      width: 120px;
+    }
+
+    .control-group span {
+      min-width: 40px;
+      font-size: 13px;
+      color: #0f0;
+      font-family: monospace;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 15px;
+    }
+
+    .card {
+      background: rgba(255,255,255,0.05);
+      border-radius: 12px;
+      padding: 15px;
+      border: 1px solid rgba(255,255,255,0.1);
+    }
+
+    .card.reference {
+      border-color: #0f0;
+      background: rgba(0,255,0,0.05);
+    }
+
+    .card.pass {
+      border-color: #0f0;
+    }
+
+    .card.fail {
+      border-color: #f55;
+    }
+
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+
+    .card-title {
+      font-size: 14px;
+      font-weight: 600;
+    }
+
+    .card-stats {
+      font-size: 11px;
+      font-family: monospace;
+      color: #888;
+    }
+
+    .match-rate {
+      font-size: 12px;
+      font-weight: bold;
+      padding: 2px 8px;
+      border-radius: 4px;
+    }
+
+    .match-rate.pass { background: #0f02; color: #0f0; }
+    .match-rate.fail { background: #f002; color: #f55; }
+
+    .preview-container {
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+    }
+
+    .preview {
+      border: 1px solid #333;
+      border-radius: 4px;
+      overflow: hidden;
+      background: #808080;
+    }
+
+    .preview img, .preview canvas {
+      display: block;
+    }
+
+    .preview-label {
+      font-size: 10px;
+      color: #666;
+      text-align: center;
+      margin-top: 4px;
+    }
+
+    .diff-preview {
+      position: relative;
+    }
+
+    .diff-preview canvas {
+      image-rendering: pixelated;
+    }
+
+    #summary {
+      margin-top: 20px;
+      background: #1a1a2e;
+      border: 1px solid #333;
+      border-radius: 8px;
+      padding: 15px;
+      font-family: monospace;
+      font-size: 12px;
+      white-space: pre-wrap;
+      color: #0f0;
+    }
+  </style>
+</head>
+<body>
+  <h1>SVG Displacement Map - 10 Approaches Comparison</h1>
+
+  <div class="controls-panel">
+    <div class="control-group">
+      <label>Width:</label>
+      <input type="range" id="width" min="100" max="400" value="200">
+      <span id="width-val">200</span>
+    </div>
+    <div class="control-group">
+      <label>Height:</label>
+      <input type="range" id="height" min="50" max="300" value="100">
+      <span id="height-val">100</span>
+    </div>
+    <div class="control-group">
+      <label>Border Radius:</label>
+      <input type="range" id="radius" min="0" max="50" value="20">
+      <span id="radius-val">20</span>
+    </div>
+    <div class="control-group">
+      <label>Edge Ratio:</label>
+      <input type="range" id="edgeRatio" min="10" max="100" value="50">
+      <span id="edgeRatio-val">0.50</span>
+    </div>
+    <div class="control-group">
+      <label>Compare:</label>
+      <select id="compareMode">
+        <option value="corner">Corner Only</option>
+        <option value="full" selected>Full Image</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="grid" id="cards"></div>
+
+  <div id="summary">Initializing...</div>
+
+  <script>
+    // ============================================
+    // CONFIGURATION
+    // ============================================
+    let WIDTH = 200;
+    let HEIGHT = 100;
+    let RADIUS = 20;
+    let EDGE_WIDTH_RATIO = 0.5;
+
+    // ============================================
+    // CANVAS REFERENCE GENERATOR
+    // ============================================
+    function generateCanvasReference() {
+      const halfW = WIDTH / 2;
+      const halfH = HEIGHT / 2;
+      const edgeWidth = Math.min(halfW, halfH) * EDGE_WIDTH_RATIO;
+      const r = Math.min(RADIUS, halfW, halfH);
+
+      const canvas = document.createElement('canvas');
+      canvas.width = WIDTH;
+      canvas.height = HEIGHT;
+      const ctx = canvas.getContext('2d');
+      const imageData = ctx.createImageData(WIDTH, HEIGHT);
+      const data = imageData.data;
+
+      for (let py = 0; py < HEIGHT; py++) {
+        for (let px = 0; px < WIDTH; px++) {
+          const idx = (py * WIDTH + px) * 4;
+          const dx = Math.abs(px - halfW);
+          const dy = Math.abs(py - halfH);
+
+          let inBounds = true;
+          const inCorner = dx > halfW - r && dy > halfH - r;
+          if (inCorner) {
+            const cornerX = dx - (halfW - r);
+            const cornerY = dy - (halfH - r);
+            if (cornerX * cornerX + cornerY * cornerY > r * r) {
+              inBounds = false;
+            }
+          }
+
+          if (!inBounds) {
+            data[idx] = 128; data[idx + 1] = 128; data[idx + 2] = 128; data[idx + 3] = 255;
+            continue;
+          }
+
+          let distFromEdge, dirX = 0, dirY = 0;
+          if (inCorner) {
+            const cornerX = dx - (halfW - r);
+            const cornerY = dy - (halfH - r);
+            const cornerDist = Math.sqrt(cornerX * cornerX + cornerY * cornerY);
+            distFromEdge = r - cornerDist;
+            if (cornerDist > 0.001) {
+              dirX = (cornerX / cornerDist) * Math.sign(px - halfW);
+              dirY = (cornerY / cornerDist) * Math.sign(py - halfH);
+            }
+          } else {
+            const distX = halfW - dx;
+            const distY = halfH - dy;
+            if (distX < distY) {
+              distFromEdge = distX; dirX = Math.sign(px - halfW);
+            } else {
+              distFromEdge = distY; dirY = Math.sign(py - halfH);
+            }
+          }
+
+          const magnitude = distFromEdge < 0 ? 0 : Math.exp(-3 * distFromEdge / edgeWidth);
+          const dispX = -dirX * magnitude;
+          const dispY = -dirY * magnitude;
+
+          data[idx] = Math.round(128 + dispX * 127);
+          data[idx + 1] = Math.round(128 + dispY * 127);
+          data[idx + 2] = 128;
+          data[idx + 3] = 255;
+        }
+      }
+
+      ctx.putImageData(imageData, 0, 0);
+      return canvas;
+    }
+
+    // ============================================
+    // 10 SVG APPROACHES
+    // ============================================
+
+    // Approach 1: Edge Separation (linear gradient + rect array for corners)
+    function approach1_EdgeSeparation() {
+      const halfW = WIDTH / 2, halfH = HEIGHT / 2;
+      const edgeWidth = Math.min(halfW, halfH) * EDGE_WIDTH_RATIO;
+      const r = Math.min(RADIUS, halfW, halfH);
+      const strips = [];
+
+      for (let py = 0; py < HEIGHT; py++) {
+        for (let px = 0; px < WIDTH; px++) {
+          const dx = Math.abs(px - halfW);
+          const dy = Math.abs(py - halfH);
+          const inCorner = dx > halfW - r && dy > halfH - r;
+          if (!inCorner) continue;
+
+          const cornerX = dx - (halfW - r);
+          const cornerY = dy - (halfH - r);
+          if (cornerX * cornerX + cornerY * cornerY > r * r) continue;
+
+          const cornerDist = Math.sqrt(cornerX * cornerX + cornerY * cornerY);
+          const distFromEdge = r - cornerDist;
+          let dirX = 0, dirY = 0;
+          if (cornerDist > 0.001) {
+            dirX = (cornerX / cornerDist) * Math.sign(px - halfW);
+            dirY = (cornerY / cornerDist) * Math.sign(py - halfH);
+          }
+
+          const magnitude = Math.exp(-3 * distFromEdge / edgeWidth);
+          const dispX = -dirX * magnitude;
+          const dispY = -dirY * magnitude;
+          const red = Math.round(128 + dispX * 127);
+          const green = Math.round(128 + dispY * 127);
+          strips.push(`<rect x="${px}" y="${py}" width="1" height="1" fill="rgb(${red},${green},128)"/>`);
+        }
+      }
+
+      const stops = [0, 0.2, 0.4, 0.6, 0.8, 1.0].map(t => {
+        const mag = Math.exp(-3 * t);
+        return { offset: t, mag };
+      });
+
+      const edgeGradients = `
+        <linearGradient id="edge-left" x1="0" y1="0" x2="1" y2="0">
+          ${stops.map(s => `<stop offset="${s.offset * 100}%" stop-color="rgb(${Math.round(128 + s.mag * 127)},128,128)"/>`).join('')}
+        </linearGradient>
+        <linearGradient id="edge-right" x1="1" y1="0" x2="0" y2="0">
+          ${stops.map(s => `<stop offset="${s.offset * 100}%" stop-color="rgb(${Math.round(128 - s.mag * 127)},128,128)"/>`).join('')}
+        </linearGradient>
+        <linearGradient id="edge-top" x1="0" y1="0" x2="0" y2="1">
+          ${stops.map(s => `<stop offset="${s.offset * 100}%" stop-color="rgb(128,${Math.round(128 + s.mag * 127)},128)"/>`).join('')}
+        </linearGradient>
+        <linearGradient id="edge-bottom" x1="0" y1="1" x2="0" y2="0">
+          ${stops.map(s => `<stop offset="${s.offset * 100}%" stop-color="rgb(128,${Math.round(128 - s.mag * 127)},128)"/>`).join('')}
+        </linearGradient>`;
+
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="${WIDTH}" height="${HEIGHT}">
+  <defs>${edgeGradients}</defs>
+  <rect width="${WIDTH}" height="${HEIGHT}" fill="rgb(128,128,128)"/>
+  <rect x="0" y="${r}" width="${edgeWidth}" height="${HEIGHT - 2*r}" fill="url(#edge-left)"/>
+  <rect x="${WIDTH - edgeWidth}" y="${r}" width="${edgeWidth}" height="${HEIGHT - 2*r}" fill="url(#edge-right)"/>
+  <rect x="${r}" y="0" width="${WIDTH - 2*r}" height="${edgeWidth}" fill="url(#edge-top)"/>
+  <rect x="${r}" y="${HEIGHT - edgeWidth}" width="${WIDTH - 2*r}" height="${edgeWidth}" fill="url(#edge-bottom)"/>
+  ${strips.join('\n  ')}
+</svg>`;
+    }
+
+    // Approach 2: Angle Quantization (sector division)
+    function approach2_AngleQuantization(numSectors = 32) {
+      const halfW = WIDTH / 2, halfH = HEIGHT / 2;
+      const edgeWidth = Math.min(halfW, halfH) * EDGE_WIDTH_RATIO;
+      const r = Math.min(RADIUS, halfW, halfH);
+      const strips = [];
+
+      const corners = [
+        { cx: halfW - r, cy: halfH - r, startAngle: Math.PI, signX: -1, signY: -1 },
+        { cx: halfW + r - 1, cy: halfH - r, startAngle: -Math.PI/2, signX: 1, signY: -1 },
+        { cx: halfW - r, cy: halfH + r - 1, startAngle: Math.PI/2, signX: -1, signY: 1 },
+        { cx: halfW + r - 1, cy: halfH + r - 1, startAngle: 0, signX: 1, signY: 1 },
+      ];
+
+      const sectorsPerCorner = Math.ceil(numSectors / 4);
+      const numRadialSteps = 10;
+
+      corners.forEach(corner => {
+        for (let s = 0; s < sectorsPerCorner; s++) {
+          const angle1 = corner.startAngle + (s / sectorsPerCorner) * (Math.PI / 2);
+          const angle2 = corner.startAngle + ((s + 1) / sectorsPerCorner) * (Math.PI / 2);
+          const midAngle = (angle1 + angle2) / 2;
+
+          const dirX = Math.cos(midAngle);
+          const dirY = Math.sin(midAngle);
+
+          for (let ri = 0; ri < numRadialSteps; ri++) {
+            const r1 = r * (1 - ri / numRadialSteps);
+            const r2 = r * (1 - (ri + 1) / numRadialSteps);
+            const distFromEdge = ri * (r / numRadialSteps);
+
+            const magnitude = Math.exp(-3 * distFromEdge / edgeWidth);
+            const dispX = -dirX * magnitude;
+            const dispY = -dirY * magnitude;
+
+            const red = Math.round(128 + dispX * 127);
+            const green = Math.round(128 + dispY * 127);
+
+            if (r1 > 0.5) {
+              const x1 = corner.cx + r1 * Math.cos(angle1);
+              const y1 = corner.cy + r1 * Math.sin(angle1);
+              const x2 = corner.cx + r1 * Math.cos(angle2);
+              const y2 = corner.cy + r1 * Math.sin(angle2);
+              const x3 = corner.cx + r2 * Math.cos(angle2);
+              const y3 = corner.cy + r2 * Math.sin(angle2);
+              const x4 = corner.cx + r2 * Math.cos(angle1);
+              const y4 = corner.cy + r2 * Math.sin(angle1);
+
+              strips.push(`<path d="M${x1.toFixed(1)},${y1.toFixed(1)} A${r1.toFixed(1)},${r1.toFixed(1)} 0 0 1 ${x2.toFixed(1)},${y2.toFixed(1)} L${x3.toFixed(1)},${y3.toFixed(1)} A${r2.toFixed(1)},${r2.toFixed(1)} 0 0 0 ${x4.toFixed(1)},${y4.toFixed(1)} Z" fill="rgb(${red},${green},128)"/>`);
+            }
+          }
+        }
+      });
+
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="${WIDTH}" height="${HEIGHT}">
+  <rect width="${WIDTH}" height="${HEIGHT}" fill="rgb(128,128,128)"/>
+  ${strips.join('\n  ')}
+</svg>`;
+    }
+
+    // Approach 3: Concentric Arcs
+    function approach3_ConcentricArcs(numArcs = 20) {
+      const halfW = WIDTH / 2, halfH = HEIGHT / 2;
+      const edgeWidth = Math.min(halfW, halfH) * EDGE_WIDTH_RATIO;
+      const r = Math.min(RADIUS, halfW, halfH);
+      const strips = [];
+
+      const corners = [
+        { cx: halfW - r, cy: halfH - r, startAngle: Math.PI, endAngle: 1.5 * Math.PI },
+        { cx: halfW + r - 1, cy: halfH - r, startAngle: 1.5 * Math.PI, endAngle: 2 * Math.PI },
+        { cx: halfW - r, cy: halfH + r - 1, startAngle: 0.5 * Math.PI, endAngle: Math.PI },
+        { cx: halfW + r - 1, cy: halfH + r - 1, startAngle: 0, endAngle: 0.5 * Math.PI },
+      ];
+
+      corners.forEach(corner => {
+        const midAngle = (corner.startAngle + corner.endAngle) / 2;
+        const dirX = Math.cos(midAngle);
+        const dirY = Math.sin(midAngle);
+
+        for (let i = 0; i < numArcs; i++) {
+          const outerR = r - i * (r / numArcs);
+          const innerR = r - (i + 1) * (r / numArcs);
+          const distFromEdge = i * (r / numArcs);
+
+          const magnitude = Math.exp(-3 * distFromEdge / edgeWidth);
+          const dispX = -dirX * magnitude;
+          const dispY = -dirY * magnitude;
+
+          const red = Math.round(128 + dispX * 127);
+          const green = Math.round(128 + dispY * 127);
+
+          if (outerR > 0.5) {
+            const x1 = corner.cx + outerR * Math.cos(corner.startAngle);
+            const y1 = corner.cy + outerR * Math.sin(corner.startAngle);
+            const x2 = corner.cx + outerR * Math.cos(corner.endAngle);
+            const y2 = corner.cy + outerR * Math.sin(corner.endAngle);
+            const x3 = corner.cx + innerR * Math.cos(corner.endAngle);
+            const y3 = corner.cy + innerR * Math.sin(corner.endAngle);
+            const x4 = corner.cx + innerR * Math.cos(corner.startAngle);
+            const y4 = corner.cy + innerR * Math.sin(corner.startAngle);
+
+            strips.push(`<path d="M${x1.toFixed(1)},${y1.toFixed(1)} A${outerR.toFixed(1)},${outerR.toFixed(1)} 0 0 1 ${x2.toFixed(1)},${y2.toFixed(1)} L${x3.toFixed(1)},${y3.toFixed(1)} A${innerR.toFixed(1)},${innerR.toFixed(1)} 0 0 0 ${x4.toFixed(1)},${y4.toFixed(1)} Z" fill="rgb(${red},${green},128)"/>`);
+          }
+        }
+      });
+
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="${WIDTH}" height="${HEIGHT}">
+  <rect width="${WIDTH}" height="${HEIGHT}" fill="rgb(128,128,128)"/>
+  ${strips.join('\n  ')}
+</svg>`;
+    }
+
+    // Approach 4: Quadtree Adaptive
+    function approach4_Quadtree(maxDepth = 5, threshold = 3) {
+      const halfW = WIDTH / 2, halfH = HEIGHT / 2;
+      const edgeWidth = Math.min(halfW, halfH) * EDGE_WIDTH_RATIO;
+      const r = Math.min(RADIUS, halfW, halfH);
+      const rects = [];
+
+      function getPixelColor(px, py) {
+        const dx = Math.abs(px - halfW);
+        const dy = Math.abs(py - halfH);
+        const inCorner = dx > halfW - r && dy > halfH - r;
+        if (!inCorner) return { r: 128, g: 128 };
+
+        const cornerX = dx - (halfW - r);
+        const cornerY = dy - (halfH - r);
+        if (cornerX * cornerX + cornerY * cornerY > r * r) return { r: 128, g: 128 };
+
+        const cornerDist = Math.sqrt(cornerX * cornerX + cornerY * cornerY);
+        const distFromEdge = r - cornerDist;
+        let dirX = 0, dirY = 0;
+        if (cornerDist > 0.001) {
+          dirX = (cornerX / cornerDist) * Math.sign(px - halfW);
+          dirY = (cornerY / cornerDist) * Math.sign(py - halfH);
+        }
+
+        const magnitude = Math.exp(-3 * distFromEdge / edgeWidth);
+        return {
+          r: Math.round(128 - dirX * magnitude * 127),
+          g: Math.round(128 - dirY * magnitude * 127)
+        };
+      }
+
+      function subdivide(x, y, size, depth) {
+        if (size < 1 || x >= WIDTH || y >= HEIGHT) return;
+
+        const tl = getPixelColor(x, y);
+        const tr = getPixelColor(Math.min(x + size - 1, WIDTH - 1), y);
+        const bl = getPixelColor(x, Math.min(y + size - 1, HEIGHT - 1));
+        const br = getPixelColor(Math.min(x + size - 1, WIDTH - 1), Math.min(y + size - 1, HEIGHT - 1));
+
+        const maxDiff = Math.max(
+          Math.abs(tl.r - tr.r), Math.abs(tl.r - bl.r), Math.abs(tl.r - br.r),
+          Math.abs(tl.g - tr.g), Math.abs(tl.g - bl.g), Math.abs(tl.g - br.g)
+        );
+
+        if ((maxDiff <= threshold && depth > 0) || depth >= maxDepth || size <= 1) {
+          const center = getPixelColor(x + size/2, y + size/2);
+          if (center.r !== 128 || center.g !== 128) {
+            rects.push(`<rect x="${x}" y="${y}" width="${size}" height="${size}" fill="rgb(${center.r},${center.g},128)"/>`);
+          }
+        } else {
+          const half = Math.ceil(size / 2);
+          subdivide(x, y, half, depth + 1);
+          subdivide(x + half, y, half, depth + 1);
+          subdivide(x, y + half, half, depth + 1);
+          subdivide(x + half, y + half, half, depth + 1);
+        }
+      }
+
+      const cornerSize = Math.ceil(r + edgeWidth);
+      subdivide(0, 0, cornerSize, 0);
+      subdivide(WIDTH - cornerSize, 0, cornerSize, 0);
+      subdivide(0, HEIGHT - cornerSize, cornerSize, 0);
+      subdivide(WIDTH - cornerSize, HEIGHT - cornerSize, cornerSize, 0);
+
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="${WIDTH}" height="${HEIGHT}">
+  <rect width="${WIDTH}" height="${HEIGHT}" fill="rgb(128,128,128)"/>
+  ${rects.join('\n  ')}
+</svg>`;
+    }
+
+    // Approach 5: 2D LUT with <use> transform
+    function approach5_2DLUT() {
+      const halfW = WIDTH / 2, halfH = HEIGHT / 2;
+      const edgeWidth = Math.min(halfW, halfH) * EDGE_WIDTH_RATIO;
+      const r = Math.min(RADIUS, halfW, halfH);
+      const cornerRects = [];
+
+      for (let py = 0; py < r; py++) {
+        for (let px = 0; px < r; px++) {
+          const cornerDist = Math.sqrt(px * px + py * py);
+          if (cornerDist > r) continue;
+
+          const distFromEdge = r - cornerDist;
+          let dirX = 0, dirY = 0;
+          if (cornerDist > 0.001) {
+            dirX = px / cornerDist;
+            dirY = py / cornerDist;
+          }
+
+          const magnitude = Math.exp(-3 * distFromEdge / edgeWidth);
+          const red = Math.round(128 - dirX * magnitude * 127);
+          const green = Math.round(128 - dirY * magnitude * 127);
+
+          if (red !== 128 || green !== 128) {
+            cornerRects.push(`<rect x="${px}" y="${py}" width="1" height="1" fill="rgb(${red},${green},128)"/>`);
+          }
+        }
+      }
+
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="${WIDTH}" height="${HEIGHT}">
+  <defs>
+    <g id="corner-br">${cornerRects.join('')}</g>
+  </defs>
+  <rect width="${WIDTH}" height="${HEIGHT}" fill="rgb(128,128,128)"/>
+  <use href="#corner-br" transform="translate(${WIDTH - r}, ${HEIGHT - r})"/>
+  <use href="#corner-br" transform="translate(${WIDTH - r}, ${r}) scale(1,-1)"/>
+  <use href="#corner-br" transform="translate(${r}, ${HEIGHT - r}) scale(-1,1)"/>
+  <use href="#corner-br" transform="translate(${r}, ${r}) scale(-1,-1)"/>
+</svg>`;
+    }
+
+    // Approach 6: Quadrant Reuse (full pixel)
+    function approach6_QuadrantReuse() {
+      const halfW = WIDTH / 2, halfH = HEIGHT / 2;
+      const edgeWidth = Math.min(halfW, halfH) * EDGE_WIDTH_RATIO;
+      const r = Math.min(RADIUS, halfW, halfH);
+      const allRects = [];
+
+      for (let py = 0; py < HEIGHT; py++) {
+        for (let px = 0; px < WIDTH; px++) {
+          const dx = Math.abs(px - halfW);
+          const dy = Math.abs(py - halfH);
+          const inCorner = dx > halfW - r && dy > halfH - r;
+          if (!inCorner) continue;
+
+          const cornerX = dx - (halfW - r);
+          const cornerY = dy - (halfH - r);
+          if (cornerX * cornerX + cornerY * cornerY > r * r) continue;
+
+          const cornerDist = Math.sqrt(cornerX * cornerX + cornerY * cornerY);
+          const distFromEdge = r - cornerDist;
+          let dirX = 0, dirY = 0;
+          if (cornerDist > 0.001) {
+            dirX = (cornerX / cornerDist) * Math.sign(px - halfW);
+            dirY = (cornerY / cornerDist) * Math.sign(py - halfH);
+          }
+
+          const magnitude = Math.exp(-3 * distFromEdge / edgeWidth);
+          const red = Math.round(128 - dirX * magnitude * 127);
+          const green = Math.round(128 - dirY * magnitude * 127);
+
+          allRects.push(`<rect x="${px}" y="${py}" width="1" height="1" fill="rgb(${red},${green},128)"/>`);
+        }
+      }
+
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="${WIDTH}" height="${HEIGHT}">
+  <rect width="${WIDTH}" height="${HEIGHT}" fill="rgb(128,128,128)"/>
+  ${allRects.join('\n  ')}
+</svg>`;
+    }
+
+    // Approach 7: Piecewise Linear
+    function approach7_PiecewiseLinear(numStops = 10) {
+      const halfW = WIDTH / 2, halfH = HEIGHT / 2;
+      const edgeWidth = Math.min(halfW, halfH) * EDGE_WIDTH_RATIO;
+      const r = Math.min(RADIUS, halfW, halfH);
+      const strips = [];
+
+      const stops = [];
+      for (let i = 0; i <= numStops; i++) {
+        const t = i / numStops;
+        stops.push({ offset: t, mag: Math.exp(-3 * t * r / edgeWidth) });
+      }
+
+      const corners = [
+        { cx: halfW - r, cy: halfH - r, startAngle: Math.PI, endAngle: 1.5 * Math.PI },
+        { cx: halfW + r - 1, cy: halfH - r, startAngle: 1.5 * Math.PI, endAngle: 2 * Math.PI },
+        { cx: halfW - r, cy: halfH + r - 1, startAngle: 0.5 * Math.PI, endAngle: Math.PI },
+        { cx: halfW + r - 1, cy: halfH + r - 1, startAngle: 0, endAngle: 0.5 * Math.PI },
+      ];
+
+      const numAngles = 16;
+
+      corners.forEach(corner => {
+        for (let ai = 0; ai < numAngles; ai++) {
+          const angle1 = corner.startAngle + (ai / numAngles) * (corner.endAngle - corner.startAngle);
+          const angle2 = corner.startAngle + ((ai + 1) / numAngles) * (corner.endAngle - corner.startAngle);
+          const midAngle = (angle1 + angle2) / 2;
+          const dirX = Math.cos(midAngle);
+          const dirY = Math.sin(midAngle);
+
+          for (let ri = 0; ri < stops.length - 1; ri++) {
+            const outerR = r * (1 - stops[ri].offset);
+            const innerR = r * (1 - stops[ri + 1].offset);
+            const mag = (stops[ri].mag + stops[ri + 1].mag) / 2;
+
+            const red = Math.round(128 - dirX * mag * 127);
+            const green = Math.round(128 - dirY * mag * 127);
+
+            if (outerR > 0.5) {
+              const x1 = corner.cx + outerR * Math.cos(angle1);
+              const y1 = corner.cy + outerR * Math.sin(angle1);
+              const x2 = corner.cx + outerR * Math.cos(angle2);
+              const y2 = corner.cy + outerR * Math.sin(angle2);
+              const x3 = corner.cx + innerR * Math.cos(angle2);
+              const y3 = corner.cy + innerR * Math.sin(angle2);
+              const x4 = corner.cx + innerR * Math.cos(angle1);
+              const y4 = corner.cy + innerR * Math.sin(angle1);
+
+              strips.push(`<path d="M${x1.toFixed(1)},${y1.toFixed(1)} A${outerR.toFixed(1)},${outerR.toFixed(1)} 0 0 1 ${x2.toFixed(1)},${y2.toFixed(1)} L${x3.toFixed(1)},${y3.toFixed(1)} A${innerR.toFixed(1)},${innerR.toFixed(1)} 0 0 0 ${x4.toFixed(1)},${y4.toFixed(1)} Z" fill="rgb(${red},${green},128)"/>`);
+            }
+          }
+        }
+      });
+
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="${WIDTH}" height="${HEIGHT}">
+  <rect width="${WIDTH}" height="${HEIGHT}" fill="rgb(128,128,128)"/>
+  ${strips.join('\n  ')}
+</svg>`;
+    }
+
+    // Approach 8: Sector + Arc Hybrid
+    function approach8_SectorArcHybrid(numSectors = 24, numArcs = 15) {
+      const halfW = WIDTH / 2, halfH = HEIGHT / 2;
+      const edgeWidth = Math.min(halfW, halfH) * EDGE_WIDTH_RATIO;
+      const r = Math.min(RADIUS, halfW, halfH);
+      const strips = [];
+
+      const corners = [
+        { cx: halfW - r, cy: halfH - r, startAngle: Math.PI, endAngle: 1.5 * Math.PI },
+        { cx: halfW + r - 1, cy: halfH - r, startAngle: 1.5 * Math.PI, endAngle: 2 * Math.PI },
+        { cx: halfW - r, cy: halfH + r - 1, startAngle: 0.5 * Math.PI, endAngle: Math.PI },
+        { cx: halfW + r - 1, cy: halfH + r - 1, startAngle: 0, endAngle: 0.5 * Math.PI },
+      ];
+
+      const sectorsPerCorner = Math.ceil(numSectors / 4);
+
+      corners.forEach(corner => {
+        const angleRange = corner.endAngle - corner.startAngle;
+
+        for (let si = 0; si < sectorsPerCorner; si++) {
+          const angle1 = corner.startAngle + (si / sectorsPerCorner) * angleRange;
+          const angle2 = corner.startAngle + ((si + 1) / sectorsPerCorner) * angleRange;
+          const midAngle = (angle1 + angle2) / 2;
+          const dirX = Math.cos(midAngle);
+          const dirY = Math.sin(midAngle);
+
+          for (let ai = 0; ai < numArcs; ai++) {
+            const outerR = r * (1 - ai / numArcs);
+            const innerR = r * (1 - (ai + 1) / numArcs);
+            const distFromEdge = ai * (r / numArcs);
+
+            const magnitude = Math.exp(-3 * distFromEdge / edgeWidth);
+            const red = Math.round(128 - dirX * magnitude * 127);
+            const green = Math.round(128 - dirY * magnitude * 127);
+
+            if (outerR > 0.5) {
+              const x1 = corner.cx + outerR * Math.cos(angle1);
+              const y1 = corner.cy + outerR * Math.sin(angle1);
+              const x2 = corner.cx + outerR * Math.cos(angle2);
+              const y2 = corner.cy + outerR * Math.sin(angle2);
+              const x3 = corner.cx + innerR * Math.cos(angle2);
+              const y3 = corner.cy + innerR * Math.sin(angle2);
+              const x4 = corner.cx + innerR * Math.cos(angle1);
+              const y4 = corner.cy + innerR * Math.sin(angle1);
+
+              strips.push(`<path d="M${x1.toFixed(1)},${y1.toFixed(1)} A${outerR.toFixed(1)},${outerR.toFixed(1)} 0 0 1 ${x2.toFixed(1)},${y2.toFixed(1)} L${x3.toFixed(1)},${y3.toFixed(1)} A${innerR.toFixed(1)},${innerR.toFixed(1)} 0 0 0 ${x4.toFixed(1)},${y4.toFixed(1)} Z" fill="rgb(${red},${green},128)"/>`);
+            }
+          }
+        }
+      });
+
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="${WIDTH}" height="${HEIGHT}">
+  <rect width="${WIDTH}" height="${HEIGHT}" fill="rgb(128,128,128)"/>
+  ${strips.join('\n  ')}
+</svg>`;
+    }
+
+    // Approach 9: Coarse + Fine Correction
+    function approach9_CoarseFineCorrected(correctionThreshold = 5) {
+      const halfW = WIDTH / 2, halfH = HEIGHT / 2;
+      const edgeWidth = Math.min(halfW, halfH) * EDGE_WIDTH_RATIO;
+      const r = Math.min(RADIUS, halfW, halfH);
+      const rects = [];
+
+      for (let py = 0; py < HEIGHT; py++) {
+        for (let px = 0; px < WIDTH; px++) {
+          const dx = Math.abs(px - halfW);
+          const dy = Math.abs(py - halfH);
+          const inCorner = dx > halfW - r && dy > halfH - r;
+          if (!inCorner) continue;
+
+          const cornerX = dx - (halfW - r);
+          const cornerY = dy - (halfH - r);
+          if (cornerX * cornerX + cornerY * cornerY > r * r) continue;
+
+          const cornerDist = Math.sqrt(cornerX * cornerX + cornerY * cornerY);
+          const distFromEdge = r - cornerDist;
+
+          let dirX = 0, dirY = 0;
+          if (cornerDist > 0.001) {
+            dirX = (cornerX / cornerDist) * Math.sign(px - halfW);
+            dirY = (cornerY / cornerDist) * Math.sign(py - halfH);
+          }
+
+          const magnitude = Math.exp(-3 * distFromEdge / edgeWidth);
+          const exactR = Math.round(128 - dirX * magnitude * 127);
+          const exactG = Math.round(128 - dirY * magnitude * 127);
+
+          // Coarse: diagonal approximation
+          const diagAngle = Math.atan2(Math.sign(py - halfH), Math.sign(px - halfW));
+          const coarseDirX = Math.cos(diagAngle);
+          const coarseDirY = Math.sin(diagAngle);
+          const coarseR = Math.round(128 - coarseDirX * magnitude * 127);
+          const coarseG = Math.round(128 - coarseDirY * magnitude * 127);
+
+          if (Math.abs(exactR - coarseR) > correctionThreshold || Math.abs(exactG - coarseG) > correctionThreshold) {
+            rects.push(`<rect x="${px}" y="${py}" width="1" height="1" fill="rgb(${exactR},${exactG},128)"/>`);
+          }
+        }
+      }
+
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="${WIDTH}" height="${HEIGHT}">
+  <rect width="${WIDTH}" height="${HEIGHT}" fill="rgb(128,128,128)"/>
+  ${rects.join('\n  ')}
+</svg>`;
+    }
+
+    // Approach 10: Pixel Perfect (baseline)
+    function approach10_PixelPerfect() {
+      const halfW = WIDTH / 2, halfH = HEIGHT / 2;
+      const edgeWidth = Math.min(halfW, halfH) * EDGE_WIDTH_RATIO;
+      const r = Math.min(RADIUS, halfW, halfH);
+      const strips = [];
+
+      for (let py = 0; py < HEIGHT; py++) {
+        for (let px = 0; px < WIDTH; px++) {
+          const dx = Math.abs(px - halfW);
+          const dy = Math.abs(py - halfH);
+
+          let inBounds = true;
+          const inCorner = dx > halfW - r && dy > halfH - r;
+          if (inCorner) {
+            const cornerX = dx - (halfW - r);
+            const cornerY = dy - (halfH - r);
+            if (cornerX * cornerX + cornerY * cornerY > r * r) inBounds = false;
+          }
+          if (!inBounds) continue;
+
+          let distFromEdge, dirX = 0, dirY = 0;
+          if (inCorner) {
+            const cornerX = dx - (halfW - r);
+            const cornerY = dy - (halfH - r);
+            const cornerDist = Math.sqrt(cornerX * cornerX + cornerY * cornerY);
+            distFromEdge = r - cornerDist;
+            if (cornerDist > 0.001) {
+              dirX = (cornerX / cornerDist) * Math.sign(px - halfW);
+              dirY = (cornerY / cornerDist) * Math.sign(py - halfH);
+            }
+          } else {
+            const distX = halfW - dx;
+            const distY = halfH - dy;
+            if (distX < distY) {
+              distFromEdge = distX; dirX = Math.sign(px - halfW);
+            } else {
+              distFromEdge = distY; dirY = Math.sign(py - halfH);
+            }
+          }
+
+          const magnitude = distFromEdge < 0 ? 0 : Math.exp(-3 * distFromEdge / edgeWidth);
+          if (magnitude < 0.01) continue;
+
+          const dispX = -dirX * magnitude;
+          const dispY = -dirY * magnitude;
+          const red = Math.round(128 + dispX * 127);
+          const green = Math.round(128 + dispY * 127);
+
+          if (red !== 128 || green !== 128) {
+            strips.push(`<rect x="${px}" y="${py}" width="1" height="1" fill="rgb(${red},${green},128)"/>`);
+          }
+        }
+      }
+
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="${WIDTH}" height="${HEIGHT}">
+  <rect width="${WIDTH}" height="${HEIGHT}" fill="rgb(128,128,128)"/>
+  ${strips.join('\n  ')}
+</svg>`;
+    }
+
+    // Approach 11: Optimized - RLE compressed (100% match, smaller size)
+    function approach11_Optimized() {
+      const halfW = WIDTH / 2, halfH = HEIGHT / 2;
+      const edgeWidth = Math.min(halfW, halfH) * EDGE_WIDTH_RATIO;
+      const r = Math.min(RADIUS, halfW, halfH);
+
+      // Build pixel grid
+      const pixels = [];
+      for (let py = 0; py < HEIGHT; py++) {
+        pixels[py] = [];
+        for (let px = 0; px < WIDTH; px++) {
+          const dx = Math.abs(px - halfW);
+          const dy = Math.abs(py - halfH);
+
+          let inBounds = true;
+          const inCorner = dx > halfW - r && dy > halfH - r;
+          if (inCorner) {
+            const cornerX = dx - (halfW - r);
+            const cornerY = dy - (halfH - r);
+            if (cornerX * cornerX + cornerY * cornerY > r * r) inBounds = false;
+          }
+
+          if (!inBounds) {
+            pixels[py][px] = null; // neutral, skip
+            continue;
+          }
+
+          let distFromEdge, dirX = 0, dirY = 0;
+          if (inCorner) {
+            const cornerX = dx - (halfW - r);
+            const cornerY = dy - (halfH - r);
+            const cornerDist = Math.sqrt(cornerX * cornerX + cornerY * cornerY);
+            distFromEdge = r - cornerDist;
+            if (cornerDist > 0.001) {
+              dirX = (cornerX / cornerDist) * Math.sign(px - halfW);
+              dirY = (cornerY / cornerDist) * Math.sign(py - halfH);
+            }
+          } else {
+            const distX = halfW - dx;
+            const distY = halfH - dy;
+            if (distX < distY) {
+              distFromEdge = distX; dirX = Math.sign(px - halfW);
+            } else {
+              distFromEdge = distY; dirY = Math.sign(py - halfH);
+            }
+          }
+
+          const magnitude = distFromEdge < 0 ? 0 : Math.exp(-3 * distFromEdge / edgeWidth);
+          if (magnitude < 0.01) {
+            pixels[py][px] = null;
+            continue;
+          }
+
+          const dispX = -dirX * magnitude;
+          const dispY = -dirY * magnitude;
+          const red = Math.round(128 + dispX * 127);
+          const green = Math.round(128 + dispY * 127);
+
+          if (red === 128 && green === 128) {
+            pixels[py][px] = null;
+          } else {
+            pixels[py][px] = { r: red, g: green };
+          }
+        }
+      }
+
+      // 2D Greedy rectangle compression
+      const used = Array.from({ length: HEIGHT }, () => Array(WIDTH).fill(false));
+      const rects = [];
+
+      for (let y = 0; y < HEIGHT; y++) {
+        for (let x = 0; x < WIDTH; x++) {
+          if (used[y][x] || !pixels[y][x]) continue;
+
+          const color = pixels[y][x];
+          let maxW = 1, maxH = 1;
+
+          // Expand horizontally
+          while (x + maxW < WIDTH && !used[y][x + maxW] && pixels[y][x + maxW] &&
+                 pixels[y][x + maxW].r === color.r && pixels[y][x + maxW].g === color.g) {
+            maxW++;
+          }
+
+          // Expand vertically
+          outer: while (y + maxH < HEIGHT) {
+            for (let dx = 0; dx < maxW; dx++) {
+              if (used[y + maxH][x + dx] || !pixels[y + maxH][x + dx] ||
+                  pixels[y + maxH][x + dx].r !== color.r || pixels[y + maxH][x + dx].g !== color.g) {
+                break outer;
+              }
+            }
+            maxH++;
+          }
+
+          // Mark as used
+          for (let dy = 0; dy < maxH; dy++) {
+            for (let dx = 0; dx < maxW; dx++) {
+              used[y + dy][x + dx] = true;
+            }
+          }
+
+          rects.push(`<rect x="${x}" y="${y}" width="${maxW}" height="${maxH}" fill="rgb(${color.r},${color.g},128)"/>`);
+        }
+      }
+
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="${WIDTH}" height="${HEIGHT}">
+  <rect width="${WIDTH}" height="${HEIGHT}" fill="rgb(128,128,128)"/>
+  ${rects.join('\n  ')}
+</svg>`;
+    }
+
+    // ============================================
+    // APPROACHES LIST
+    // ============================================
+    const approaches = [
+      { id: 'reference', name: 'Canvas Reference', fn: null, isReference: true },
+      { id: 'a1', name: '1. Edge Separation', fn: approach1_EdgeSeparation },
+      { id: 'a2', name: '2. Angle Quantization', fn: () => approach2_AngleQuantization(32) },
+      { id: 'a3', name: '3. Concentric Arcs', fn: () => approach3_ConcentricArcs(20) },
+      { id: 'a4', name: '4. Quadtree Adaptive', fn: () => approach4_Quadtree(5, 3) },
+      { id: 'a5', name: '5. 2D LUT + <use>', fn: approach5_2DLUT },
+      { id: 'a6', name: '6. Quadrant Reuse', fn: approach6_QuadrantReuse },
+      { id: 'a7', name: '7. Piecewise Linear', fn: () => approach7_PiecewiseLinear(10) },
+      { id: 'a8', name: '8. Sector + Arc', fn: () => approach8_SectorArcHybrid(24, 15) },
+      { id: 'a9', name: '9. Coarse + Fine', fn: () => approach9_CoarseFineCorrected(5) },
+      { id: 'a10', name: '10. Pixel Perfect', fn: approach10_PixelPerfect },
+      { id: 'a11', name: '11. Optimized (2D RLE)', fn: approach11_Optimized },
+    ];
+
+    // ============================================
+    // PIXEL COMPARISON
+    // ============================================
+    let COMPARE_MODE = 'full'; // 'corner' or 'full'
+
+    function isInCornerRegion(px, py) {
+      const halfW = WIDTH / 2;
+      const halfH = HEIGHT / 2;
+      const r = Math.min(RADIUS, halfW, halfH);
+
+      const dx = Math.abs(px - halfW);
+      const dy = Math.abs(py - halfH);
+
+      return dx > halfW - r && dy > halfH - r;
+    }
+
+    function compareImages(refCanvas, testCanvas) {
+      const refCtx = refCanvas.getContext('2d');
+      const testCtx = testCanvas.getContext('2d');
+
+      const refData = refCtx.getImageData(0, 0, WIDTH, HEIGHT).data;
+      const testData = testCtx.getImageData(0, 0, WIDTH, HEIGHT).data;
+
+      let diffCount = 0;
+      let comparePixelCount = 0;
+
+      const diffCanvas = document.createElement('canvas');
+      diffCanvas.width = WIDTH;
+      diffCanvas.height = HEIGHT;
+      const diffCtx = diffCanvas.getContext('2d');
+      const diffImageData = diffCtx.createImageData(WIDTH, HEIGHT);
+      const diffData = diffImageData.data;
+
+      for (let py = 0; py < HEIGHT; py++) {
+        for (let px = 0; px < WIDTH; px++) {
+          const i = (py * WIDTH + px) * 4;
+          const inCorner = isInCornerRegion(px, py);
+          const shouldCompare = COMPARE_MODE === 'full' || inCorner;
+
+          if (shouldCompare) {
+            comparePixelCount++;
+            const dr = Math.abs(refData[i] - testData[i]);
+            const dg = Math.abs(refData[i + 1] - testData[i + 1]);
+
+            if (dr > 2 || dg > 2) {
+              diffCount++;
+              diffData[i] = 255;
+              diffData[i + 1] = 0;
+              diffData[i + 2] = 0;
+              diffData[i + 3] = 255;
+            } else {
+              diffData[i] = 0;
+              diffData[i + 1] = 255;
+              diffData[i + 2] = 0;
+              diffData[i + 3] = 100;
+            }
+          } else {
+            // Non-compared region: show as gray
+            diffData[i] = 128;
+            diffData[i + 1] = 128;
+            diffData[i + 2] = 128;
+            diffData[i + 3] = 30;
+          }
+        }
+      }
+
+      diffCtx.putImageData(diffImageData, 0, 0);
+
+      const matchRate = comparePixelCount > 0
+        ? ((comparePixelCount - diffCount) / comparePixelCount * 100)
+        : 100;
+
+      return { diffCanvas, matchRate, diffCount, comparePixelCount };
+    }
+
+    // ============================================
+    // RENDER UI
+    // ============================================
+    const cardsContainer = document.getElementById('cards');
+    const summaryDiv = document.getElementById('summary');
+    let referenceCanvas = null;
+
+    function renderCards() {
+      cardsContainer.innerHTML = '';
+      const startTime = performance.now();
+      referenceCanvas = generateCanvasReference();
+
+      const results = [];
+
+      approaches.forEach(approach => {
+        const card = document.createElement('div');
+        card.className = 'card';
+        if (approach.isReference) card.classList.add('reference');
+
+        const header = document.createElement('div');
+        header.className = 'card-header';
+
+        const title = document.createElement('div');
+        title.className = 'card-title';
+        title.textContent = approach.name;
+
+        const statsDiv = document.createElement('div');
+        statsDiv.className = 'card-stats';
+
+        header.appendChild(title);
+
+        const previewContainer = document.createElement('div');
+        previewContainer.className = 'preview-container';
+
+        if (approach.isReference) {
+          // Reference card
+          const preview = document.createElement('div');
+          preview.className = 'preview';
+          preview.appendChild(referenceCanvas);
+          previewContainer.appendChild(preview);
+
+          statsDiv.textContent = `${WIDTH}x${HEIGHT}`;
+        } else {
+          // SVG approach card
+          const genStart = performance.now();
+          const svg = approach.fn();
+          const genTime = performance.now() - genStart;
+          const svgSize = new Blob([svg]).size;
+
+          // Create image from SVG
+          const img = new Image();
+          img.src = 'data:image/svg+xml,' + encodeURIComponent(svg);
+
+          img.onload = () => {
+            // Draw to canvas for comparison
+            const testCanvas = document.createElement('canvas');
+            testCanvas.width = WIDTH;
+            testCanvas.height = HEIGHT;
+            const ctx = testCanvas.getContext('2d');
+            ctx.drawImage(img, 0, 0);
+
+            // Compare
+            const { diffCanvas, matchRate, diffCount, comparePixelCount } = compareImages(referenceCanvas, testCanvas);
+
+            // Update UI
+            const matchSpan = document.createElement('span');
+            matchSpan.className = 'match-rate ' + (matchRate >= 99.5 ? 'pass' : 'fail');
+            matchSpan.textContent = matchRate.toFixed(2) + '%';
+            header.appendChild(matchSpan);
+
+            card.classList.add(matchRate >= 99.5 ? 'pass' : 'fail');
+
+            // Add diff preview
+            const diffPreview = document.createElement('div');
+            diffPreview.className = 'preview diff-preview';
+            diffCanvas.style.width = WIDTH + 'px';
+            diffCanvas.style.height = HEIGHT + 'px';
+            diffPreview.appendChild(diffCanvas);
+
+            const diffLabel = document.createElement('div');
+            diffLabel.className = 'preview-label';
+            diffLabel.textContent = `Diff (${diffCount}/${comparePixelCount}px)`;
+            diffPreview.appendChild(diffLabel);
+
+            previewContainer.appendChild(diffPreview);
+
+            results.push({
+              name: approach.name,
+              matchRate,
+              genTime,
+              svgSize,
+              passed: matchRate >= 99.5
+            });
+
+            updateSummary(results);
+          };
+
+          const preview = document.createElement('div');
+          preview.className = 'preview';
+          preview.appendChild(img);
+
+          const label = document.createElement('div');
+          label.className = 'preview-label';
+          label.textContent = 'SVG';
+
+          preview.appendChild(label);
+          previewContainer.appendChild(preview);
+
+          statsDiv.textContent = `${genTime.toFixed(1)}ms | ${(svgSize / 1024).toFixed(1)}KB`;
+        }
+
+        header.appendChild(statsDiv);
+        card.appendChild(header);
+        card.appendChild(previewContainer);
+        cardsContainer.appendChild(card);
+      });
+    }
+
+    function updateSummary(results) {
+      if (results.length < approaches.length - 1) return;
+
+      results.sort((a, b) => b.matchRate - a.matchRate);
+
+      const modeLabel = COMPARE_MODE === 'full' ? 'FULL IMAGE' : 'CORNER ONLY';
+      let text = `${modeLabel} (${WIDTH}x${HEIGHT}, r=${RADIUS}, edge=${EDGE_WIDTH_RATIO.toFixed(2)})\n`;
+      text += '='.repeat(60) + '\n';
+      text += 'Approach                      Match%    Time     Size\n';
+      text += '-'.repeat(60) + '\n';
+
+      results.forEach(r => {
+        const status = r.passed ? 'PASS' : 'FAIL';
+        text += `${r.name.padEnd(28)} ${r.matchRate.toFixed(2).padStart(6)}%  ${(r.genTime.toFixed(1) + 'ms').padStart(8)}  ${((r.svgSize / 1024).toFixed(1) + 'KB').padStart(8)}  ${status}\n`;
+      });
+
+      text += '-'.repeat(60) + '\n';
+      text += `Passing (>= 99.5%): ${results.filter(r => r.passed).length}/${results.length}`;
+
+      summaryDiv.textContent = text;
+    }
+
+    // ============================================
+    // EVENT HANDLERS
+    // ============================================
+    document.getElementById('width').addEventListener('input', e => {
+      WIDTH = parseInt(e.target.value);
+      document.getElementById('width-val').textContent = WIDTH;
+      renderCards();
+    });
+
+    document.getElementById('height').addEventListener('input', e => {
+      HEIGHT = parseInt(e.target.value);
+      document.getElementById('height-val').textContent = HEIGHT;
+      renderCards();
+    });
+
+    document.getElementById('radius').addEventListener('input', e => {
+      RADIUS = parseInt(e.target.value);
+      document.getElementById('radius-val').textContent = RADIUS;
+      renderCards();
+    });
+
+    document.getElementById('edgeRatio').addEventListener('input', e => {
+      EDGE_WIDTH_RATIO = parseInt(e.target.value) / 100;
+      document.getElementById('edgeRatio-val').textContent = EDGE_WIDTH_RATIO.toFixed(2);
+      renderCards();
+    });
+
+    document.getElementById('compareMode').addEventListener('change', e => {
+      COMPARE_MODE = e.target.value;
+      renderCards();
+    });
+
+    // Initial render
+    renderCards();
+  </script>
+</body>
+</html>

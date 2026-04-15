@@ -3,9 +3,18 @@ node_modules/
 
 # Build output
 dist/
+build/
 
 # Test results
 test-results/
+
+# E2E screenshots
+e2e/screenshots/
+e2e/snapshots/
+e2e/results/
+e2e/debug/
+e2e/comparison/
+e2e/reference/
 
 # Vite temp files
 vite.config.ts.timestamp-*.mjs

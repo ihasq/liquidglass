@@ -20,9 +20,16 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "test:e2e": "node --experimental-vm-modules e2e/run-tests.js",
-    "test:e2e:update": "node --experimental-vm-modules e2e/run-tests.js --update-snapshots"
+    "test:e2e:update": "node --experimental-vm-modules e2e/run-tests.js --update-snapshots",
+    "asbuild:debug": "asc assembly/index.ts --target debug",
+    "asbuild:release": "asc assembly/index.ts --target release",
+    "asbuild": "npm run asbuild:debug && npm run asbuild:release",
+    "test": "node --test",
+    "start": "npx serve ."
   },
   "devDependencies": {
+    "assemblyscript": "^0.28.14",
+    "pako": "^2.1.0",
     "pixelmatch": "^7.1.0",
     "pngjs": "^7.0.0",
     "puppeteer": "^22.0.0",
@@ -40,5 +47,8 @@
     "backdrop-filter",
     "css"
   ],
-  "license": "MIT"
+  "license": "MIT",
+  "dependencies": {
+    "canvas": "^3.2.3"
+  }
 }

@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Atlas vs Canvas Generator Comparison Test</title>
+  <style>
+    body { margin: 0; padding: 20px; background: #1a1a2e; font-family: monospace; }
+    .test-container {
+      width: 300px;
+      height: 200px;
+      position: relative;
+      background: linear-gradient(45deg, #ff6b6b, #4ecdc4);
+    }
+    .test-container::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background-image:
+        repeating-linear-gradient(0deg, transparent, transparent 19px, rgba(255,255,255,0.3) 19px, rgba(255,255,255,0.3) 20px),
+        repeating-linear-gradient(90deg, transparent, transparent 19px, rgba(255,255,255,0.3) 19px, rgba(255,255,255,0.3) 20px);
+    }
+    liquid-glass {
+      position: absolute;
+      top: 50px;
+      left: 50px;
+      width: 200px;
+      height: 100px;
+      border-radius: 16px;
+    }
+    #results {
+      margin-top: 20px;
+      padding: 10px;
+      background: #000;
+      color: #0f0;
+      font-size: 12px;
+      white-space: pre;
+    }
+  </style>
+</head>
+<body>
+  <div class="test-container" id="container">
+    <liquid-glass id="test-element" refraction="50" thickness="50" gloss="50"></liquid-glass>
+  </div>
+  <div id="results">Loading...</div>
+
+  <script type="module">
+    import { LiquidGlassElement } from '../src/index.ts';
+
+    async function runTest() {
+      const results = document.getElementById('results');
+      const el = document.getElementById('test-element');
+
+      // Wait for render
+      await new Promise(r => setTimeout(r, 2000));
+
+      // Get filter info
+      const svg = document.querySelector('svg');
+      const filter = svg?.querySelector('filter');
+      const feImage = filter?.querySelector('feImage[result="d"]');
+
+      if (!feImage) {
+        results.textContent = 'ERROR: No displacement map found';
+        return;
+      }
+
+      const href = feImage.getAttribute('href');
+      const isSvgWrapper = href?.startsWith('data:image/svg+xml');
+
+      let info = {
+        mode: isSvgWrapper ? 'ATLAS' : 'CANVAS',
+        elementSize: { width: el.offsetWidth, height: el.offsetHeight }
+      };
+
+      if (isSvgWrapper) {
+        const decoded = decodeURIComponent(href.replace('data:image/svg+xml,', ''));
+        const viewBoxMatch = decoded.match(/viewBox="([^"]+)"/);
+        const imgWidthMatch = decoded.match(/<image[^>]*width="(\d+)"/);
+        const imgHeightMatch = decoded.match(/<image[^>]*height="(\d+)"/);
+        info.viewBox = viewBoxMatch?.[1];
+        info.atlasSize = imgWidthMatch?.[1] + 'x' + imgHeightMatch?.[1];
+      }
+
+      results.textContent = JSON.stringify(info, null, 2);
+
+      // Signal ready for screenshot
+      window.__testReady = true;
+      window.__testInfo = info;
+    }
+
+    runTest();
+  </script>
+</body>
+</html>

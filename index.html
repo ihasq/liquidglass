@@ -356,10 +356,8 @@
   </div>
 
   <script type="module">
-    import { registerLiquidGlassElement, LiquidGlassElement } from './src/index.ts';
-
-    // Register the custom element
-    registerLiquidGlassElement();
+    // Import auto-registers <liquid-glass> custom element
+    import { LiquidGlassElement } from './src/index.ts';
 
     // Get all liquid-glass panels
     const allPanels = document.querySelectorAll('liquid-glass');
@@ -396,7 +394,7 @@
 
     // Check browser support
     const supportStatus = document.getElementById('support-status');
-    if (LiquidGlassElement.isSupported()) {
+    if (LiquidGlassElement.supported) {
       supportStatus.textContent = 'Full SVG filter support (Chrome/Edge)';
       supportStatus.style.color = '#4ade80';
     } else {

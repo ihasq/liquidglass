@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Atlas Pixel Comparison Test</title>
+  <style>
+    body { margin: 0; padding: 20px; background: #1a1a2e; font-family: monospace; color: #fff; }
+    .test-row { display: flex; gap: 20px; margin-bottom: 20px; align-items: flex-start; }
+    .panel { background: #2a2a3e; padding: 10px; border-radius: 8px; }
+    .panel h3 { margin: 0 0 10px 0; font-size: 12px; color: #888; }
+    canvas { border: 1px solid #444; display: block; margin-bottom: 5px; }
+    .info { font-size: 10px; color: #666; }
+    #results { margin-top: 20px; padding: 15px; background: #000; border-radius: 8px; white-space: pre; font-size: 11px; }
+    .pass { color: #0f0; }
+    .fail { color: #f00; }
+    .container {
+      position: relative;
+      width: 300px;
+      height: 200px;
+      background: linear-gradient(45deg, #ff6b6b, #4ecdc4);
+      overflow: hidden;
+    }
+    .container::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background-image:
+        repeating-linear-gradient(0deg, transparent, transparent 19px, rgba(255,255,255,0.4) 19px, rgba(255,255,255,0.4) 20px),
+        repeating-linear-gradient(90deg, transparent, transparent 19px, rgba(255,255,255,0.4) 19px, rgba(255,255,255,0.4) 20px);
+    }
+    liquid-glass {
+      position: absolute;
+      top: 50px;
+      left: 50px;
+      width: 200px;
+      height: 100px;
+      border-radius: 16px;
+    }
+  </style>
+</head>
+<body>
+  <h2>Atlas vs Canvas-Generator Pixel Comparison</h2>
+
+  <div class="test-row">
+    <div class="panel">
+      <h3>Live Element</h3>
+      <div class="container">
+        <liquid-glass id="test-el" refraction="50" thickness="50"></liquid-glass>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h3>Atlas Displacement Map (extracted)</h3>
+      <canvas id="atlas-canvas"></canvas>
+      <div class="info" id="atlas-info"></div>
+    </div>
+
+    <div class="panel">
+      <h3>Canvas-Generator Reference</h3>
+      <canvas id="canvas-ref"></canvas>
+      <div class="info" id="canvas-info"></div>
+    </div>
+
+    <div class="panel">
+      <h3>Difference (amplified 10x)</h3>
+      <canvas id="diff-canvas"></canvas>
+      <div class="info" id="diff-info"></div>
+    </div>
+  </div>
+
+  <div id="results">Running tests...</div>
+
+  <script type="module">
+    import { LiquidGlassElement } from '../src/index.ts';
+    import { generateCanvasDisplacementMap } from '../src/core/displacement/canvas-generator.ts';
+
+    async function runTest() {
+      const results = document.getElementById('results');
+      const el = document.getElementById('test-el');
+
+      // Wait for render
+      await new Promise(r => setTimeout(r, 2000));
+
+      // Get the atlas displacement map
+      const svg = document.querySelector('svg');
+      const filter = svg?.querySelector('filter');
+      const feImage = filter?.querySelector('feImage[result="d"]');
+
+      if (!feImage) {
+        results.innerHTML = '<span class="fail">ERROR: No displacement map found</span>';
+        return;
+      }
+
+      const href = feImage.getAttribute('href');
+      let atlasDataUrl = null;
+      let viewBox = null;
+
+      if (href.startsWith('data:image/svg+xml')) {
+        const decoded = decodeURIComponent(href.replace('data:image/svg+xml,', ''));
+        const viewBoxMatch = decoded.match(/viewBox="([^"]+)"/);
+        const pngMatch = decoded.match(/href="(data:image\/png;base64,[^"]+)"/);
+        viewBox = viewBoxMatch?.[1];
+        atlasDataUrl = pngMatch?.[1];
+      } else {
+        atlasDataUrl = href;
+      }
+
+      if (!atlasDataUrl) {
+        results.innerHTML = '<span class="fail">ERROR: Could not extract atlas PNG</span>';
+        return;
+      }
+
+      // Load atlas image
+      const atlasImg = new Image();
+      await new Promise((resolve, reject) => {
+        atlasImg.onload = resolve;
+        atlasImg.onerror = reject;
+        atlasImg.src = atlasDataUrl;
+      });
+
+      // Extract the viewBox region from atlas
+      const [vx, vy, vw, vh] = (viewBox || '0 0 200 100').split(' ').map(Number);
+      const atlasCanvas = document.getElementById('atlas-canvas');
+      atlasCanvas.width = vw;
+      atlasCanvas.height = vh;
+      const atlasCtx = atlasCanvas.getContext('2d');
+
+      // Draw the clipped region
+      atlasCtx.drawImage(atlasImg, vx, vy, vw, vh, 0, 0, vw, vh);
+
+      document.getElementById('atlas-info').textContent =
+        `Atlas size: ${atlasImg.width}x${atlasImg.height}, viewBox: ${viewBox}`;
+
+      // Generate canvas-generator reference
+      const refResult = generateCanvasDisplacementMap({
+        width: vw,
+        height: vh,
+        borderRadius: 16,
+        edgeWidthRatio: 0.5
+      });
+
+      const refCanvas = document.getElementById('canvas-ref');
+      refCanvas.width = vw;
+      refCanvas.height = vh;
+      const refCtx = refCanvas.getContext('2d');
+      refCtx.drawImage(refResult.canvas, 0, 0);
+
+      document.getElementById('canvas-info').textContent =
+        `Size: ${vw}x${vh}, borderRadius: 16`;
+
+      // Compare pixels
+      const atlasData = atlasCtx.getImageData(0, 0, vw, vh).data;
+      const refData = refCtx.getImageData(0, 0, vw, vh).data;
+
+      const diffCanvas = document.getElementById('diff-canvas');
+      diffCanvas.width = vw;
+      diffCanvas.height = vh;
+      const diffCtx = diffCanvas.getContext('2d');
+      const diffImageData = diffCtx.createImageData(vw, vh);
+      const diffData = diffImageData.data;
+
+      let maxDiff = 0;
+      let totalDiff = 0;
+      let pixelCount = 0;
+      let mismatchPixels = 0;
+
+      for (let i = 0; i < atlasData.length; i += 4) {
+        const rDiff = Math.abs(atlasData[i] - refData[i]);
+        const gDiff = Math.abs(atlasData[i + 1] - refData[i + 1]);
+        const diff = Math.max(rDiff, gDiff);
+
+        maxDiff = Math.max(maxDiff, diff);
+        totalDiff += diff;
+        pixelCount++;
+
+        if (diff > 2) mismatchPixels++;
+
+        // Amplify difference for visualization
+        const amplified = Math.min(255, diff * 10);
+        diffData[i] = amplified;     // R
+        diffData[i + 1] = 0;         // G
+        diffData[i + 2] = 0;         // B
+        diffData[i + 3] = 255;       // A
+      }
+
+      diffCtx.putImageData(diffImageData, 0, 0);
+
+      const avgDiff = totalDiff / pixelCount;
+      const mismatchPct = (mismatchPixels / pixelCount * 100).toFixed(2);
+
+      document.getElementById('diff-info').textContent =
+        `Max diff: ${maxDiff}, Avg: ${avgDiff.toFixed(2)}, Mismatches: ${mismatchPct}%`;
+
+      // Report results
+      let report = [];
+      report.push('=== Atlas vs Canvas-Generator Comparison ===');
+      report.push(`Element size: ${vw}x${vh}`);
+      report.push(`Atlas size: ${atlasImg.width}x${atlasImg.height}`);
+      report.push(`ViewBox: ${viewBox}`);
+      report.push('');
+      report.push('--- Pixel Comparison ---');
+      report.push(`Total pixels: ${pixelCount}`);
+      report.push(`Max difference: ${maxDiff}`);
+      report.push(`Avg difference: ${avgDiff.toFixed(4)}`);
+      report.push(`Mismatched pixels (diff > 2): ${mismatchPixels} (${mismatchPct}%)`);
+      report.push('');
+
+      if (maxDiff === 0) {
+        report.push('<span class="pass">✓ PASS: Displacement maps are IDENTICAL</span>');
+      } else if (maxDiff <= 2 && mismatchPixels === 0) {
+        report.push('<span class="pass">✓ PASS: Displacement maps match within tolerance</span>');
+      } else {
+        report.push('<span class="fail">✗ FAIL: Displacement maps differ significantly</span>');
+
+        // Sample some differing pixels
+        report.push('');
+        report.push('Sample differing pixels:');
+        let samples = 0;
+        for (let y = 0; y < vh && samples < 5; y += 10) {
+          for (let x = 0; x < vw && samples < 5; x += 10) {
+            const idx = (y * vw + x) * 4;
+            const rDiff = Math.abs(atlasData[idx] - refData[idx]);
+            const gDiff = Math.abs(atlasData[idx + 1] - refData[idx + 1]);
+            if (rDiff > 2 || gDiff > 2) {
+              report.push(`  (${x},${y}): Atlas R=${atlasData[idx]} G=${atlasData[idx+1]}, Ref R=${refData[idx]} G=${refData[idx+1]}`);
+              samples++;
+            }
+          }
+        }
+      }
+
+      results.innerHTML = report.join('\n');
+
+      // Export test data for automation
+      window.__testResult = {
+        pass: maxDiff <= 2 && mismatchPixels === 0,
+        maxDiff,
+        avgDiff,
+        mismatchPixels,
+        mismatchPct: parseFloat(mismatchPct)
+      };
+    }
+
+    runTest().catch(e => {
+      document.getElementById('results').innerHTML = '<span class="fail">ERROR: ' + e.message + '</span>';
+      console.error(e);
+    });
+  </script>
+</body>
+</html>

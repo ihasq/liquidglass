@@ -21,6 +21,14 @@ export interface SpecularMapResult {
   dataUrl: string;
 }
 
+// Cache for specular maps to avoid repeated toDataURL() calls
+const _specularCache = new Map<string, SpecularMapResult>();
+const MAX_CACHE_SIZE = 50;
+
+function getSpecularCacheKey(options: SpecularMapOptions): string {
+  return `${options.width}:${options.height}:${options.borderRadius}:${options.intensity.toFixed(2)}`;
+}
+
 /**
  * Calculate specular intensity based on surface normal and light direction
  */
@@ -46,6 +54,13 @@ function calculateSpecular(
  * Generate specular highlight map
  */
 export function generateSpecularMap(options: SpecularMapOptions): SpecularMapResult {
+  // Check cache first
+  const cacheKey = getSpecularCacheKey(options);
+  const cached = _specularCache.get(cacheKey);
+  if (cached) {
+    return cached;
+  }
+
   const {
     width, height,
     profile,
@@ -176,10 +191,20 @@ export function generateSpecularMap(options: SpecularMapOptions): SpecularMapRes
 
   ctx.putImageData(imageData, 0, 0);
 
-  return {
+  const result: SpecularMapResult = {
     canvas,
     dataUrl: canvas.toDataURL('image/png')
   };
+
+  // Cache the result
+  if (_specularCache.size >= MAX_CACHE_SIZE) {
+    // Remove oldest entry (first key)
+    const firstKey = _specularCache.keys().next().value;
+    if (firstKey) _specularCache.delete(firstKey);
+  }
+  _specularCache.set(cacheKey, result);
+
+  return result;
 }
 
 /**
