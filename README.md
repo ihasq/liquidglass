@@ -5,10 +5,6 @@
 <h1 align="center">liquidglass.css</h1>
 
 <p align="center">
-  <strong>Liquid glass as a CSS property. As it should be.</strong>
-</p>
-
-<p align="center">
   <a href="https://www.npmjs.com/package/liquidglass.css"><img src="https://img.shields.io/npm/v/liquidglass.css.svg?style=flat-square&color=00d4ff" alt="npm version"></a>
   <a href="https://bundlephobia.com/package/liquidglass.css"><img src="https://img.shields.io/bundlephobia/minzip/liquidglass.css?style=flat-square&color=00d4ff" alt="bundle size"></a>
   <a href="https://github.com/user/liquidglass/blob/main/LICENSE"><img src="https://img.shields.io/npm/l/liquidglass.css?style=flat-square&color=00d4ff" alt="license"></a>
@@ -16,56 +12,25 @@
 
 <br>
 
+```css
+.card {
+  --liquidglass-refraction: 80;
+  border-radius: 20px;
+}
+```
+
 <p align="center">
   <img src="https://raw.githubusercontent.com/user/liquidglass/main/assets/demo.gif" alt="Demo" width="600">
 </p>
 
 ---
 
-## Why liquidglass.css?
-
-Other liquid glass libraries force you into their world:
-
-```jsx
-// ❌ React dependency, class instantiation, imperative API
-import { LiquidGlass } from "some-liquid-glass-lib";
-
-const glass = new LiquidGlass({
-  element: ref.current,
-  refraction: 0.8,
-  thickness: 0.5,
-  onReady: () => { /* ... */ }
-});
-
-useEffect(() => {
-  glass.init();
-  return () => glass.destroy();
-}, []);
-```
-
-**liquidglass.css works like CSS should work:**
-
-```css
-/* ✅ Just CSS. Any element. Any framework. */
-.glass-panel {
-  --liquidglass-refraction: 80;
-  border-radius: 20px;
-}
-```
-
-No React. No hooks. No class instantiation. No lifecycle management.
-Just properties that work everywhere CSS works.
-
----
-
 ## Features
 
-- **CSS-Native API** — Style with `--liquidglass-*` properties like any other CSS
-- **Physics-Based Refraction** — Real lens distortion using Snell's law, not fake blur
-- **WASM SIMD Acceleration** — Displacement maps generated in <5ms
-- **Framework Agnostic** — React, Vue, Svelte, vanilla... or no JS at all
-- **Zero Configuration** — Import once, style anywhere
-- **Morph Transitions** — Smooth crossfade between states
+- **CSS Custom Properties** — `--liquidglass-*` works like any standard CSS property
+- **Physics-Based** — Snell's law refraction, not blur approximation
+- **WASM SIMD** — Displacement maps in <5ms
+- **Framework Agnostic** — Works with React, Vue, Svelte, or vanilla
 - **Adaptive Performance** — Smart throttling at scale
 
 ## Quick Start
@@ -246,49 +211,6 @@ import "liquidglass.css";
 </liquid-glass>
 ```
 
-## Advanced Usage
-
-### FilterManager API
-
-For programmatic control:
-
-```js
-import { FilterManager, preloadWasm } from "liquidglass.css";
-
-await preloadWasm();
-
-const manager = new FilterManager();
-
-manager.attach(element, {
-  refraction: 70,
-  thickness: 50,
-  gloss: 60,
-  softness: 15,
-  saturation: 45,
-  dispersion: 30
-});
-
-// Update parameters
-manager.update(element, { refraction: 90 });
-
-// Force refresh
-manager.refresh(element);
-
-// Cleanup
-manager.detach(element);
-```
-
-### Preload WASM
-
-For critical rendering paths:
-
-```js
-import { preloadWasm } from "liquidglass.css";
-
-// Preload during idle time
-requestIdleCallback(() => preloadWasm());
-```
-
 ## Browser Support
 
 | Browser | Version | Notes |
@@ -307,19 +229,6 @@ requestIdleCallback(() => preloadWasm());
 - **Viewport Culling** — Off-screen elements pause updates
 - **Predictive Rendering** — Anticipates size changes during resize
 - **Morph Transitions** — Crossfade prevents jarring updates
-
-## Comparison
-
-| | liquidglass.css | Other libs | CSS blur | Three.js |
-|---|:---:|:---:|:---:|:---:|
-| **API Style** | CSS Properties | JS Classes | CSS | JS |
-| **Framework dependency** | None | React/Vue | None | None |
-| **True refraction** | Yes | Yes | No | Yes |
-| **Setup code** | 0 lines | 10+ lines | 0 lines | 50+ lines |
-| **Bundle size** | ~33KB | ~50KB+ | 0 | ~150KB+ |
-| **Works with any element** | Yes | Limited | Yes | No |
-| **Responds to CSS changes** | Yes | Manual update | Yes | No |
-| **`:hover` / media queries** | Just works | Manual | Just works | Manual |
 
 ## Roadmap
 
@@ -344,8 +253,3 @@ Open `http://localhost:5173/demo/parameter-lab.html` to experiment.
 
 MIT License. Use it anywhere.
 
----
-
-<p align="center">
-  <sub>Built with obsessive attention to optical physics.</sub>
-</p>
