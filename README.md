@@ -42,13 +42,15 @@
 npm install liquidglass.css
 ```
 
-### Option 1: CSS Custom Properties (Recommended)
-
-The simplest way. Import once, style anywhere:
+One import. That's it.
 
 ```js
 import "liquidglass.css";
 ```
+
+Now use either approach:
+
+### CSS Custom Properties
 
 ```css
 .glass-panel {
@@ -65,15 +67,7 @@ import "liquidglass.css";
 </div>
 ```
 
-### Option 2: Web Component
-
-Explicit control with attributes:
-
-```js
-import { registerLiquidGlassElement } from "liquidglass.css";
-
-registerLiquidGlassElement();
-```
+### Web Component
 
 ```html
 <liquid-glass refraction="70" thickness="50" style="border-radius: 20px;">
@@ -81,6 +75,8 @@ registerLiquidGlassElement();
   <p>Content with lens effect</p>
 </liquid-glass>
 ```
+
+Both work simultaneously. No configuration needed.
 
 ## Parameters
 
@@ -148,6 +144,7 @@ The displacement map encodes refraction vectors:
 ### React
 
 ```tsx
+// main.tsx or App.tsx
 import "liquidglass.css";
 
 function GlassCard({ children }) {
@@ -157,24 +154,33 @@ function GlassCard({ children }) {
     </div>
   );
 }
-```
 
-```css
-.glass-card {
-  --liquidglass-refraction: 60;
-  --liquidglass-thickness: 50;
-  border-radius: 20px;
-  padding: 24px;
+// Or use the Web Component directly
+function GlassBox() {
+  return (
+    <liquid-glass refraction="70" style={{ borderRadius: 20 }}>
+      Content
+    </liquid-glass>
+  );
 }
 ```
 
 ### Vue
 
 ```vue
+<script setup>
+import "liquidglass.css";
+</script>
+
 <template>
   <div class="glass-panel">
     <slot />
   </div>
+
+  <!-- Or use Web Component -->
+  <liquid-glass refraction="80">
+    Content
+  </liquid-glass>
 </template>
 
 <style scoped>
@@ -186,20 +192,26 @@ function GlassCard({ children }) {
 </style>
 ```
 
-### Vanilla JS
+### Vanilla
 
 ```html
 <script type="module">
   import "https://unpkg.com/liquidglass.css";
 </script>
 
+<!-- CSS approach -->
 <div style="
   --liquidglass-refraction: 80;
   --liquidglass-softness: 20;
   border-radius: 24px;
 ">
-  Pure CSS, no build step
+  CSS Custom Properties
 </div>
+
+<!-- Web Component approach -->
+<liquid-glass refraction="80" style="border-radius: 24px;">
+  Web Component
+</liquid-glass>
 ```
 
 ## Advanced Usage

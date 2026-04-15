@@ -889,14 +889,9 @@
   </script>
 
   <script type="module">
-    import { LiquidGlassElement, registerLiquidGlassElement } from '../src/index.ts';
-    import { generateWasmDisplacementMap, preloadWasm } from '../src/core/displacement/wasm-generator.ts';
-
-    // Register custom element
-    registerLiquidGlassElement();
-
-    // Preload WASM for displacement map generation
-    await preloadWasm();
+    // Auto-registers Web Component and CSS driver
+    import '../src/liquidglass.ts';
+    import { generateWasmDisplacementMap } from '../src/core/displacement/wasm-generator.ts';
 
     // ============================================================
     // State
