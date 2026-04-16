@@ -52,3 +52,6 @@ npm-debug.log*
 # Temporary files
 *.tmp
 *.temp
+
+# History files (Claude conversation logs)
+HISTORY-*.md

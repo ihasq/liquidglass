@@ -535,6 +535,18 @@ export class FilterManager {
     const state = this._registry.get(element);
     if (!state) return;
 
+    // When optimization is disabled, render immediately without throttling
+    if (!this._isOptimizationEnabled(state.params)) {
+      // Clear any pending deferred render
+      if (state.deferredRenderTimeout) {
+        clearTimeout(state.deferredRenderTimeout);
+        state.deferredRenderTimeout = null;
+      }
+      this._render(element, state.params);
+      return;
+    }
+
+    // Optimization enabled: use adaptive throttling
     const now = performance.now();
     const timeSinceLastEncode = now - state.lastEncodeTime;
 
@@ -571,19 +583,29 @@ export class FilterManager {
 
     // Calculate effect parameters
     const edgeWidthRatio = 0.3 + (params.thickness / 100) * 0.4;
+    const optimizationEnabled = this._isOptimizationEnabled(params);
 
-    // Update size history for prediction
     const now = performance.now();
-    state.sizeHistory.push({ width, height, radius: borderRadius, timestamp: now });
-    while (state.sizeHistory.length > PREDICTION_HISTORY_SIZE) {
-      state.sizeHistory.shift();
-    }
+    let baseWidth = width;
+    let baseHeight = height;
+    let renderRadius = borderRadius;
 
-    // Predict future size
-    const prediction = predictSize(state.sizeHistory);
-    const baseWidth = prediction.confidence > 0.3 ? prediction.width : width;
-    const baseHeight = prediction.confidence > 0.3 ? prediction.height : height;
-    const renderRadius = prediction.confidence > 0.3 ? prediction.radius : borderRadius;
+    if (optimizationEnabled) {
+      // Update size history for prediction
+      state.sizeHistory.push({ width, height, radius: borderRadius, timestamp: now });
+      while (state.sizeHistory.length > PREDICTION_HISTORY_SIZE) {
+        state.sizeHistory.shift();
+      }
+
+      // Predict future size
+      const prediction = predictSize(state.sizeHistory);
+      baseWidth = prediction.confidence > 0.3 ? prediction.width : width;
+      baseHeight = prediction.confidence > 0.3 ? prediction.height : height;
+      renderRadius = prediction.confidence > 0.3 ? prediction.radius : borderRadius;
+    } else {
+      // Optimization disabled: clear history, use current size directly
+      state.sizeHistory = [];
+    }
 
     // Apply dmap-resolution scaling (0-100 → 0.1-1.0)
     // Minimum 10% resolution to avoid extreme pixelation
@@ -616,7 +638,9 @@ export class FilterManager {
     });
 
     // Check if we can do a fast update with morphing
-    const canFastUpdate = state.filterElement &&
+    // Morph transitions are only available when optimization is enabled
+    const canFastUpdate = optimizationEnabled &&
+      state.filterElement &&
       state.dispFeImageOld && state.dispFeImageNew &&
       state.dispComposite && state.specFeImage &&
       this._paramsEqual(state.params, params);
@@ -650,13 +674,20 @@ export class FilterManager {
     state.borderRadius = borderRadius;
     state.params = params;
     state.lastEncodeTime = now;
-    state.adaptiveInterval = getAdaptiveInterval(
-      width * height,
-      Math.abs(renderWidth - state.encodedWidth) / Math.max(state.encodedWidth, 1),
-      this._elements.size,
-      this._options.minEncodeInterval,
-      this._options.maxEncodeInterval
-    );
+
+    // Only calculate adaptive interval when optimization is enabled
+    if (optimizationEnabled) {
+      state.adaptiveInterval = getAdaptiveInterval(
+        width * height,
+        Math.abs(renderWidth - state.encodedWidth) / Math.max(state.encodedWidth, 1),
+        this._elements.size,
+        this._options.minEncodeInterval,
+        this._options.maxEncodeInterval
+      );
+    } else {
+      // Optimization disabled: use minimum interval (renders as fast as possible)
+      state.adaptiveInterval = this._options.minEncodeInterval;
+    }
   }
 
   private _createFilter(
@@ -785,8 +816,23 @@ export class FilterManager {
       a.saturation === b.saturation &&
       a.dispersion === b.dispersion &&
       a.displacementResolution === b.displacementResolution &&
-      a.displacementSmoothing === b.displacementSmoothing
+      a.displacementSmoothing === b.displacementSmoothing &&
+      this._normalizeOptimization(a.enableOptimization) === this._normalizeOptimization(b.enableOptimization)
     );
+  }
+
+  /**
+   * Normalize enableOptimization value: 0 stays 0, any non-zero becomes 1
+   */
+  private _normalizeOptimization(value: number): number {
+    return value === 0 ? 0 : 1;
+  }
+
+  /**
+   * Check if optimization is enabled for given params
+   */
+  private _isOptimizationEnabled(params: LiquidGlassParams): boolean {
+    return this._normalizeOptimization(params.enableOptimization) === 1;
   }
 }
 

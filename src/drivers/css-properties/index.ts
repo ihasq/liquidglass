@@ -27,6 +27,7 @@ const PROPS = {
   dispersion: `${PROP_PREFIX}dispersion`,
   displacementResolution: `${PROP_PREFIX}displacement-resolution`,
   displacementSmoothing: `${PROP_PREFIX}displacement-smoothing`,
+  enableOptimization: `${PROP_PREFIX}enable-optimization`,
 } as const;
 
 // Sentinel value to detect "not set" (uses CSS @property initial-value)
@@ -151,9 +152,22 @@ function injectPropertyRules(): void {
   inherits: true;
   initial-value: ${SENTINEL};
 }
+
+@property ${PROPS.enableOptimization} {
+  syntax: '<number>';
+  inherits: true;
+  initial-value: ${SENTINEL};
+}
 `;
 
   document.head.appendChild(style);
+}
+
+/**
+ * Normalize enableOptimization value: 0 stays 0, any non-zero becomes 1
+ */
+function normalizeOptimization(value: number): number {
+  return value === 0 ? 0 : 1;
 }
 
 /**
@@ -171,6 +185,7 @@ function readParams(element: HTMLElement): LiquidGlassParams | null {
   const dispersion = parseFloat(style.getPropertyValue(PROPS.dispersion));
   const displacementResolution = parseFloat(style.getPropertyValue(PROPS.displacementResolution));
   const displacementSmoothing = parseFloat(style.getPropertyValue(PROPS.displacementSmoothing));
+  const enableOptimization = parseFloat(style.getPropertyValue(PROPS.enableOptimization));
 
   // Check if any property is set (not sentinel)
   const hasRefraction = refraction !== SENTINEL && !isNaN(refraction);
@@ -181,13 +196,15 @@ function readParams(element: HTMLElement): LiquidGlassParams | null {
   const hasDispersion = dispersion !== SENTINEL && !isNaN(dispersion);
   const hasDmapResolution = displacementResolution !== SENTINEL && !isNaN(displacementResolution);
   const hasDmapSmoothing = displacementSmoothing !== SENTINEL && !isNaN(displacementSmoothing);
+  const hasEnableOptimization = enableOptimization !== SENTINEL && !isNaN(enableOptimization);
 
   // If no property is set, return null
-  if (!hasRefraction && !hasThickness && !hasGloss && !hasSoftness && !hasSaturation && !hasDispersion && !hasDmapResolution && !hasDmapSmoothing) {
+  if (!hasRefraction && !hasThickness && !hasGloss && !hasSoftness && !hasSaturation && !hasDispersion && !hasDmapResolution && !hasDmapSmoothing && !hasEnableOptimization) {
     return null;
   }
 
   // Return params with defaults for unset values
+  // enableOptimization: normalize to 0 or 1 (0 stays 0, any non-zero becomes 1)
   return {
     refraction: hasRefraction ? refraction : DEFAULT_PARAMS.refraction,
     thickness: hasThickness ? thickness : DEFAULT_PARAMS.thickness,
@@ -197,6 +214,7 @@ function readParams(element: HTMLElement): LiquidGlassParams | null {
     dispersion: hasDispersion ? dispersion : DEFAULT_PARAMS.dispersion,
     displacementResolution: hasDmapResolution ? displacementResolution : DEFAULT_PARAMS.displacementResolution,
     displacementSmoothing: hasDmapSmoothing ? displacementSmoothing : DEFAULT_PARAMS.displacementSmoothing,
+    enableOptimization: hasEnableOptimization ? normalizeOptimization(enableOptimization) : DEFAULT_PARAMS.enableOptimization,
   };
 }
 

@@ -24,8 +24,15 @@ function getManager(): FilterManager {
 }
 
 // Observable attributes
-const ATTRIBUTES = ['refraction', 'thickness', 'gloss', 'softness', 'saturation', 'dispersion', 'displacement-resolution', 'displacement-smoothing', 'disabled'] as const;
+const ATTRIBUTES = ['refraction', 'thickness', 'gloss', 'softness', 'saturation', 'dispersion', 'displacement-resolution', 'displacement-smoothing', 'enable-optimization', 'disabled'] as const;
 type Attribute = (typeof ATTRIBUTES)[number];
+
+/**
+ * Normalize enableOptimization value: 0 stays 0, any non-zero becomes 1
+ */
+function normalizeOptimization(value: number): number {
+  return value === 0 ? 0 : 1;
+}
 
 /**
  * Liquid Glass Custom Element
@@ -44,6 +51,7 @@ export class LiquidGlassElement extends HTMLElement {
   #dispersion = DEFAULT_PARAMS.dispersion;
   #displacementResolution = DEFAULT_PARAMS.displacementResolution;
   #displacementSmoothing = DEFAULT_PARAMS.displacementSmoothing;
+  #enableOptimization = DEFAULT_PARAMS.enableOptimization;
   #disabled = false;
 
   #initialized = false;
@@ -102,6 +110,10 @@ export class LiquidGlassElement extends HTMLElement {
       case 'displacement-smoothing':
         this.#displacementSmoothing = value ? parseFloat(value) : DEFAULT_PARAMS.displacementSmoothing;
         break;
+      case 'enable-optimization':
+        // Normalize: 0 stays 0, any non-zero becomes 1
+        this.#enableOptimization = value ? normalizeOptimization(parseFloat(value)) : DEFAULT_PARAMS.enableOptimization;
+        break;
       case 'disabled':
         this.#disabled = value !== null;
         if (this.#initialized) {
@@ -129,6 +141,7 @@ export class LiquidGlassElement extends HTMLElement {
       dispersion: this.#dispersion,
       displacementResolution: this.#displacementResolution,
       displacementSmoothing: this.#displacementSmoothing,
+      enableOptimization: this.#enableOptimization,
     };
   }
 
@@ -176,7 +189,7 @@ export class LiquidGlassElement extends HTMLElement {
     this.setAttribute('dispersion', String(v));
   }
 
-  /** Displacement map resolution (0-100, default 100)
+  /** Displacement map resolution (0-100, default 45)
    *  Lower values reduce CPU load but require GPU smoothing.
    */
   get displacementResolution(): number { return this.#displacementResolution; }
@@ -185,13 +198,23 @@ export class LiquidGlassElement extends HTMLElement {
     this.setAttribute('displacement-resolution', String(v));
   }
 
-  /** Displacement map smoothing blur (0-100, default 0)
+  /** Displacement map smoothing blur (0-100, default 30)
    *  Direct control of GPU smoothing stdDeviation (0-100 → 0-5px)
    */
   get displacementSmoothing(): number { return this.#displacementSmoothing; }
   set displacementSmoothing(v: number) {
     this.#displacementSmoothing = v;
     this.setAttribute('displacement-smoothing', String(v));
+  }
+
+  /** Enable rendering optimizations (0 or 1, default 1)
+   *  0 = disabled, any non-zero value = enabled
+   *  Controls: size prediction, adaptive throttling, morph transitions
+   */
+  get enableOptimization(): number { return this.#enableOptimization; }
+  set enableOptimization(v: number) {
+    this.#enableOptimization = normalizeOptimization(v);
+    this.setAttribute('enable-optimization', String(this.#enableOptimization));
   }
 
   /** Disable the effect */

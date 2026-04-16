@@ -12,10 +12,13 @@ export interface LiquidGlassParams {
   softness: number;        // Background blur (0-100, default 10)
   saturation: number;      // Color saturation boost (0-100, default 45)
   dispersion: number;      // Edge dispersion blur (0-100, default 30)
-  displacementResolution: number;  // Displacement map resolution (0-100, default 100)
+  displacementResolution: number;  // Displacement map resolution (0-100, default 45)
                            // Lower values reduce CPU load but require GPU smoothing
-  displacementSmoothing: number;   // Displacement map smoothing blur (0-100, default 0)
+  displacementSmoothing: number;   // Displacement map smoothing blur (0-100, default 30)
                            // Direct control of feGaussianBlur stdDeviation (0-100 → 0-5px)
+  enableOptimization: number;      // Enable rendering optimizations (0 or 1, default 1)
+                           // 0 = disabled, any non-zero value = enabled
+                           // Controls: size prediction, adaptive throttling, morph transitions
 }
 
 /**
@@ -29,7 +32,8 @@ export const DEFAULT_PARAMS: LiquidGlassParams = {
   saturation: 45,
   dispersion: 30,
   displacementResolution: 45,   // Balanced CPU/GPU load
-  displacementSmoothing: 15,    // Light smoothing (0-100 → 0-5px stdDeviation)
+  displacementSmoothing: 30,    // Moderate smoothing (0-100 → 0-5px stdDeviation)
+  enableOptimization: 1,        // Optimization enabled by default
 };
 
 /**

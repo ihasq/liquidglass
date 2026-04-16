@@ -291,7 +291,8 @@
       --liquidglass-saturation: 45;
       --liquidglass-dispersion: 30;
       --liquidglass-displacement-resolution: 45;
-      --liquidglass-displacement-smoothing: 15;
+      --liquidglass-displacement-smoothing: 30;
+      --liquidglass-enable-optimization: 1;
       display: flex;
       flex-direction: column;
       align-items: center;
@@ -682,10 +683,22 @@
       <div class="control">
         <div class="control-header">
           <span class="control-label">Displacement Smoothing</span>
-          <span class="control-value" id="displacement-smoothing-val">15</span>
+          <span class="control-value" id="displacement-smoothing-val">30</span>
         </div>
         <div class="control-desc">Manual blur stdDeviation (0-100 → 0-5px). Overrides auto-smoothing when > 0</div>
-        <input type="range" id="displacement-smoothing" min="0" max="100" value="15">
+        <input type="range" id="displacement-smoothing" min="0" max="100" value="30">
+      </div>
+
+      <div class="control">
+        <div class="control-header">
+          <span class="control-label">Enable Optimization</span>
+          <span class="control-value" id="enable-optimization-val">ON</span>
+        </div>
+        <div class="control-desc">Size prediction, adaptive throttling, morph transitions (0=OFF, 1=ON)</div>
+        <div class="view-mode-toggle" style="margin-top: 8px;">
+          <button class="view-mode-btn" id="optimization-off-btn" data-opt="0">OFF (0)</button>
+          <button class="view-mode-btn active" id="optimization-on-btn" data-opt="1">ON (1)</button>
+        </div>
       </div>
     </section>
 
@@ -869,7 +882,8 @@
   --liquidglass-saturation: 45;
   --liquidglass-dispersion: 30;
   --liquidglass-displacement-resolution: 45;
-  --liquidglass-displacement-smoothing: 15;
+  --liquidglass-displacement-smoothing: 30;
+  --liquidglass-enable-optimization: 1;
   border-radius: 24px;
 }</code>
     <button class="copy-btn" id="copy-btn">Copy to Clipboard</button>
@@ -971,14 +985,17 @@
       bgDirection: document.getElementById('bg-direction')
     };
 
+    // Enable optimization state (separate since it's a toggle, not a range)
+    let enableOptimization = 1;
+
     // Presets
     const presets = {
-      default: { refraction: 50, thickness: 50, gloss: 50, softness: 10, saturation: 45, dispersion: 30, displacementResolution: 45, displacementSmoothing: 15, radius: 24 },
-      subtle: { refraction: 30, thickness: 40, gloss: 30, softness: 5, saturation: 30, dispersion: 20, displacementResolution: 100, displacementSmoothing: 0, radius: 16 },
-      bold: { refraction: 80, thickness: 70, gloss: 70, softness: 15, saturation: 60, dispersion: 50, displacementResolution: 100, displacementSmoothing: 0, radius: 32 },
-      frosted: { refraction: 40, thickness: 50, gloss: 40, softness: 50, saturation: 20, dispersion: 60, displacementResolution: 50, displacementSmoothing: 20, radius: 20 },
-      crystal: { refraction: 70, thickness: 60, gloss: 80, softness: 0, saturation: 70, dispersion: 40, displacementResolution: 100, displacementSmoothing: 0, radius: 28 },
-      ios: { refraction: 45, thickness: 55, gloss: 55, softness: 20, saturation: 50, dispersion: 35, displacementResolution: 75, displacementSmoothing: 10, radius: 22 }
+      default: { refraction: 50, thickness: 50, gloss: 50, softness: 10, saturation: 45, dispersion: 30, displacementResolution: 45, displacementSmoothing: 30, enableOptimization: 1, radius: 24 },
+      subtle: { refraction: 30, thickness: 40, gloss: 30, softness: 5, saturation: 30, dispersion: 20, displacementResolution: 100, displacementSmoothing: 0, enableOptimization: 1, radius: 16 },
+      bold: { refraction: 80, thickness: 70, gloss: 70, softness: 15, saturation: 60, dispersion: 50, displacementResolution: 100, displacementSmoothing: 0, enableOptimization: 1, radius: 32 },
+      frosted: { refraction: 40, thickness: 50, gloss: 40, softness: 50, saturation: 20, dispersion: 60, displacementResolution: 50, displacementSmoothing: 20, enableOptimization: 1, radius: 20 },
+      crystal: { refraction: 70, thickness: 60, gloss: 80, softness: 0, saturation: 70, dispersion: 40, displacementResolution: 100, displacementSmoothing: 0, enableOptimization: 1, radius: 28 },
+      ios: { refraction: 45, thickness: 55, gloss: 55, softness: 20, saturation: 50, dispersion: 35, displacementResolution: 75, displacementSmoothing: 10, enableOptimization: 1, radius: 22 }
     };
 
     // View mode state
@@ -1313,7 +1330,8 @@
         saturation: controls.saturation.value,
         dispersion: controls.dispersion.value,
         displacementResolution: controls.displacementResolution.value,
-        displacementSmoothing: controls.displacementSmoothing.value
+        displacementSmoothing: controls.displacementSmoothing.value,
+        enableOptimization: enableOptimization
       };
 
       allGlasses.forEach(glass => {
@@ -1325,6 +1343,7 @@
         glass.style.setProperty('--liquidglass-dispersion', values.dispersion);
         glass.style.setProperty('--liquidglass-displacement-resolution', values.displacementResolution);
         glass.style.setProperty('--liquidglass-displacement-smoothing', values.displacementSmoothing);
+        glass.style.setProperty('--liquidglass-enable-optimization', values.enableOptimization);
       });
 
       // Update selected element size/radius
@@ -1367,6 +1386,7 @@
       document.getElementById('dispersion-val').textContent = values.dispersion;
       document.getElementById('displacement-resolution-val').textContent = values.displacementResolution;
       document.getElementById('displacement-smoothing-val').textContent = values.displacementSmoothing;
+      document.getElementById('enable-optimization-val').textContent = values.enableOptimization === 1 ? 'ON' : 'OFF';
       document.getElementById('radius-val').textContent = controls.radius.value;
       document.getElementById('width-val').textContent = controls.width.value;
       document.getElementById('height-val').textContent = controls.height.value;
@@ -1390,6 +1410,7 @@
   --liquidglass-dispersion: ${values.dispersion};
   --liquidglass-displacement-resolution: ${values.displacementResolution};
   --liquidglass-displacement-smoothing: ${values.displacementSmoothing};
+  --liquidglass-enable-optimization: ${values.enableOptimization};
   border-radius: ${controls.radius.value}px;
 }`;
       codeOutput.textContent = code;
@@ -1478,10 +1499,22 @@
       controls.dispersion.value = preset.dispersion;
       controls.displacementResolution.value = preset.displacementResolution;
       controls.displacementSmoothing.value = preset.displacementSmoothing;
+      setEnableOptimization(preset.enableOptimization);
 
       document.querySelectorAll('.preset-btn[data-preset]').forEach(btn => {
         btn.classList.toggle('active', btn.dataset.preset === name);
       });
+
+      updateAllGlasses();
+    }
+
+    function setEnableOptimization(value) {
+      // Normalize: 0 stays 0, any non-zero becomes 1
+      enableOptimization = value === 0 ? 0 : 1;
+
+      // Update toggle button states
+      document.getElementById('optimization-off-btn').classList.toggle('active', enableOptimization === 0);
+      document.getElementById('optimization-on-btn').classList.toggle('active', enableOptimization === 1);
 
       updateAllGlasses();
     }
@@ -1512,7 +1545,8 @@
       controls.tint.value = '#ffffff';
       controls.tintOpacity.value = 8;
       controls.displacementResolution.value = 45;
-      controls.displacementSmoothing.value = 15;
+      controls.displacementSmoothing.value = 30;
+      setEnableOptimization(1);
       controls.bgSpeed.value = 30;
       controls.bgDirection.value = 135;
       updateBackgroundAnimation();
@@ -1539,8 +1573,13 @@
     document.getElementById('reset-all-btn').addEventListener('click', resetAll);
 
     // View mode toggle buttons
-    document.querySelectorAll('.view-mode-btn').forEach(btn => {
+    document.querySelectorAll('.view-mode-btn[data-mode]').forEach(btn => {
       btn.addEventListener('click', () => setViewMode(btn.dataset.mode));
+    });
+
+    // Enable optimization toggle buttons
+    document.querySelectorAll('.view-mode-btn[data-opt]').forEach(btn => {
+      btn.addEventListener('click', () => setEnableOptimization(parseInt(btn.dataset.opt)));
     });
 
     document.getElementById('copy-btn').addEventListener('click', () => {
