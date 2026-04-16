@@ -291,6 +291,7 @@
       --liquidglass-saturation: 45;
       --liquidglass-dispersion: 30;
       --liquidglass-displacement-resolution: 45;
+      --liquidglass-displacement-min-resolution: 20;
       --liquidglass-displacement-smoothing: 30;
       --liquidglass-enable-optimization: 1;
       display: flex;
@@ -422,6 +423,39 @@
       padding: 12px 16px;
       font-size: 11px;
       font-family: 'SF Mono', Monaco, monospace;
+    }
+
+    /* Floating Controls Toggle */
+    .floating-toggle {
+      position: fixed;
+      bottom: 20px;
+      left: 400px;
+      width: 36px;
+      height: 36px;
+      background: rgba(22, 33, 62, 0.95);
+      border: 1px solid rgba(255,255,255,0.2);
+      border-radius: 8px;
+      color: var(--text);
+      font-size: 16px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 200;
+      transition: all 0.2s;
+    }
+
+    .floating-toggle:hover {
+      background: rgba(233, 69, 96, 0.3);
+      border-color: var(--highlight);
+    }
+
+    /* Hidden state for floating controls */
+    .floating-controls-hidden .bg-control,
+    .floating-controls-hidden .stats,
+    .floating-controls-hidden .code-output,
+    .floating-controls-hidden .progressive-info {
+      display: none !important;
     }
 
     .stat-row {
@@ -561,6 +595,79 @@
       box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.5);
     }
 
+    /* Resolution status indicator for progressive rendering visualization */
+    .resolution-status {
+      position: absolute;
+      top: 8px;
+      left: 8px;
+      background: rgba(0, 0, 0, 0.8);
+      color: white;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 10px;
+      font-family: 'SF Mono', Monaco, monospace;
+      z-index: 20;
+      pointer-events: none;
+      white-space: nowrap;
+    }
+
+    .resolution-status.low-res {
+      background: rgba(233, 69, 96, 0.9);
+    }
+
+    .resolution-status.high-res {
+      background: rgba(67, 233, 123, 0.9);
+    }
+
+    .resolution-status.pending {
+      background: rgba(255, 193, 7, 0.9);
+      animation: pulse 0.5s ease-in-out infinite alternate;
+    }
+
+    @keyframes pulse {
+      from { opacity: 0.7; }
+      to { opacity: 1; }
+    }
+
+    /* Progressive rendering info panel */
+    .progressive-info {
+      position: absolute;
+      top: 220px;
+      left: 16px;
+      background: rgba(22, 33, 62, 0.95);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 8px;
+      padding: 12px 16px;
+      font-size: 11px;
+      z-index: 100;
+      display: none;
+    }
+
+    .progressive-info.visible {
+      display: block;
+    }
+
+    .progressive-info-title {
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-dim);
+      margin-bottom: 8px;
+    }
+
+    .progressive-info-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 4px;
+    }
+
+    .progressive-info-row:last-child { margin-bottom: 0; }
+
+    .progressive-info-label { color: var(--text-dim); }
+    .progressive-info-value { color: #43e97b; font-family: 'SF Mono', Monaco, monospace; }
+
     /* Responsive */
     @media (max-width: 900px) {
       body { flex-direction: column; }
@@ -682,6 +789,15 @@
 
       <div class="control">
         <div class="control-header">
+          <span class="control-label">Displacement Min Resolution</span>
+          <span class="control-value" id="displacement-min-resolution-val">20</span>
+        </div>
+        <div class="control-desc">Low-res preview during resize (progressive rendering). Lower = faster preview</div>
+        <input type="range" id="displacement-min-resolution" min="5" max="100" value="20">
+      </div>
+
+      <div class="control">
+        <div class="control-header">
           <span class="control-label">Displacement Smoothing</span>
           <span class="control-value" id="displacement-smoothing-val">30</span>
         </div>
@@ -797,6 +913,31 @@
       </div>
     </div>
 
+    <!-- Progressive Rendering Info (visible only in displacement mode) -->
+    <div class="progressive-info" id="progressive-info">
+      <div class="progressive-info-title">Progressive Rendering</div>
+      <div class="progressive-info-row">
+        <span class="progressive-info-label">Status:</span>
+        <span class="progressive-info-value" id="prog-status">Idle</span>
+      </div>
+      <div class="progressive-info-row">
+        <span class="progressive-info-label">Resolution:</span>
+        <span class="progressive-info-value" id="prog-resolution">45%</span>
+      </div>
+      <div class="progressive-info-row">
+        <span class="progressive-info-label">Render Size:</span>
+        <span class="progressive-info-value" id="prog-render-size">--</span>
+      </div>
+      <div class="progressive-info-row">
+        <span class="progressive-info-label">Min Res:</span>
+        <span class="progressive-info-value" id="prog-min-res">20%</span>
+      </div>
+      <div class="progressive-info-row">
+        <span class="progressive-info-label">Max Res:</span>
+        <span class="progressive-info-value" id="prog-max-res">45%</span>
+      </div>
+    </div>
+
     <!-- Interactive Element 1 -->
     <div class="interactive-element" id="element-1" data-x="50%" data-y="40%" data-w="320" data-h="200" data-r="0" data-radius="24">
       <div class="glass-panel" style="width: 320px; height: 200px; border-radius: 24px;">
@@ -871,6 +1012,9 @@
     </div>
   </div>
 
+  <!-- Floating Controls Toggle Button -->
+  <button class="floating-toggle" id="floating-toggle" title="Toggle floating controls (H)">👁</button>
+
   <!-- Code Output -->
   <div class="code-output">
     <div class="code-output-title">Generated CSS</div>
@@ -882,6 +1026,7 @@
   --liquidglass-saturation: 45;
   --liquidglass-dispersion: 30;
   --liquidglass-displacement-resolution: 45;
+  --liquidglass-displacement-min-resolution: 20;
   --liquidglass-displacement-smoothing: 30;
   --liquidglass-enable-optimization: 1;
   border-radius: 24px;
@@ -975,6 +1120,7 @@
       dispersion: document.getElementById('dispersion'),
       gloss: document.getElementById('gloss'),
       displacementResolution: document.getElementById('displacement-resolution'),
+      displacementMinResolution: document.getElementById('displacement-min-resolution'),
       displacementSmoothing: document.getElementById('displacement-smoothing'),
       radius: document.getElementById('radius'),
       width: document.getElementById('width'),
@@ -990,16 +1136,36 @@
 
     // Presets
     const presets = {
-      default: { refraction: 50, thickness: 50, gloss: 50, softness: 10, saturation: 45, dispersion: 30, displacementResolution: 45, displacementSmoothing: 30, enableOptimization: 1, radius: 24 },
-      subtle: { refraction: 30, thickness: 40, gloss: 30, softness: 5, saturation: 30, dispersion: 20, displacementResolution: 100, displacementSmoothing: 0, enableOptimization: 1, radius: 16 },
-      bold: { refraction: 80, thickness: 70, gloss: 70, softness: 15, saturation: 60, dispersion: 50, displacementResolution: 100, displacementSmoothing: 0, enableOptimization: 1, radius: 32 },
-      frosted: { refraction: 40, thickness: 50, gloss: 40, softness: 50, saturation: 20, dispersion: 60, displacementResolution: 50, displacementSmoothing: 20, enableOptimization: 1, radius: 20 },
-      crystal: { refraction: 70, thickness: 60, gloss: 80, softness: 0, saturation: 70, dispersion: 40, displacementResolution: 100, displacementSmoothing: 0, enableOptimization: 1, radius: 28 },
-      ios: { refraction: 45, thickness: 55, gloss: 55, softness: 20, saturation: 50, dispersion: 35, displacementResolution: 75, displacementSmoothing: 10, enableOptimization: 1, radius: 22 }
+      default: { refraction: 50, thickness: 50, gloss: 50, softness: 10, saturation: 45, dispersion: 30, displacementResolution: 45, displacementMinResolution: 20, displacementSmoothing: 30, enableOptimization: 1, radius: 24 },
+      subtle: { refraction: 30, thickness: 40, gloss: 30, softness: 5, saturation: 30, dispersion: 20, displacementResolution: 100, displacementMinResolution: 20, displacementSmoothing: 0, enableOptimization: 1, radius: 16 },
+      bold: { refraction: 80, thickness: 70, gloss: 70, softness: 15, saturation: 60, dispersion: 50, displacementResolution: 100, displacementMinResolution: 20, displacementSmoothing: 0, enableOptimization: 1, radius: 32 },
+      frosted: { refraction: 40, thickness: 50, gloss: 40, softness: 50, saturation: 20, dispersion: 60, displacementResolution: 50, displacementMinResolution: 15, displacementSmoothing: 20, enableOptimization: 1, radius: 20 },
+      crystal: { refraction: 70, thickness: 60, gloss: 80, softness: 0, saturation: 70, dispersion: 40, displacementResolution: 100, displacementMinResolution: 25, displacementSmoothing: 0, enableOptimization: 1, radius: 28 },
+      ios: { refraction: 45, thickness: 55, gloss: 55, softness: 20, saturation: 50, dispersion: 35, displacementResolution: 75, displacementMinResolution: 20, displacementSmoothing: 10, enableOptimization: 1, radius: 22 }
     };
 
     // View mode state
     let viewMode = 'lens'; // 'lens' or 'displacement'
+
+    // Progressive rendering state for visualization (per-element)
+    const progressiveState = {
+      HIGH_RES_DELAY: 300, // ms - matches FilterManager's highResDelay
+      THROTTLE_MS: 50,     // Throttle low-res renders to ~20fps
+      // Per-element state maps
+      elementStates: new WeakMap(), // element -> { highResTimeout, throttleTimeout, resolution }
+    };
+
+    // Get or create per-element progressive state
+    function getElementProgressiveState(element) {
+      if (!progressiveState.elementStates.has(element)) {
+        progressiveState.elementStates.set(element, {
+          highResTimeout: null,
+          throttleTimeout: null,
+          resolution: 'high' // 'low', 'high', or 'pending'
+        });
+      }
+      return progressiveState.elementStates.get(element);
+    }
 
     // ============================================================
     // View Mode Toggle
@@ -1012,29 +1178,156 @@
         btn.classList.toggle('active', btn.dataset.mode === mode);
       });
 
+      // Show/hide progressive info panel
+      const progressiveInfo = document.getElementById('progressive-info');
+      progressiveInfo.classList.toggle('visible', mode === 'displacement');
+
       if (mode === 'displacement') {
         // Show displacement map overlays
-        await updateDisplacementOverlays();
+        await updateDisplacementOverlays(false); // Start with high-res
         allGlasses.forEach(glass => {
           glass.setAttribute('disabled', '');
         });
+        updateProgressiveInfoPanel();
       } else {
-        // Remove overlays, boundaries, and enable glass effect
+        // Remove overlays, boundaries, status indicators, and enable glass effect
         document.querySelectorAll('.displacement-overlay').forEach(el => el.remove());
         document.querySelectorAll('.displacement-boundary').forEach(el => el.remove());
+        document.querySelectorAll('.resolution-status').forEach(el => el.remove());
         allGlasses.forEach(glass => {
           glass.removeAttribute('disabled');
         });
+
+        // Clear all per-element progressive state timeouts
+        for (const el of interactiveElements) {
+          const elState = getElementProgressiveState(el);
+          if (elState.highResTimeout) {
+            clearTimeout(elState.highResTimeout);
+            elState.highResTimeout = null;
+          }
+          if (elState.throttleTimeout) {
+            clearTimeout(elState.throttleTimeout);
+            elState.throttleTimeout = null;
+          }
+          elState.resolution = 'high';
+        }
       }
     }
 
-    async function updateDisplacementOverlays() {
+    /**
+     * Update progressive rendering info panel
+     * Shows aggregate status across all elements
+     */
+    function updateProgressiveInfoPanel(activeElement = null) {
+      const minRes = parseFloat(controls.displacementMinResolution.value);
+      const maxRes = parseFloat(controls.displacementResolution.value);
+
+      document.getElementById('prog-min-res').textContent = `${minRes}%`;
+      document.getElementById('prog-max-res').textContent = `${maxRes}%`;
+
+      const statusEl = document.getElementById('prog-status');
+      const resEl = document.getElementById('prog-resolution');
+
+      // Check if any element is in low-res or pending state
+      let hasLowRes = false;
+      let hasPending = false;
+
+      for (const el of interactiveElements) {
+        const state = getElementProgressiveState(el);
+        if (state.resolution === 'low') hasLowRes = true;
+        if (state.resolution === 'pending') hasPending = true;
+      }
+
+      if (hasLowRes) {
+        statusEl.textContent = 'Resizing...';
+        statusEl.style.color = '#e94560';
+        resEl.textContent = `${minRes}% (preview)`;
+      } else if (hasPending) {
+        statusEl.textContent = 'Pending high-res...';
+        statusEl.style.color = '#ffc107';
+        resEl.textContent = `${minRes}% → ${maxRes}%`;
+      } else {
+        statusEl.textContent = 'Idle (high-res)';
+        statusEl.style.color = '#43e97b';
+        resEl.textContent = `${maxRes}%`;
+      }
+    }
+
+    /**
+     * Trigger progressive rendering during resize for a specific element
+     * This simulates the FilterManager's progressive rendering behavior
+     * @param {HTMLElement} interactiveEl - The interactive element wrapper being resized
+     */
+    async function triggerProgressiveRender(interactiveEl) {
+      if (viewMode !== 'displacement') return;
+      if (!interactiveEl) return;
+
+      const elState = getElementProgressiveState(interactiveEl);
+
+      // Cancel pending high-res render for this element
+      if (elState.highResTimeout) {
+        clearTimeout(elState.highResTimeout);
+        elState.highResTimeout = null;
+      }
+
+      // Throttle low-res renders for this element
+      if (elState.throttleTimeout) {
+        // Already rendering, just schedule high-res for later
+        elState.resolution = 'low';
+        updateProgressiveInfoPanel();
+
+        // Reschedule high-res render
+        elState.highResTimeout = setTimeout(async () => {
+          elState.highResTimeout = null;
+          elState.resolution = 'high';
+          updateProgressiveInfoPanel();
+          await updateSingleDisplacementOverlay(interactiveEl, false);
+        }, progressiveState.HIGH_RES_DELAY);
+        return;
+      }
+
+      // Render at low resolution immediately (throttled)
+      elState.resolution = 'low';
+      updateProgressiveInfoPanel();
+
+      elState.throttleTimeout = setTimeout(() => {
+        elState.throttleTimeout = null;
+      }, progressiveState.THROTTLE_MS);
+
+      await updateSingleDisplacementOverlay(interactiveEl, true); // true = use min resolution
+
+      // Schedule high-res render after delay
+      elState.resolution = 'pending';
+      updateProgressiveInfoPanel();
+
+      elState.highResTimeout = setTimeout(async () => {
+        elState.highResTimeout = null;
+        elState.resolution = 'high';
+        updateProgressiveInfoPanel();
+
+        await updateSingleDisplacementOverlay(interactiveEl, false); // false = use full resolution
+      }, progressiveState.HIGH_RES_DELAY);
+    }
+
+    /**
+     * Update displacement map overlay for a single element
+     * @param {HTMLElement} interactiveEl - The interactive element wrapper
+     * @param {boolean} useLowRes - If true, use displacementMinResolution for preview
+     */
+    async function updateSingleDisplacementOverlay(interactiveEl, useLowRes = false) {
+      const glass = interactiveEl.querySelector('.glass-panel');
+      if (!glass) return;
+
       const thickness = parseFloat(controls.thickness.value);
       const edgeWidthRatio = (thickness / 100) * 0.8 + 0.1; // 0.1-0.9
 
+      // Progressive rendering: choose resolution based on useLowRes flag
+      const minResolution = parseFloat(controls.displacementMinResolution.value);
+      const maxResolution = parseFloat(controls.displacementResolution.value);
+      const targetResolution = useLowRes ? minResolution : maxResolution;
+
       // Apply displacement-resolution scaling (same logic as filter-manager.ts)
-      const displacementResolution = parseFloat(controls.displacementResolution.value);
-      const resolutionScale = Math.max(0.1, Math.min(1, displacementResolution / 100));
+      const resolutionScale = Math.max(0.1, Math.min(1, targetResolution / 100));
 
       // Calculate smoothing blur (same logic as svg-builder.ts)
       const displacementSmoothing = parseFloat(controls.displacementSmoothing.value);
@@ -1048,63 +1341,88 @@
       }
 
       // Extension margin to visualize the "iPhone X style" edge extension
-      // Shows how displacement continues beyond the border-radius boundary
       const extensionMargin = 20;
 
+      const w = parseFloat(interactiveEl.dataset.w);
+      const h = parseFloat(interactiveEl.dataset.h);
+      const radius = parseFloat(interactiveEl.dataset.radius) || 20;
+
+      // Extended dimensions to include the edge extension area
+      const extendedW = w + extensionMargin * 2;
+      const extendedH = h + extensionMargin * 2;
+
+      // Apply resolution scaling to generate smaller displacement map
+      const renderW = Math.max(16, Math.round(extendedW * resolutionScale));
+      const renderH = Math.max(16, Math.round(extendedH * resolutionScale));
+      const renderRadius = radius * resolutionScale;
+
+      // Generate displacement map at (potentially) reduced resolution
+      const dispResult = await generateWasmDisplacementMap({
+        width: renderW,
+        height: renderH,
+        borderRadius: renderRadius,
+        edgeWidthRatio
+      });
+
+      if (!dispResult) return;
+
+      // Find or create overlay
+      let overlay = glass.querySelector('.displacement-overlay');
+      if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.className = 'displacement-overlay';
+        glass.appendChild(overlay);
+      }
+
+      // Find or create boundary indicator
+      let boundary = glass.querySelector('.displacement-boundary');
+      if (!boundary) {
+        boundary = document.createElement('div');
+        boundary.className = 'displacement-boundary';
+        glass.appendChild(boundary);
+      }
+
+      // Find or create resolution status indicator
+      let statusIndicator = glass.querySelector('.resolution-status');
+      if (!statusIndicator) {
+        statusIndicator = document.createElement('div');
+        statusIndicator.className = 'resolution-status';
+        glass.appendChild(statusIndicator);
+      }
+
+      // Get element's progressive state for status indicator
+      const elState = getElementProgressiveState(interactiveEl);
+
+      // Update resolution status indicator
+      statusIndicator.textContent = `${renderW}×${renderH} (${Math.round(targetResolution)}%)`;
+      statusIndicator.classList.remove('low-res', 'high-res', 'pending');
+      if (useLowRes || elState.resolution === 'low') {
+        statusIndicator.classList.add('low-res');
+      } else if (elState.resolution === 'pending') {
+        statusIndicator.classList.add('pending');
+      } else {
+        statusIndicator.classList.add('high-res');
+      }
+
+      // Update render size in info panel (show last updated element)
+      document.getElementById('prog-render-size').textContent = `${renderW}×${renderH}`;
+
+      // Position overlay to extend beyond the glass panel bounds
+      overlay.style.inset = `-${extensionMargin}px`;
+      overlay.style.backgroundImage = `url(${dispResult.dataUrl})`;
+      overlay.style.backgroundSize = '100% 100%';
+      overlay.style.backgroundRepeat = 'no-repeat';
+      overlay.style.filter = smoothBlur > 0.1 ? `blur(${smoothBlur.toFixed(2)}px)` : 'none';
+      overlay.style.imageRendering = (smoothBlur > 0.1 || resolutionScale >= 1) ? 'auto' : 'pixelated';
+    }
+
+    /**
+     * Update displacement map overlays for all elements
+     * @param {boolean} useLowRes - If true, use displacementMinResolution for preview
+     */
+    async function updateDisplacementOverlays(useLowRes = false) {
       for (const el of interactiveElements) {
-        const glass = el.querySelector('.glass-panel');
-        if (!glass) continue;
-
-        const w = parseFloat(el.dataset.w);
-        const h = parseFloat(el.dataset.h);
-        const radius = parseFloat(el.dataset.radius) || 20;
-
-        // Extended dimensions to include the edge extension area
-        const extendedW = w + extensionMargin * 2;
-        const extendedH = h + extensionMargin * 2;
-
-        // Apply resolution scaling to generate smaller displacement map
-        const renderW = Math.max(16, Math.round(extendedW * resolutionScale));
-        const renderH = Math.max(16, Math.round(extendedH * resolutionScale));
-        const renderRadius = radius * resolutionScale;
-
-        // Generate displacement map at (potentially) reduced resolution
-        // The WASM now extends displacement beyond the border-radius boundary
-        const dispResult = await generateWasmDisplacementMap({
-          width: renderW,
-          height: renderH,
-          borderRadius: renderRadius,
-          edgeWidthRatio
-        });
-
-        if (!dispResult) continue;
-
-        // Find or create overlay (extended to show edge extension)
-        let overlay = glass.querySelector('.displacement-overlay');
-        if (!overlay) {
-          overlay = document.createElement('div');
-          overlay.className = 'displacement-overlay';
-          glass.appendChild(overlay);
-        }
-
-        // Find or create boundary indicator (shows original border-radius boundary)
-        let boundary = glass.querySelector('.displacement-boundary');
-        if (!boundary) {
-          boundary = document.createElement('div');
-          boundary.className = 'displacement-boundary';
-          glass.appendChild(boundary);
-        }
-
-        // Position overlay to extend beyond the glass panel bounds
-        // This visualizes the "iPhone X style" edge extension
-        overlay.style.inset = `-${extensionMargin}px`;
-        overlay.style.backgroundImage = `url(${dispResult.dataUrl})`;
-        overlay.style.backgroundSize = '100% 100%';
-        overlay.style.backgroundRepeat = 'no-repeat';
-        // Apply smoothing blur to visualize GPU smoothing effect
-        overlay.style.filter = smoothBlur > 0.1 ? `blur(${smoothBlur.toFixed(2)}px)` : 'none';
-        // When smoothing is applied, use normal rendering; otherwise show pixelation
-        overlay.style.imageRendering = (smoothBlur > 0.1 || resolutionScale >= 1) ? 'auto' : 'pixelated';
+        await updateSingleDisplacementOverlay(el, useLowRes);
       }
     }
 
@@ -1220,6 +1538,12 @@
         if (label) {
           label.textContent = `${Math.round(newW)}×${Math.round(newH)} @ ${Math.round(parseFloat(element.dataset.r) || 0)}°`;
         }
+
+        // Trigger progressive rendering visualization when in displacement mode
+        // Only update the element being resized
+        if (viewMode === 'displacement') {
+          triggerProgressiveRender(element);
+        }
       }
       else if (action === 'rotate') {
         const angle = Math.atan2(e.clientY - centerY, e.clientX - centerX);
@@ -1330,6 +1654,7 @@
         saturation: controls.saturation.value,
         dispersion: controls.dispersion.value,
         displacementResolution: controls.displacementResolution.value,
+        displacementMinResolution: controls.displacementMinResolution.value,
         displacementSmoothing: controls.displacementSmoothing.value,
         enableOptimization: enableOptimization
       };
@@ -1342,6 +1667,7 @@
         glass.style.setProperty('--liquidglass-saturation', values.saturation);
         glass.style.setProperty('--liquidglass-dispersion', values.dispersion);
         glass.style.setProperty('--liquidglass-displacement-resolution', values.displacementResolution);
+        glass.style.setProperty('--liquidglass-displacement-min-resolution', values.displacementMinResolution);
         glass.style.setProperty('--liquidglass-displacement-smoothing', values.displacementSmoothing);
         glass.style.setProperty('--liquidglass-enable-optimization', values.enableOptimization);
       });
@@ -1385,6 +1711,7 @@
       document.getElementById('saturation-val').textContent = values.saturation;
       document.getElementById('dispersion-val').textContent = values.dispersion;
       document.getElementById('displacement-resolution-val').textContent = values.displacementResolution;
+      document.getElementById('displacement-min-resolution-val').textContent = values.displacementMinResolution;
       document.getElementById('displacement-smoothing-val').textContent = values.displacementSmoothing;
       document.getElementById('enable-optimization-val').textContent = values.enableOptimization === 1 ? 'ON' : 'OFF';
       document.getElementById('radius-val').textContent = controls.radius.value;
@@ -1396,7 +1723,8 @@
 
       // Update displacement overlays if in displacement mode
       if (viewMode === 'displacement') {
-        updateDisplacementOverlays();
+        updateProgressiveInfoPanel();
+        updateDisplacementOverlays(false); // Use high-res when changing parameters
       }
     }
 
@@ -1409,6 +1737,7 @@
   --liquidglass-saturation: ${values.saturation};
   --liquidglass-dispersion: ${values.dispersion};
   --liquidglass-displacement-resolution: ${values.displacementResolution};
+  --liquidglass-displacement-min-resolution: ${values.displacementMinResolution};
   --liquidglass-displacement-smoothing: ${values.displacementSmoothing};
   --liquidglass-enable-optimization: ${values.enableOptimization};
   border-radius: ${controls.radius.value}px;
@@ -1498,6 +1827,7 @@
       controls.saturation.value = preset.saturation;
       controls.dispersion.value = preset.dispersion;
       controls.displacementResolution.value = preset.displacementResolution;
+      controls.displacementMinResolution.value = preset.displacementMinResolution;
       controls.displacementSmoothing.value = preset.displacementSmoothing;
       setEnableOptimization(preset.enableOptimization);
 
@@ -1545,6 +1875,7 @@
       controls.tint.value = '#ffffff';
       controls.tintOpacity.value = 8;
       controls.displacementResolution.value = 45;
+      controls.displacementMinResolution.value = 20;
       controls.displacementSmoothing.value = 30;
       setEnableOptimization(1);
       controls.bgSpeed.value = 30;
@@ -1605,6 +1936,40 @@
       requestAnimationFrame(updateFPS);
     }
     updateFPS();
+
+    // ============================================================
+    // Floating Controls Toggle
+    // ============================================================
+    const floatingToggle = document.getElementById('floating-toggle');
+    let floatingControlsVisible = true;
+
+    function toggleFloatingControls() {
+      floatingControlsVisible = !floatingControlsVisible;
+      document.body.classList.toggle('floating-controls-hidden', !floatingControlsVisible);
+      floatingToggle.textContent = floatingControlsVisible ? '👁' : '👁‍🗨';
+      floatingToggle.title = floatingControlsVisible
+        ? 'Hide floating controls (H)'
+        : 'Show floating controls (H)';
+    }
+
+    // Programmatic API for CDP/automation
+    window.setFloatingControlsVisible = function(visible) {
+      if (floatingControlsVisible !== visible) {
+        toggleFloatingControls();
+      }
+    };
+
+    floatingToggle.addEventListener('click', toggleFloatingControls);
+
+    // Keyboard shortcut: H to toggle
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'h' || e.key === 'H') {
+        if (e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
+          e.preventDefault();
+          toggleFloatingControls();
+        }
+      }
+    });
 
     // ============================================================
     // Initialize

@@ -382,13 +382,17 @@ export class FilterManager {
       minEncodeInterval: options.minEncodeInterval ?? 200,
       maxEncodeInterval: options.maxEncodeInterval ?? 1000,
       morphDuration: options.morphDuration ?? 150,
+      highResDelay: options.highResDelay ?? 300,
     };
     this._callbacks = callbacks;
 
+    // Global observer for size changes (width/height only)
+    // borderRadius is tracked separately via per-element MutationObserver
     this._resizeObserver = new ResizeObserver((entries) => {
       for (const entry of entries) {
         const el = entry.target as HTMLElement;
         if (this._elements.has(el)) {
+          // Size changed - use cached borderRadius (no getComputedStyle needed)
           this._scheduleRender(el);
         }
       }
@@ -406,13 +410,31 @@ export class FilterManager {
     }
 
     this._elements.add(element);
+
+    // Initialize state with initial borderRadius
+    const computedStyle = getComputedStyle(element);
+    const initialRadius = parseFloat(computedStyle.borderTopLeftRadius) || 0;
+    const state = this._createInitialState(element, params);
+    state.borderRadius = initialRadius;
+
+    // Create per-element MutationObserver for style/class changes (borderRadius)
+    state.styleObserver = new MutationObserver(() => {
+      // Style/class changed - mark for borderRadius recalculation
+      state.pendingStyleChange = true;
+      this._scheduleRender(element);
+    });
+    state.styleObserver.observe(element, {
+      attributes: true,
+      attributeFilter: ['style', 'class'],
+    });
+
+    this._registry.set(element, state);
+
+    // Observe size changes (global ResizeObserver)
     this._resizeObserver.observe(element);
 
-    // Initialize state placeholder
-    this._registry.set(element, this._createInitialState(element, params));
-
-    // Trigger initial render
-    this._render(element, params);
+    // Trigger initial render at full resolution
+    this._render(element, params, false);
 
     this._callbacks.onAttach?.(element);
   }
@@ -446,6 +468,13 @@ export class FilterManager {
     if (state.deferredRenderTimeout) {
       clearTimeout(state.deferredRenderTimeout);
     }
+    if (state.highResRenderTimeout) {
+      clearTimeout(state.highResRenderTimeout);
+    }
+    if (state.styleObserver) {
+      state.styleObserver.disconnect();
+      state.styleObserver = null;
+    }
 
     // Remove CSS rule
     if (_styleSheet && state.markerElement) {
@@ -472,12 +501,18 @@ export class FilterManager {
   }
 
   /**
-   * Force immediate re-render
+   * Force immediate re-render at full resolution
    */
   refresh(element: HTMLElement): void {
     const state = this._registry.get(element);
     if (state) {
-      this._render(element, state.params);
+      // Clear any pending high-res render
+      if (state.highResRenderTimeout) {
+        clearTimeout(state.highResRenderTimeout);
+        state.highResRenderTimeout = null;
+      }
+      // Render at full resolution
+      this._render(element, state.params, false);
     }
   }
 
@@ -528,6 +563,13 @@ export class FilterManager {
       adaptiveInterval: this._options.minEncodeInterval,
       morphAnimationId: null,
       morphProgress: 1,
+      // Progressive rendering state
+      highResRenderTimeout: null,
+      currentResolutionScale: 1,
+      isLowResPreview: false,
+      // Style change tracking
+      pendingStyleChange: false,
+      styleObserver: null,
     };
   }
 
@@ -535,42 +577,88 @@ export class FilterManager {
     const state = this._registry.get(element);
     if (!state) return;
 
-    // When optimization is disabled, render immediately without throttling
-    if (!this._isOptimizationEnabled(state.params)) {
-      // Clear any pending deferred render
+    const optimizationEnabled = this._isOptimizationEnabled(state.params);
+
+    // Progressive rendering: cancel pending high-res render (resize is active)
+    // This is ALWAYS active regardless of enable-optimization
+    if (state.highResRenderTimeout) {
+      clearTimeout(state.highResRenderTimeout);
+      state.highResRenderTimeout = null;
+    }
+
+    if (!optimizationEnabled) {
+      // Optimization disabled: render immediately without throttling
+      // But still use progressive rendering (low-res → high-res)
       if (state.deferredRenderTimeout) {
         clearTimeout(state.deferredRenderTimeout);
         state.deferredRenderTimeout = null;
       }
-      this._render(element, state.params);
+      // Render with low-res preview
+      this._render(element, state.params, true);
+      // Schedule high-res render after resize stops
+      this._scheduleHighResRender(element);
       return;
     }
 
-    // Optimization enabled: use adaptive throttling
+    // Optimization enabled: use adaptive throttling with low-res preview
     const now = performance.now();
     const timeSinceLastEncode = now - state.lastEncodeTime;
 
     if (timeSinceLastEncode >= state.adaptiveInterval) {
-      this._render(element, state.params);
+      // Render with low-res preview during active resize
+      this._render(element, state.params, true);
+      // Schedule high-res render after resize stops
+      this._scheduleHighResRender(element);
     } else if (!state.deferredRenderTimeout) {
       const delay = state.adaptiveInterval - timeSinceLastEncode;
       state.deferredRenderTimeout = setTimeout(() => {
         state.deferredRenderTimeout = null;
-        this._render(element, state.params);
+        // Render with low-res preview
+        this._render(element, state.params, true);
+        // Schedule high-res render after resize stops
+        this._scheduleHighResRender(element);
       }, delay);
     }
   }
 
-  private async _render(element: HTMLElement, params: LiquidGlassParams): Promise<void> {
+  /**
+   * Schedule a high-resolution render after resize activity stops
+   * This implements the "raytracer preview" pattern: low-res during interaction,
+   * high-res when idle
+   *
+   * NOTE: This is ALWAYS active regardless of enable-optimization setting
+   */
+  private _scheduleHighResRender(element: HTMLElement): void {
+    const state = this._registry.get(element);
+    if (!state) return;
+
+    // Don't schedule if already at high-res
+    if (!state.isLowResPreview) return;
+
+    // Clear any existing high-res timeout
+    if (state.highResRenderTimeout) {
+      clearTimeout(state.highResRenderTimeout);
+    }
+
+    // Schedule high-res render after delay
+    state.highResRenderTimeout = setTimeout(() => {
+      state.highResRenderTimeout = null;
+      // Render at full resolution
+      this._render(element, state.params, false);
+    }, this._options.highResDelay);
+  }
+
+  /**
+   * Render displacement map and update filter
+   * @param isLowRes - If true, use displacementMinResolution for fast preview
+   *                   If false, use displacementResolution for final quality
+   */
+  private async _render(element: HTMLElement, params: LiquidGlassParams, isLowRes: boolean = false): Promise<void> {
     const rect = element.getBoundingClientRect();
     const width = Math.ceil(rect.width);
     const height = Math.ceil(rect.height);
 
     if (width <= 0 || height <= 0) return;
-
-    // Get computed border-radius (handles %, em, etc.)
-    const computedStyle = getComputedStyle(element);
-    const borderRadius = parseFloat(computedStyle.borderTopLeftRadius) || 0;
 
     // Check browser support
     if (!supportsBackdropSvgFilter()) {
@@ -580,6 +668,18 @@ export class FilterManager {
 
     const state = this._registry.get(element);
     if (!state) return;
+
+    // Get border-radius: only recalculate when style changed, otherwise use cache
+    // This avoids expensive getComputedStyle calls during pure resize operations
+    let borderRadius: number;
+    if (state.pendingStyleChange) {
+      const computedStyle = getComputedStyle(element);
+      borderRadius = parseFloat(computedStyle.borderTopLeftRadius) || 0;
+      state.borderRadius = borderRadius;
+      state.pendingStyleChange = false;
+    } else {
+      borderRadius = state.borderRadius;
+    }
 
     // Calculate effect parameters
     const edgeWidthRatio = 0.3 + (params.thickness / 100) * 0.4;
@@ -591,27 +691,41 @@ export class FilterManager {
     let renderRadius = borderRadius;
 
     if (optimizationEnabled) {
-      // Update size history for prediction
+      // Update size history for prediction (always, to maintain prediction accuracy)
       state.sizeHistory.push({ width, height, radius: borderRadius, timestamp: now });
       while (state.sizeHistory.length > PREDICTION_HISTORY_SIZE) {
         state.sizeHistory.shift();
       }
 
-      // Predict future size
-      const prediction = predictSize(state.sizeHistory);
-      baseWidth = prediction.confidence > 0.3 ? prediction.width : width;
-      baseHeight = prediction.confidence > 0.3 ? prediction.height : height;
-      renderRadius = prediction.confidence > 0.3 ? prediction.radius : borderRadius;
+      // Apply prediction only for high-res render (not during active resize)
+      // Low-res preview uses exact current size for pixel-perfect match
+      if (!isLowRes) {
+        const prediction = predictSize(state.sizeHistory);
+        baseWidth = prediction.confidence > 0.3 ? prediction.width : width;
+        baseHeight = prediction.confidence > 0.3 ? prediction.height : height;
+        renderRadius = prediction.confidence > 0.3 ? prediction.radius : borderRadius;
+      }
     } else {
       // Optimization disabled: clear history, use current size directly
       state.sizeHistory = [];
     }
 
+    // Progressive rendering: choose resolution based on isLowRes flag
+    // Low-res uses displacementMinResolution for fast preview during resize
+    // High-res uses displacementResolution for final quality when idle
+    const targetResolution = isLowRes
+      ? params.displacementMinResolution
+      : params.displacementResolution;
+
     // Apply dmap-resolution scaling (0-100 → 0.1-1.0)
     // Minimum 10% resolution to avoid extreme pixelation
-    const resolutionScale = Math.max(0.1, Math.min(1, params.displacementResolution / 100));
+    const resolutionScale = Math.max(0.1, Math.min(1, targetResolution / 100));
     const renderWidth = Math.max(16, Math.round(baseWidth * resolutionScale));
     const renderHeight = Math.max(16, Math.round(baseHeight * resolutionScale));
+
+    // Track progressive rendering state
+    state.isLowResPreview = isLowRes;
+    state.currentResolutionScale = resolutionScale;
 
     // Generate displacement map at (potentially) reduced resolution
     const dispResult = await generateWasmDisplacementMap({
@@ -816,6 +930,7 @@ export class FilterManager {
       a.saturation === b.saturation &&
       a.dispersion === b.dispersion &&
       a.displacementResolution === b.displacementResolution &&
+      a.displacementMinResolution === b.displacementMinResolution &&
       a.displacementSmoothing === b.displacementSmoothing &&
       this._normalizeOptimization(a.enableOptimization) === this._normalizeOptimization(b.enableOptimization)
     );

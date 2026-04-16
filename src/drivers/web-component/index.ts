@@ -24,7 +24,7 @@ function getManager(): FilterManager {
 }
 
 // Observable attributes
-const ATTRIBUTES = ['refraction', 'thickness', 'gloss', 'softness', 'saturation', 'dispersion', 'displacement-resolution', 'displacement-smoothing', 'enable-optimization', 'disabled'] as const;
+const ATTRIBUTES = ['refraction', 'thickness', 'gloss', 'softness', 'saturation', 'dispersion', 'displacement-resolution', 'displacement-min-resolution', 'displacement-smoothing', 'enable-optimization', 'disabled'] as const;
 type Attribute = (typeof ATTRIBUTES)[number];
 
 /**
@@ -50,6 +50,7 @@ export class LiquidGlassElement extends HTMLElement {
   #saturation = DEFAULT_PARAMS.saturation;
   #dispersion = DEFAULT_PARAMS.dispersion;
   #displacementResolution = DEFAULT_PARAMS.displacementResolution;
+  #displacementMinResolution = DEFAULT_PARAMS.displacementMinResolution;
   #displacementSmoothing = DEFAULT_PARAMS.displacementSmoothing;
   #enableOptimization = DEFAULT_PARAMS.enableOptimization;
   #disabled = false;
@@ -107,6 +108,9 @@ export class LiquidGlassElement extends HTMLElement {
       case 'displacement-resolution':
         this.#displacementResolution = value ? parseFloat(value) : DEFAULT_PARAMS.displacementResolution;
         break;
+      case 'displacement-min-resolution':
+        this.#displacementMinResolution = value ? parseFloat(value) : DEFAULT_PARAMS.displacementMinResolution;
+        break;
       case 'displacement-smoothing':
         this.#displacementSmoothing = value ? parseFloat(value) : DEFAULT_PARAMS.displacementSmoothing;
         break;
@@ -140,6 +144,7 @@ export class LiquidGlassElement extends HTMLElement {
       saturation: this.#saturation,
       dispersion: this.#dispersion,
       displacementResolution: this.#displacementResolution,
+      displacementMinResolution: this.#displacementMinResolution,
       displacementSmoothing: this.#displacementSmoothing,
       enableOptimization: this.#enableOptimization,
     };
@@ -196,6 +201,16 @@ export class LiquidGlassElement extends HTMLElement {
   set displacementResolution(v: number) {
     this.#displacementResolution = v;
     this.setAttribute('displacement-resolution', String(v));
+  }
+
+  /** Displacement map minimum resolution during resize (0-100, default 20)
+   *  Used for progressive rendering: low-res preview during resize,
+   *  then high-res when idle (like raytracer preview).
+   */
+  get displacementMinResolution(): number { return this.#displacementMinResolution; }
+  set displacementMinResolution(v: number) {
+    this.#displacementMinResolution = v;
+    this.setAttribute('displacement-min-resolution', String(v));
   }
 
   /** Displacement map smoothing blur (0-100, default 30)

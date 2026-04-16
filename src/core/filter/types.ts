@@ -14,6 +14,9 @@ export interface LiquidGlassParams {
   dispersion: number;      // Edge dispersion blur (0-100, default 30)
   displacementResolution: number;  // Displacement map resolution (0-100, default 45)
                            // Lower values reduce CPU load but require GPU smoothing
+  displacementMinResolution: number; // Minimum resolution during resize (0-100, default 20)
+                           // Used for progressive rendering: low-res preview during resize,
+                           // then high-res when idle (like raytracer preview)
   displacementSmoothing: number;   // Displacement map smoothing blur (0-100, default 30)
                            // Direct control of feGaussianBlur stdDeviation (0-100 → 0-5px)
   enableOptimization: number;      // Enable rendering optimizations (0 or 1, default 1)
@@ -32,6 +35,7 @@ export const DEFAULT_PARAMS: LiquidGlassParams = {
   saturation: 45,
   dispersion: 30,
   displacementResolution: 45,   // Balanced CPU/GPU load
+  displacementMinResolution: 20, // Low-res preview during resize (progressive rendering)
   displacementSmoothing: 30,    // Moderate smoothing (0-100 → 0-5px stdDeviation)
   enableOptimization: 1,        // Optimization enabled by default
 };
@@ -97,6 +101,15 @@ export interface FilterState {
   // Morphing state
   morphAnimationId: number | null;
   morphProgress: number;  // 0 = old, 1 = new
+
+  // Progressive rendering state
+  highResRenderTimeout: ReturnType<typeof setTimeout> | null;  // Scheduled high-res render
+  currentResolutionScale: number;  // Current resolution being used (0.1-1.0)
+  isLowResPreview: boolean;        // Whether current render is low-res preview
+
+  // Style change tracking (for separate size/radius observation)
+  pendingStyleChange: boolean;     // True when style changed, radius needs recalculation
+  styleObserver: MutationObserver | null;  // Per-element observer for style/class changes
 }
 
 /**
@@ -109,6 +122,8 @@ export interface FilterManagerOptions {
   maxEncodeInterval?: number;
   // Morph transition duration in ms (default: 150)
   morphDuration?: number;
+  // Delay before high-res render after resize stops (default: 300)
+  highResDelay?: number;
 }
 
 /**
