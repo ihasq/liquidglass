@@ -51,3 +51,15 @@
   inherits: true;
   initial-value: -9999;
 }
+
+@property --liquidglass-displacement-resolution {
+  syntax: '<number>';
+  inherits: true;
+  initial-value: -9999;
+}
+
+@property --liquidglass-displacement-smoothing {
+  syntax: '<number>';
+  inherits: true;
+  initial-value: -9999;
+}

@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>9-Slice Tile Placement Test</title>
+  <style>
+    body { margin: 20px; background: #222; color: #fff; font-family: monospace; }
+    .container { display: flex; gap: 40px; flex-wrap: wrap; }
+    .test-case { background: #333; padding: 20px; border-radius: 8px; }
+    canvas { border: 2px solid #666; display: block; margin: 10px 0; }
+    h3 { margin: 0 0 10px 0; }
+  </style>
+</head>
+<body>
+  <h1>9-Slice Tile Placement Debug</h1>
+  <p>Each tile has a unique color and label. Grid lines show tile boundaries.</p>
+
+  <div class="container">
+    <div class="test-case">
+      <h3>Expected Layout (200x200, cornerSize=90)</h3>
+      <canvas id="expected" width="200" height="200"></canvas>
+      <pre id="expected-info"></pre>
+    </div>
+
+    <div class="test-case">
+      <h3>9-Slice Output</h3>
+      <canvas id="nineslice" width="200" height="200"></canvas>
+      <pre id="nineslice-info"></pre>
+    </div>
+
+    <div class="test-case">
+      <h3>Corner Tile (256x256 → 90x90)</h3>
+      <canvas id="corner-tile" width="256" height="256"></canvas>
+    </div>
+  </div>
+
+  <script>
+    const width = 200, height = 200;
+    const r = 40, edgeWidthRatio = 0.5;
+    const halfW = width / 2, halfH = height / 2;
+    const minHalf = Math.min(halfW, halfH);
+    const edgeWidth = minHalf * edgeWidthRatio;  // 50
+    const cornerSize = r + edgeWidth;  // 90
+
+    // Tile colors with labels
+    const TILES = {
+      TL: { color: '#FF6B6B', label: 'TL' },  // Red
+      TR: { color: '#4ECDC4', label: 'TR' },  // Cyan
+      BL: { color: '#45B7D1', label: 'BL' },  // Blue
+      BR: { color: '#96CEB4', label: 'BR' },  // Green
+      TOP: { color: '#FFEAA7', label: 'TOP' },  // Yellow
+      BOTTOM: { color: '#DDA0DD', label: 'BOT' },  // Plum
+      LEFT: { color: '#98D8C8', label: 'LEFT' },  // Mint
+      RIGHT: { color: '#F7DC6F', label: 'RIGHT' },  // Gold
+      CENTER: { color: '#B0B0B0', label: 'CTR' },  // Gray
+    };
+
+    function drawLabeledTile(ctx, x, y, w, h, tile) {
+      if (w <= 0 || h <= 0) return;
+
+      ctx.fillStyle = tile.color;
+      ctx.fillRect(x, y, w, h);
+
+      // Grid border
+      ctx.strokeStyle = '#000';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(x, y, w, h);
+
+      // Label
+      ctx.fillStyle = '#000';
+      ctx.font = 'bold 14px monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      if (w > 30 && h > 20) {
+        ctx.fillText(tile.label, x + w/2, y + h/2);
+      }
+    }
+
+    // Draw expected layout
+    function drawExpected() {
+      const canvas = document.getElementById('expected');
+      const ctx = canvas.getContext('2d');
+
+      const centerW = width - 2 * cornerSize;
+      const centerH = height - 2 * cornerSize;
+
+      // Center
+      drawLabeledTile(ctx, cornerSize, cornerSize, centerW, centerH, TILES.CENTER);
+
+      // Edges
+      drawLabeledTile(ctx, cornerSize, 0, centerW, cornerSize, TILES.TOP);
+      drawLabeledTile(ctx, cornerSize, height - cornerSize, centerW, cornerSize, TILES.BOTTOM);
+      drawLabeledTile(ctx, 0, cornerSize, cornerSize, centerH, TILES.LEFT);
+      drawLabeledTile(ctx, width - cornerSize, cornerSize, cornerSize, centerH, TILES.RIGHT);
+
+      // Corners
+      drawLabeledTile(ctx, 0, 0, cornerSize, cornerSize, TILES.TL);
+      drawLabeledTile(ctx, width - cornerSize, 0, cornerSize, cornerSize, TILES.TR);
+      drawLabeledTile(ctx, 0, height - cornerSize, cornerSize, cornerSize, TILES.BL);
+      drawLabeledTile(ctx, width - cornerSize, height - cornerSize, cornerSize, cornerSize, TILES.BR);
+
+      document.getElementById('expected-info').textContent =
+        `cornerSize=${cornerSize}, centerW=${centerW}, centerH=${centerH}`;
+    }
+
+    // Create corner tile
+    function createCornerTile() {
+      const size = 256;
+      const canvas = document.getElementById('corner-tile');
+      const ctx = canvas.getContext('2d');
+
+      // Fill with TL color
+      ctx.fillStyle = TILES.TL.color;
+      ctx.fillRect(0, 0, size, size);
+
+      // Draw grid
+      ctx.strokeStyle = '#000';
+      ctx.lineWidth = 1;
+      for (let i = 0; i <= 4; i++) {
+        const pos = (i / 4) * size;
+        ctx.beginPath();
+        ctx.moveTo(pos, 0);
+        ctx.lineTo(pos, size);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(0, pos);
+        ctx.lineTo(size, pos);
+        ctx.stroke();
+      }
+
+      // Label
+      ctx.fillStyle = '#000';
+      ctx.font = 'bold 24px monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('TL TILE', size/2, size/2);
+      ctx.font = '16px monospace';
+      ctx.fillText('256x256', size/2, size/2 + 30);
+
+      return canvas;
+    }
+
+    // 9-slice placement - SAME ORDER AS ACTUAL CODE
+    function draw9Slice() {
+      const canvas = document.getElementById('nineslice');
+      const ctx = canvas.getContext('2d');
+      const cornerTile = createCornerTile();
+
+      const centerW = Math.max(0, width - 2 * cornerSize);
+      const centerH = Math.max(0, height - 2 * cornerSize);
+
+      // 1. Fill with center color (NEUTRAL)
+      ctx.fillStyle = TILES.CENTER.color;
+      ctx.fillRect(0, 0, width, height);
+
+      // 2. Draw edge GRADIENTS (simulating actual code)
+      // These use opacity-based gradients that BLEND with the background!
+      const topGrad = ctx.createLinearGradient(0, 0, 0, cornerSize);
+      topGrad.addColorStop(0, 'rgba(255, 234, 167, 1)');  // TILES.TOP opaque
+      topGrad.addColorStop(1, 'rgba(255, 234, 167, 0)');  // TILES.TOP transparent
+      ctx.fillStyle = topGrad;
+      ctx.fillRect(cornerSize, 0, centerW, cornerSize);
+
+      // LEFT edge gradient (note: starts at x=0, goes to x=cornerSize)
+      const leftGrad = ctx.createLinearGradient(0, 0, cornerSize, 0);
+      leftGrad.addColorStop(0, 'rgba(152, 216, 200, 1)');
+      leftGrad.addColorStop(1, 'rgba(152, 216, 200, 0)');
+      ctx.fillStyle = leftGrad;
+      ctx.fillRect(0, cornerSize, cornerSize, centerH);
+
+      // BOTTOM edge gradient
+      const bottomGrad = ctx.createLinearGradient(0, height, 0, height - cornerSize);
+      bottomGrad.addColorStop(0, 'rgba(221, 160, 221, 1)');
+      bottomGrad.addColorStop(1, 'rgba(221, 160, 221, 0)');
+      ctx.fillStyle = bottomGrad;
+      ctx.fillRect(cornerSize, height - cornerSize, centerW, cornerSize);
+
+      // RIGHT edge gradient
+      const rightGrad = ctx.createLinearGradient(width, 0, width - cornerSize, 0);
+      rightGrad.addColorStop(0, 'rgba(247, 220, 111, 1)');
+      rightGrad.addColorStop(1, 'rgba(247, 220, 111, 0)');
+      ctx.fillStyle = rightGrad;
+      ctx.fillRect(width - cornerSize, cornerSize, cornerSize, centerH);
+
+      // 3. Draw corners LAST (should overwrite everything)
+      // TL - direct draw
+      ctx.drawImage(cornerTile, 0, 0, cornerSize, cornerSize);
+
+      // TR - flip horizontal
+      ctx.save();
+      ctx.translate(width, 0);
+      ctx.scale(-1, 1);
+      ctx.drawImage(cornerTile, 0, 0, cornerSize, cornerSize);
+      ctx.restore();
+
+      // BL - flip vertical
+      ctx.save();
+      ctx.translate(0, height);
+      ctx.scale(1, -1);
+      ctx.drawImage(cornerTile, 0, 0, cornerSize, cornerSize);
+      ctx.restore();
+
+      // BR - flip both
+      ctx.save();
+      ctx.translate(width, height);
+      ctx.scale(-1, -1);
+      ctx.drawImage(cornerTile, 0, 0, cornerSize, cornerSize);
+      ctx.restore();
+
+      // Draw grid overlay
+      ctx.strokeStyle = '#000';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(0, 0, cornerSize, cornerSize);
+      ctx.strokeRect(width - cornerSize, 0, cornerSize, cornerSize);
+      ctx.strokeRect(0, height - cornerSize, cornerSize, cornerSize);
+      ctx.strokeRect(width - cornerSize, height - cornerSize, cornerSize, cornerSize);
+
+      document.getElementById('nineslice-info').textContent =
+        `Drawing corners at:\nTL: (0,0)\nTR: flip at (${width},0)\nBL: flip at (0,${height})\nBR: flip at (${width},${height})`;
+    }
+
+    drawExpected();
+    draw9Slice();
+  </script>
+</body>
+</html>

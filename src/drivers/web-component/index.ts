@@ -24,7 +24,7 @@ function getManager(): FilterManager {
 }
 
 // Observable attributes
-const ATTRIBUTES = ['refraction', 'thickness', 'gloss', 'softness', 'saturation', 'dispersion', 'disabled'] as const;
+const ATTRIBUTES = ['refraction', 'thickness', 'gloss', 'softness', 'saturation', 'dispersion', 'displacement-resolution', 'displacement-smoothing', 'disabled'] as const;
 type Attribute = (typeof ATTRIBUTES)[number];
 
 /**
@@ -42,6 +42,8 @@ export class LiquidGlassElement extends HTMLElement {
   #softness = DEFAULT_PARAMS.softness;
   #saturation = DEFAULT_PARAMS.saturation;
   #dispersion = DEFAULT_PARAMS.dispersion;
+  #displacementResolution = DEFAULT_PARAMS.displacementResolution;
+  #displacementSmoothing = DEFAULT_PARAMS.displacementSmoothing;
   #disabled = false;
 
   #initialized = false;
@@ -94,6 +96,12 @@ export class LiquidGlassElement extends HTMLElement {
       case 'dispersion':
         this.#dispersion = value ? parseFloat(value) : DEFAULT_PARAMS.dispersion;
         break;
+      case 'displacement-resolution':
+        this.#displacementResolution = value ? parseFloat(value) : DEFAULT_PARAMS.displacementResolution;
+        break;
+      case 'displacement-smoothing':
+        this.#displacementSmoothing = value ? parseFloat(value) : DEFAULT_PARAMS.displacementSmoothing;
+        break;
       case 'disabled':
         this.#disabled = value !== null;
         if (this.#initialized) {
@@ -119,6 +127,8 @@ export class LiquidGlassElement extends HTMLElement {
       softness: this.#softness,
       saturation: this.#saturation,
       dispersion: this.#dispersion,
+      displacementResolution: this.#displacementResolution,
+      displacementSmoothing: this.#displacementSmoothing,
     };
   }
 
@@ -164,6 +174,24 @@ export class LiquidGlassElement extends HTMLElement {
   set dispersion(v: number) {
     this.#dispersion = v;
     this.setAttribute('dispersion', String(v));
+  }
+
+  /** Displacement map resolution (0-100, default 100)
+   *  Lower values reduce CPU load but require GPU smoothing.
+   */
+  get displacementResolution(): number { return this.#displacementResolution; }
+  set displacementResolution(v: number) {
+    this.#displacementResolution = v;
+    this.setAttribute('displacement-resolution', String(v));
+  }
+
+  /** Displacement map smoothing blur (0-100, default 0)
+   *  Direct control of GPU smoothing stdDeviation (0-100 → 0-5px)
+   */
+  get displacementSmoothing(): number { return this.#displacementSmoothing; }
+  set displacementSmoothing(v: number) {
+    this.#displacementSmoothing = v;
+    this.setAttribute('displacement-smoothing', String(v));
   }
 
   /** Disable the effect */

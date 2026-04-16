@@ -290,6 +290,8 @@
       --liquidglass-gloss: 50;
       --liquidglass-saturation: 45;
       --liquidglass-dispersion: 30;
+      --liquidglass-displacement-resolution: 45;
+      --liquidglass-displacement-smoothing: 15;
       display: flex;
       flex-direction: column;
       align-items: center;
@@ -543,12 +545,19 @@
     /* Displacement Map Overlay */
     .displacement-overlay {
       position: absolute;
-      inset: 0;
-      border-radius: inherit;
-      background-size: 100% 100%;
-      background-repeat: no-repeat;
       pointer-events: none;
       z-index: 10;
+    }
+
+    /* Boundary indicator for displacement map view */
+    .displacement-boundary {
+      position: absolute;
+      inset: 0;
+      border-radius: inherit;
+      border: 2px dashed rgba(255, 255, 255, 0.8);
+      pointer-events: none;
+      z-index: 11;
+      box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.5);
     }
 
     /* Responsive */
@@ -654,6 +663,29 @@
         </div>
         <div class="control-desc">Intensity of edge highlights - creates depth illusion</div>
         <input type="range" id="gloss" min="0" max="100" value="50">
+      </div>
+    </section>
+
+    <!-- Performance -->
+    <section class="section">
+      <div class="section-title">Performance</div>
+
+      <div class="control">
+        <div class="control-header">
+          <span class="control-label">Displacement Resolution</span>
+          <span class="control-value" id="displacement-resolution-val">45</span>
+        </div>
+        <div class="control-desc">Displacement map resolution (CPU→GPU tradeoff). Lower = less CPU, more GPU smoothing</div>
+        <input type="range" id="displacement-resolution" min="10" max="100" value="45">
+      </div>
+
+      <div class="control">
+        <div class="control-header">
+          <span class="control-label">Displacement Smoothing</span>
+          <span class="control-value" id="displacement-smoothing-val">15</span>
+        </div>
+        <div class="control-desc">Manual blur stdDeviation (0-100 → 0-5px). Overrides auto-smoothing when > 0</div>
+        <input type="range" id="displacement-smoothing" min="0" max="100" value="15">
       </div>
     </section>
 
@@ -836,6 +868,8 @@
   --liquidglass-softness: 10;
   --liquidglass-saturation: 45;
   --liquidglass-dispersion: 30;
+  --liquidglass-displacement-resolution: 45;
+  --liquidglass-displacement-smoothing: 15;
   border-radius: 24px;
 }</code>
     <button class="copy-btn" id="copy-btn">Copy to Clipboard</button>
@@ -926,6 +960,8 @@
       saturation: document.getElementById('saturation'),
       dispersion: document.getElementById('dispersion'),
       gloss: document.getElementById('gloss'),
+      displacementResolution: document.getElementById('displacement-resolution'),
+      displacementSmoothing: document.getElementById('displacement-smoothing'),
       radius: document.getElementById('radius'),
       width: document.getElementById('width'),
       height: document.getElementById('height'),
@@ -937,12 +973,12 @@
 
     // Presets
     const presets = {
-      default: { refraction: 50, thickness: 50, gloss: 50, softness: 10, saturation: 45, dispersion: 30, radius: 24 },
-      subtle: { refraction: 30, thickness: 40, gloss: 30, softness: 5, saturation: 30, dispersion: 20, radius: 16 },
-      bold: { refraction: 80, thickness: 70, gloss: 70, softness: 15, saturation: 60, dispersion: 50, radius: 32 },
-      frosted: { refraction: 40, thickness: 50, gloss: 40, softness: 50, saturation: 20, dispersion: 60, radius: 20 },
-      crystal: { refraction: 70, thickness: 60, gloss: 80, softness: 0, saturation: 70, dispersion: 40, radius: 28 },
-      ios: { refraction: 45, thickness: 55, gloss: 55, softness: 20, saturation: 50, dispersion: 35, radius: 22 }
+      default: { refraction: 50, thickness: 50, gloss: 50, softness: 10, saturation: 45, dispersion: 30, displacementResolution: 45, displacementSmoothing: 15, radius: 24 },
+      subtle: { refraction: 30, thickness: 40, gloss: 30, softness: 5, saturation: 30, dispersion: 20, displacementResolution: 100, displacementSmoothing: 0, radius: 16 },
+      bold: { refraction: 80, thickness: 70, gloss: 70, softness: 15, saturation: 60, dispersion: 50, displacementResolution: 100, displacementSmoothing: 0, radius: 32 },
+      frosted: { refraction: 40, thickness: 50, gloss: 40, softness: 50, saturation: 20, dispersion: 60, displacementResolution: 50, displacementSmoothing: 20, radius: 20 },
+      crystal: { refraction: 70, thickness: 60, gloss: 80, softness: 0, saturation: 70, dispersion: 40, displacementResolution: 100, displacementSmoothing: 0, radius: 28 },
+      ios: { refraction: 45, thickness: 55, gloss: 55, softness: 20, saturation: 50, dispersion: 35, displacementResolution: 75, displacementSmoothing: 10, radius: 22 }
     };
 
     // View mode state
@@ -966,8 +1002,9 @@
           glass.setAttribute('disabled', '');
         });
       } else {
-        // Remove overlays and enable glass effect
+        // Remove overlays, boundaries, and enable glass effect
         document.querySelectorAll('.displacement-overlay').forEach(el => el.remove());
+        document.querySelectorAll('.displacement-boundary').forEach(el => el.remove());
         allGlasses.forEach(glass => {
           glass.removeAttribute('disabled');
         });
@@ -978,6 +1015,25 @@
       const thickness = parseFloat(controls.thickness.value);
       const edgeWidthRatio = (thickness / 100) * 0.8 + 0.1; // 0.1-0.9
 
+      // Apply displacement-resolution scaling (same logic as filter-manager.ts)
+      const displacementResolution = parseFloat(controls.displacementResolution.value);
+      const resolutionScale = Math.max(0.1, Math.min(1, displacementResolution / 100));
+
+      // Calculate smoothing blur (same logic as svg-builder.ts)
+      const displacementSmoothing = parseFloat(controls.displacementSmoothing.value);
+      let smoothBlur;
+      if (displacementSmoothing > 0) {
+        // Direct control: 0-100 → 0-5px stdDeviation
+        smoothBlur = (displacementSmoothing / 100) * 5;
+      } else {
+        // Auto-calculate based on resolution scale
+        smoothBlur = Math.min(3, Math.max(0, (1 / resolutionScale - 1) * 0.5));
+      }
+
+      // Extension margin to visualize the "iPhone X style" edge extension
+      // Shows how displacement continues beyond the border-radius boundary
+      const extensionMargin = 20;
+
       for (const el of interactiveElements) {
         const glass = el.querySelector('.glass-panel');
         if (!glass) continue;
@@ -986,17 +1042,27 @@
         const h = parseFloat(el.dataset.h);
         const radius = parseFloat(el.dataset.radius) || 20;
 
-        // Generate displacement map
+        // Extended dimensions to include the edge extension area
+        const extendedW = w + extensionMargin * 2;
+        const extendedH = h + extensionMargin * 2;
+
+        // Apply resolution scaling to generate smaller displacement map
+        const renderW = Math.max(16, Math.round(extendedW * resolutionScale));
+        const renderH = Math.max(16, Math.round(extendedH * resolutionScale));
+        const renderRadius = radius * resolutionScale;
+
+        // Generate displacement map at (potentially) reduced resolution
+        // The WASM now extends displacement beyond the border-radius boundary
         const dispResult = await generateWasmDisplacementMap({
-          width: Math.round(w),
-          height: Math.round(h),
-          borderRadius: radius,
+          width: renderW,
+          height: renderH,
+          borderRadius: renderRadius,
           edgeWidthRatio
         });
 
         if (!dispResult) continue;
 
-        // Find or create overlay
+        // Find or create overlay (extended to show edge extension)
         let overlay = glass.querySelector('.displacement-overlay');
         if (!overlay) {
           overlay = document.createElement('div');
@@ -1004,7 +1070,24 @@
           glass.appendChild(overlay);
         }
 
+        // Find or create boundary indicator (shows original border-radius boundary)
+        let boundary = glass.querySelector('.displacement-boundary');
+        if (!boundary) {
+          boundary = document.createElement('div');
+          boundary.className = 'displacement-boundary';
+          glass.appendChild(boundary);
+        }
+
+        // Position overlay to extend beyond the glass panel bounds
+        // This visualizes the "iPhone X style" edge extension
+        overlay.style.inset = `-${extensionMargin}px`;
         overlay.style.backgroundImage = `url(${dispResult.dataUrl})`;
+        overlay.style.backgroundSize = '100% 100%';
+        overlay.style.backgroundRepeat = 'no-repeat';
+        // Apply smoothing blur to visualize GPU smoothing effect
+        overlay.style.filter = smoothBlur > 0.1 ? `blur(${smoothBlur.toFixed(2)}px)` : 'none';
+        // When smoothing is applied, use normal rendering; otherwise show pixelation
+        overlay.style.imageRendering = (smoothBlur > 0.1 || resolutionScale >= 1) ? 'auto' : 'pixelated';
       }
     }
 
@@ -1228,7 +1311,9 @@
         gloss: controls.gloss.value,
         softness: controls.softness.value,
         saturation: controls.saturation.value,
-        dispersion: controls.dispersion.value
+        dispersion: controls.dispersion.value,
+        displacementResolution: controls.displacementResolution.value,
+        displacementSmoothing: controls.displacementSmoothing.value
       };
 
       allGlasses.forEach(glass => {
@@ -1238,6 +1323,8 @@
         glass.style.setProperty('--liquidglass-softness', values.softness);
         glass.style.setProperty('--liquidglass-saturation', values.saturation);
         glass.style.setProperty('--liquidglass-dispersion', values.dispersion);
+        glass.style.setProperty('--liquidglass-displacement-resolution', values.displacementResolution);
+        glass.style.setProperty('--liquidglass-displacement-smoothing', values.displacementSmoothing);
       });
 
       // Update selected element size/radius
@@ -1278,6 +1365,8 @@
       document.getElementById('softness-val').textContent = values.softness;
       document.getElementById('saturation-val').textContent = values.saturation;
       document.getElementById('dispersion-val').textContent = values.dispersion;
+      document.getElementById('displacement-resolution-val').textContent = values.displacementResolution;
+      document.getElementById('displacement-smoothing-val').textContent = values.displacementSmoothing;
       document.getElementById('radius-val').textContent = controls.radius.value;
       document.getElementById('width-val').textContent = controls.width.value;
       document.getElementById('height-val').textContent = controls.height.value;
@@ -1299,6 +1388,8 @@
   --liquidglass-softness: ${values.softness};
   --liquidglass-saturation: ${values.saturation};
   --liquidglass-dispersion: ${values.dispersion};
+  --liquidglass-displacement-resolution: ${values.displacementResolution};
+  --liquidglass-displacement-smoothing: ${values.displacementSmoothing};
   border-radius: ${controls.radius.value}px;
 }`;
       codeOutput.textContent = code;
@@ -1385,6 +1476,8 @@
       controls.softness.value = preset.softness;
       controls.saturation.value = preset.saturation;
       controls.dispersion.value = preset.dispersion;
+      controls.displacementResolution.value = preset.displacementResolution;
+      controls.displacementSmoothing.value = preset.displacementSmoothing;
 
       document.querySelectorAll('.preset-btn[data-preset]').forEach(btn => {
         btn.classList.toggle('active', btn.dataset.preset === name);
@@ -1418,6 +1511,8 @@
       applyPreset('default');
       controls.tint.value = '#ffffff';
       controls.tintOpacity.value = 8;
+      controls.displacementResolution.value = 45;
+      controls.displacementSmoothing.value = 15;
       controls.bgSpeed.value = 30;
       controls.bgDirection.value = 135;
       updateBackgroundAnimation();

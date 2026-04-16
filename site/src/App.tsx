@@ -3,14 +3,17 @@ import './index.css'
 
 function App() {
   // Slider: gray line 167-444, knob 445-474, gray line 477-519
+  // 9 parameters with 42px spacing
   const sliderRows = [
-    { y: 325, value: '50' },
-    { y: 374, value: '50' },
-    { y: 423, value: '50' },
-    { y: 472, value: '50' },
-    { y: 521, value: '50' },
-    { y: 569, value: '50' },
-    { y: 618, value: '50px' },
+    { y: 325, value: '50' },    // refraction
+    { y: 367, value: '50' },    // thickness
+    { y: 409, value: '50' },    // softness
+    { y: 451, value: '50' },    // gloss
+    { y: 493, value: '50' },    // saturation
+    { y: 535, value: '50' },    // dispersion
+    { y: 577, value: '45' },    // displacement-resolution (new)
+    { y: 619, value: '30' },    // displacement-smoothing (new)
+    { y: 661, value: '50px' },  // border-radius
   ];
 
   return (
@@ -87,24 +90,26 @@ function App() {
       {/* Step 4 - same right edge as step 1 and 2 */}
       <span
         className="absolute font-['Inter_Tight'] text-[#858585]"
-        style={{ left: 117, top: 682, fontSize: 14 }}
+        style={{ left: 117, top: 724, fontSize: 14 }}
       >④</span>
       <div
         className="absolute bg-[#eee] text-[#000] rounded-[16px]"
-        style={{ left: 166, top: 666, width: 586, height: 264, padding: '23px 40px 12px 23px', fontSize: 13, lineHeight: 1.35 }}
+        style={{ left: 166, top: 708, width: 586, height: 286, padding: '23px 40px 12px 23px', fontSize: 13, lineHeight: 1.35 }}
       >
         <pre className="whitespace-pre">{`div {
-  --liquidglass-refraction:    50;
-  --liquidglass-thickness:     50;
-  --liquidglass-softness:      50;
-  --liquidglass-gloss:         50;
-  --liquidglass-saturation:    50;
-  --liquidglass-dispersion:    50;
+  --liquidglass-refraction:              50;
+  --liquidglass-thickness:               50;
+  --liquidglass-softness:                50;
+  --liquidglass-gloss:                   50;
+  --liquidglass-saturation:              50;
+  --liquidglass-dispersion:              50;
+  --liquidglass-displacement-resolution: 45;
+  --liquidglass-displacement-smoothing:  30;
 
-  border-radius:               50px;
+  border-radius:                         50px;
 }`}</pre>
       </div>
-      <Copy className="absolute text-[#858585]" style={{ left: 720, top: 684 }} size={14} strokeWidth={1.5} />
+      <Copy className="absolute text-[#858585]" style={{ left: 720, top: 726 }} size={14} strokeWidth={1.5} />
 
       {/* Black preview box */}
       <div

@@ -6,13 +6,17 @@ import type { LiquidGlassParams } from './types';
 
 /**
  * Build SVG filter innerHTML based on parameters
+ *
+ * @param resolutionScale - Scale factor for displacement map (0.1-1.0)
+ *   Lower values = lower resolution map = needs GPU smoothing
  */
 export function buildFilterChain(
   params: LiquidGlassParams,
   dispUrl: string,
   specUrl: string,
   width: number,
-  height: number
+  height: number,
+  resolutionScale: number = 1
 ): string {
   // Map 0-100 parameters to SVG filter values
   const scale = params.refraction * 2;                          // 0-100 → 0-200
@@ -24,11 +28,43 @@ export function buildFilterChain(
 
   const useDispersion = params.dispersion > 0;
 
+  // Calculate smoothing blur for displacement map
+  // If displacementSmoothing is set (>0), use it directly (0-100 → 0-5px)
+  // Otherwise, auto-calculate based on resolution scale
+  let dmapSmoothBlur: number;
+  if (params.displacementSmoothing > 0) {
+    // Direct control: 0-100 → 0-5px stdDeviation
+    dmapSmoothBlur = (params.displacementSmoothing / 100) * 5;
+  } else {
+    // Auto-calculate based on resolution scale
+    // At scale=1.0: no blur. At scale=0.1: significant blur to hide pixelation
+    // Max blur capped at 3px to avoid over-smoothing refraction edges
+    dmapSmoothBlur = Math.min(3, Math.max(0, (1 / resolutionScale - 1) * 0.5));
+  }
+  const needsDmapSmoothing = dmapSmoothBlur > 0.1;
+
   // Build filter chain dynamically
   let filterChain = `
     <!-- Load displacement maps for morphing -->
+    <feImage href="${dispUrl}" x="0" y="0" width="${width}" height="${height}" preserveAspectRatio="none" result="dRaw"/>
+  `;
+
+  if (needsDmapSmoothing) {
+    // GPU-accelerated smoothing for low-resolution displacement map
+    // This offloads work from CPU (WASM) to GPU (SVG filter)
+    filterChain += `
+    <!-- Smooth low-res displacement map to reduce stepping artifacts -->
+    <feGaussianBlur in="dRaw" stdDeviation="${dmapSmoothBlur.toFixed(2)}" result="dOld"/>
+    <feGaussianBlur in="dRaw" stdDeviation="${dmapSmoothBlur.toFixed(2)}" result="dNew"/>
+    `;
+  } else {
+    filterChain += `
     <feImage href="${dispUrl}" x="0" y="0" width="${width}" height="${height}" preserveAspectRatio="none" result="dOld"/>
     <feImage href="${dispUrl}" x="0" y="0" width="${width}" height="${height}" preserveAspectRatio="none" result="dNew"/>
+    `;
+  }
+
+  filterChain += `
     <feComposite in="dOld" in2="dNew" operator="arithmetic" k1="0" k2="0" k3="1" k4="0" result="d"/>
   `;
 
@@ -78,6 +114,8 @@ export function buildFilterChain(
 
 /**
  * Create SVG filter element
+ *
+ * @param resolutionScale - Scale factor for displacement map resolution (0.1-1.0)
  */
 export function createFilterElement(
   id: string,
@@ -85,7 +123,8 @@ export function createFilterElement(
   dispUrl: string,
   specUrl: string,
   width: number,
-  height: number
+  height: number,
+  resolutionScale: number = 1
 ): SVGFilterElement {
   const filter = document.createElementNS('http://www.w3.org/2000/svg', 'filter');
   filter.id = id;
@@ -97,7 +136,7 @@ export function createFilterElement(
   filter.setAttribute('primitiveUnits', 'userSpaceOnUse');
   filter.setAttribute('color-interpolation-filters', 'sRGB');
 
-  filter.innerHTML = buildFilterChain(params, dispUrl, specUrl, width, height);
+  filter.innerHTML = buildFilterChain(params, dispUrl, specUrl, width, height, resolutionScale);
 
   return filter;
 }

@@ -1,0 +1,775 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Fade-Blend 9-Slice Displacement Map</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: system-ui, sans-serif;
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+      min-height: 100vh;
+      padding: 20px;
+      color: #fff;
+    }
+    h1 { font-weight: 300; margin-bottom: 8px; }
+    .subtitle { color: rgba(255,255,255,0.6); margin-bottom: 20px; font-size: 14px; }
+
+    .container { display: flex; gap: 20px; flex-wrap: wrap; }
+    .panel {
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 12px;
+      padding: 16px;
+    }
+    .panel h2 {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: rgba(255,255,255,0.5);
+      margin-bottom: 12px;
+    }
+
+    .preview-row {
+      display: flex;
+      gap: 20px;
+      align-items: flex-start;
+      flex-wrap: wrap;
+    }
+    .preview-item { text-align: center; }
+    .preview-item h3 {
+      font-size: 12px;
+      color: rgba(255,255,255,0.7);
+      margin-bottom: 8px;
+    }
+    .preview-container {
+      background: repeating-conic-gradient(#222 0% 25%, #333 0% 50%) 50% / 16px 16px;
+      border-radius: 8px;
+      overflow: hidden;
+      display: inline-block;
+    }
+    canvas { display: block; }
+
+    .controls {
+      display: flex;
+      gap: 16px;
+      flex-wrap: wrap;
+      margin-bottom: 20px;
+    }
+    .control {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .control label { font-size: 12px; color: rgba(255,255,255,0.7); }
+    .control input[type="range"] { width: 120px; }
+    .control .value { font-size: 11px; color: rgba(255,255,255,0.5); font-family: monospace; }
+
+    .demo-section {
+      margin-top: 30px;
+      padding: 40px;
+      background: url('https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=1200') center/cover;
+      border-radius: 16px;
+      position: relative;
+    }
+    .demo-section::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: rgba(0,0,0,0.3);
+      border-radius: 16px;
+    }
+    .glass-element {
+      position: relative;
+      z-index: 1;
+      padding: 30px 40px;
+      color: #fff;
+      text-shadow: 0 1px 2px rgba(0,0,0,0.3);
+      display: inline-block;
+    }
+    .glass-element h3 { font-size: 24px; margin-bottom: 8px; }
+    .glass-element p { opacity: 0.8; font-size: 14px; }
+
+    .stats {
+      margin-top: 12px;
+      font-size: 11px;
+      color: rgba(255,255,255,0.5);
+      font-family: monospace;
+    }
+    .success { color: #4ade80; }
+    .info { color: #60a5fa; }
+  </style>
+</head>
+<body>
+  <h1>Fade-Blend 9-Slice Displacement</h1>
+  <p class="subtitle">Corner tiles with alpha fade-out for seamless blending</p>
+
+  <div class="controls">
+    <div class="control">
+      <label>Width</label>
+      <input type="range" id="width" min="150" max="400" value="280">
+      <span class="value" id="width-val">280</span>
+    </div>
+    <div class="control">
+      <label>Height</label>
+      <input type="range" id="height" min="100" max="300" value="180">
+      <span class="value" id="height-val">180</span>
+    </div>
+    <div class="control">
+      <label>Border Radius</label>
+      <input type="range" id="radius" min="8" max="90" value="32">
+      <span class="value" id="radius-val">32</span>
+    </div>
+    <div class="control">
+      <label>Fade Width</label>
+      <input type="range" id="fade" min="4" max="40" value="16">
+      <span class="value" id="fade-val">16</span>
+    </div>
+  </div>
+
+  <div class="container">
+    <div class="panel">
+      <h2>Corner Tile (with fade)</h2>
+      <div class="preview-row">
+        <div class="preview-item">
+          <h3>TL Corner</h3>
+          <div class="preview-container">
+            <canvas id="corner-tl" width="120" height="120"></canvas>
+          </div>
+        </div>
+        <div class="preview-item">
+          <h3>Alpha Channel</h3>
+          <div class="preview-container">
+            <canvas id="corner-alpha" width="120" height="120"></canvas>
+          </div>
+        </div>
+      </div>
+      <div class="stats" id="corner-stats"></div>
+    </div>
+
+    <div class="panel" style="flex: 1;">
+      <h2>Assembled Map (Fade-Blend)</h2>
+      <div class="preview-container">
+        <canvas id="assembled"></canvas>
+      </div>
+      <div class="stats" id="assembled-stats"></div>
+    </div>
+  </div>
+
+  <div class="container" style="margin-top: 20px;">
+    <div class="panel">
+      <h2>Comparison: WASM Reference</h2>
+      <div class="preview-container">
+        <canvas id="wasm-ref"></canvas>
+      </div>
+    </div>
+    <div class="panel">
+      <h2>Difference (amplified 4x)</h2>
+      <div class="preview-container">
+        <canvas id="diff"></canvas>
+      </div>
+      <div class="stats" id="diff-stats"></div>
+    </div>
+  </div>
+
+  <div class="demo-section">
+    <div class="glass-element" id="glass-demo">
+      <h3>Fade-Blend Glass</h3>
+      <p>Smooth displacement with alpha blending</p>
+    </div>
+  </div>
+
+  <svg style="position: absolute; width: 0; height: 0;">
+    <defs>
+      <filter id="glass-filter" x="-50%" y="-50%" width="200%" height="200%"
+              color-interpolation-filters="sRGB">
+        <feImage id="disp-image" result="dispMap" preserveAspectRatio="none"/>
+        <feDisplacementMap in="SourceGraphic" in2="dispMap"
+                           id="disp-map"
+                           xChannelSelector="R" yChannelSelector="G" scale="25"/>
+        <feGaussianBlur stdDeviation="0.3" result="blur"/>
+        <feColorMatrix type="matrix"
+                       values="1 0 0 0 0.03
+                               0 1 0 0 0.03
+                               0 0 1 0 0.06
+                               0 0 0 0.9 0"/>
+      </filter>
+    </defs>
+  </svg>
+
+  <script>
+    // ═══════════════════════════════════════════════════════════════════
+    // Fade-Blend 9-Slice: Corner tiles with alpha fade for seamless joins
+    // ═══════════════════════════════════════════════════════════════════
+
+    function fastExp(x) {
+      if (x < -87) return 0;
+      if (x > 0) return 1;
+      return Math.exp(x);
+    }
+
+    /**
+     * Generate corner tile with alpha fade-out at edges
+     * The fade creates smooth blending with adjacent edge gradients
+     *
+     * Coordinate system for TL corner:
+     * - (0,0) is the actual top-left corner of the viewport (OUTSIDE the rounded rect)
+     * - (cornerSize, cornerSize) is the inner boundary of the corner region
+     * - The rounded arc is centered at (edgeWidth, edgeWidth) with radius r
+     */
+    function generateCornerTileWithFade(r, edgeWidth, fadeWidth, size) {
+      const canvas = document.createElement('canvas');
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext('2d');
+      const imageData = ctx.createImageData(size, size);
+      const data = imageData.data;
+
+      const cornerSize = r + edgeWidth;
+      const negThreeOverEdgeWidth = -3 / edgeWidth;
+
+      // Arc center in corner tile coordinates
+      const arcCenterX = edgeWidth;
+      const arcCenterY = edgeWidth;
+
+      for (let py = 0; py < size; py++) {
+        for (let px = 0; px < size; px++) {
+          const idx = (py * size + px) * 4;
+
+          // Map pixel to corner coordinate space [0, cornerSize]
+          const vx = (px / size) * cornerSize;
+          const vy = (py / size) * cornerSize;
+
+          // Check if in the rounded corner arc region (near top-left)
+          // Arc region: vx < edgeWidth AND vy < edgeWidth
+          const inArcRegionX = vx < edgeWidth;
+          const inArcRegionY = vy < edgeWidth;
+          const inArcRegion = inArcRegionX && inArcRegionY;
+
+          let inBounds = true;
+          let distFromEdge = 0;
+          let dirX = 0, dirY = 0;
+
+          if (inArcRegion) {
+            // In the quarter-circle region near (0,0)
+            // Distance from arc center
+            const toArcX = arcCenterX - vx;  // Positive when vx < arcCenterX
+            const toArcY = arcCenterY - vy;  // Positive when vy < arcCenterY
+            const distFromArcCenter = Math.sqrt(toArcX * toArcX + toArcY * toArcY);
+
+            if (distFromArcCenter > r) {
+              // Outside the rounded rect (in the cut-off corner)
+              inBounds = false;
+            } else {
+              // Inside the rounded rect, near the arc
+              distFromEdge = r - distFromArcCenter;
+              if (distFromArcCenter > 0.001) {
+                // Direction points OUTWARD from arc center (toward the corner)
+                // For displacement, we want to push content INWARD (opposite)
+                dirX = -toArcX / distFromArcCenter;  // Negative = push right (toward center)
+                dirY = -toArcY / distFromArcCenter;  // Negative = push down (toward center)
+              }
+            }
+          } else {
+            // In the "elbow" regions - linear displacement toward nearest edge
+            // distFromEdge is distance from the shape boundary
+            if (inArcRegionX) {
+              // Below the arc, near left edge: displacement toward left
+              distFromEdge = vx;
+              dirX = -1;  // Push content right
+              dirY = 0;
+            } else if (inArcRegionY) {
+              // Right of the arc, near top edge: displacement toward top
+              distFromEdge = vy;
+              dirX = 0;
+              dirY = -1;  // Push content down
+            } else {
+              // In the diagonal elbow zone: use closer edge
+              if (vx < vy) {
+                distFromEdge = vx;
+                dirX = -1;
+                dirY = 0;
+              } else {
+                distFromEdge = vy;
+                dirX = 0;
+                dirY = -1;
+              }
+            }
+          }
+
+          // Calculate displacement (note: MINUS sign to match WASM)
+          let dispR = 128, dispG = 128;
+          if (inBounds) {
+            const magnitude = fastExp(distFromEdge * negThreeOverEdgeWidth);
+            dispR = Math.round(Math.max(0, Math.min(255, 128 - dirX * magnitude * 127)));
+            dispG = Math.round(Math.max(0, Math.min(255, 128 - dirY * magnitude * 127)));
+          }
+
+          // Calculate alpha with fade-out at inner edges (right and bottom of tile)
+          // These edges blend with adjacent edge gradients
+          const fadeScaled = (fadeWidth / cornerSize) * size;
+          const pxFromRight = size - px;
+          const pyFromBottom = size - py;
+
+          let alpha = 255;
+
+          // Fade at right edge (blending with top edge gradient or right neighbor)
+          if (pxFromRight < fadeScaled && !inArcRegion) {
+            alpha = Math.min(alpha, Math.round(255 * (pxFromRight / fadeScaled)));
+          }
+
+          // Fade at bottom edge (blending with left edge gradient or bottom neighbor)
+          if (pyFromBottom < fadeScaled && !inArcRegion) {
+            alpha = Math.min(alpha, Math.round(255 * (pyFromBottom / fadeScaled)));
+          }
+
+          // Keep full alpha in the arc region (no blending needed there)
+          if (inArcRegion && inBounds) {
+            alpha = 255;
+          }
+
+          // Outside bounds (corner cut-off) - transparent
+          if (!inBounds) {
+            alpha = 0;
+          }
+
+          data[idx] = dispR;
+          data[idx + 1] = dispG;
+          data[idx + 2] = 128;
+          data[idx + 3] = alpha;
+        }
+      }
+
+      ctx.putImageData(imageData, 0, 0);
+      return canvas;
+    }
+
+    /**
+     * Draw corner with flip and channel inversion, preserving alpha
+     */
+    function drawCornerFlipped(ctx, tile, destX, destY, destSize, flipX, flipY) {
+      const tileCtx = tile.getContext('2d');
+      const srcData = tileCtx.getImageData(0, 0, tile.width, tile.height);
+      const srcSize = tile.width;
+
+      const tempCanvas = document.createElement('canvas');
+      tempCanvas.width = destSize;
+      tempCanvas.height = destSize;
+      const tempCtx = tempCanvas.getContext('2d');
+      const dstData = tempCtx.createImageData(destSize, destSize);
+
+      const scale = srcSize / destSize;
+
+      for (let y = 0; y < destSize; y++) {
+        for (let x = 0; x < destSize; x++) {
+          const srcX = flipX ? Math.floor((destSize - 1 - x) * scale) : Math.floor(x * scale);
+          const srcY = flipY ? Math.floor((destSize - 1 - y) * scale) : Math.floor(y * scale);
+
+          const srcIdx = (srcY * srcSize + srcX) * 4;
+          const dstIdx = (y * destSize + x) * 4;
+
+          let r = srcData.data[srcIdx];
+          let g = srcData.data[srcIdx + 1];
+
+          // Invert displacement channels when flipping
+          if (flipX) r = 256 - r;
+          if (flipY) g = 256 - g;
+
+          dstData.data[dstIdx] = Math.max(0, Math.min(255, r));
+          dstData.data[dstIdx + 1] = Math.max(0, Math.min(255, g));
+          dstData.data[dstIdx + 2] = srcData.data[srcIdx + 2];
+          dstData.data[dstIdx + 3] = srcData.data[srcIdx + 3];  // Preserve alpha!
+        }
+      }
+
+      tempCtx.putImageData(dstData, 0, 0);
+      ctx.drawImage(tempCanvas, destX, destY);
+    }
+
+    /**
+     * Generate edge gradient with fade at ends
+     */
+    function drawEdgeWithFade(ctx, x, y, w, h, direction, edgeWidth, fadeWidth) {
+      if (w <= 0 || h <= 0) return;
+
+      const isVertical = direction === 'top' || direction === 'bottom';
+      const gradientLength = isVertical ? h : w;
+      const fadeLength = Math.min(fadeWidth, (isVertical ? w : h) / 2);
+
+      // Create gradient for displacement
+      let gradient;
+      let colorBase, colorDir;
+
+      switch (direction) {
+        case 'top':
+          gradient = ctx.createLinearGradient(x, y, x, y + h);
+          colorBase = [128, 0, 128];  // Will be modified by gradient
+          colorDir = 'G';  // Y displacement
+          break;
+        case 'bottom':
+          gradient = ctx.createLinearGradient(x, y + h, x, y);
+          colorDir = 'G';
+          break;
+        case 'left':
+          gradient = ctx.createLinearGradient(x, y, x + w, y);
+          colorDir = 'R';  // X displacement
+          break;
+        case 'right':
+          gradient = ctx.createLinearGradient(x + w, y, x, y);
+          colorDir = 'R';
+          break;
+      }
+
+      // Generate exp decay gradient stops
+      // WASM uses: 128 - dir * mag * 127
+      // For edges, dir points outward from shape center
+      // Top edge: dir = (0, -1), so G = 128 - (-1)*mag*127 = 128 + 127*mag (G > 128)
+      // Left edge: dir = (-1, 0), so R = 128 - (-1)*mag*127 = 128 + 127*mag (R > 128)
+      const numStops = 24;
+      for (let i = 0; i <= numStops; i++) {
+        const t = i / numStops;
+        const dist = t * (edgeWidth + fadeWidth);
+        const mag = Math.exp(-3 * dist / edgeWidth);
+        // dir is -1 for top/left edges, so 128 - (-1)*mag*127 = 128 + 127*mag
+        const val = Math.round(128 + 127 * mag);
+
+        if (colorDir === 'G') {
+          // Top edge: G > 128 at edge, decays to 128
+          // Bottom edge: G < 128 at edge (opposite direction)
+          const gVal = direction === 'top' ? val : (256 - val);
+          gradient.addColorStop(t, `rgb(128, ${Math.min(255, Math.max(0, gVal))}, 128)`);
+        } else {
+          // Left edge: R > 128 at edge, decays to 128
+          // Right edge: R < 128 at edge (opposite direction)
+          const rVal = direction === 'left' ? val : (256 - val);
+          gradient.addColorStop(t, `rgb(${Math.min(255, Math.max(0, rVal))}, 128, 128)`);
+        }
+      }
+
+      // Draw main gradient
+      ctx.fillStyle = gradient;
+      ctx.fillRect(x, y, w, h);
+
+      // Add fade masks at ends using compositing
+      ctx.save();
+      ctx.globalCompositeOperation = 'destination-out';
+
+      if (isVertical) {
+        // Fade at left end
+        const leftFade = ctx.createLinearGradient(x, y, x + fadeLength, y);
+        leftFade.addColorStop(0, 'rgba(0,0,0,1)');
+        leftFade.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = leftFade;
+        ctx.fillRect(x, y, fadeLength, h);
+
+        // Fade at right end
+        const rightFade = ctx.createLinearGradient(x + w, y, x + w - fadeLength, y);
+        rightFade.addColorStop(0, 'rgba(0,0,0,1)');
+        rightFade.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = rightFade;
+        ctx.fillRect(x + w - fadeLength, y, fadeLength, h);
+      } else {
+        // Fade at top end
+        const topFade = ctx.createLinearGradient(x, y, x, y + fadeLength);
+        topFade.addColorStop(0, 'rgba(0,0,0,1)');
+        topFade.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = topFade;
+        ctx.fillRect(x, y, w, fadeLength);
+
+        // Fade at bottom end
+        const bottomFade = ctx.createLinearGradient(x, y + h, x, y + h - fadeLength);
+        bottomFade.addColorStop(0, 'rgba(0,0,0,1)');
+        bottomFade.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = bottomFade;
+        ctx.fillRect(x, y + h - fadeLength, w, fadeLength);
+      }
+
+      ctx.restore();
+    }
+
+    /**
+     * Assemble full displacement map with fade-blend
+     */
+    function assembleFadeBlendMap(width, height, r, edgeWidthRatio, fadeWidth) {
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+
+      const halfW = width / 2;
+      const halfH = height / 2;
+      const minHalf = Math.min(halfW, halfH);
+      const edgeWidth = minHalf * edgeWidthRatio;
+      const cornerSize = Math.round(r + edgeWidth);
+
+      // 1. Fill with neutral (this is the "base" that shows through transparent areas)
+      ctx.fillStyle = 'rgb(128, 128, 128)';
+      ctx.fillRect(0, 0, width, height);
+
+      const centerW = Math.max(0, width - 2 * cornerSize);
+      const centerH = Math.max(0, height - 2 * cornerSize);
+
+      // 2. Draw edge gradients FIRST (they go under the corners)
+      if (centerW > 0) {
+        // Top edge - extend into corner regions for blending
+        drawEdgeWithFade(ctx, cornerSize - fadeWidth, 0, centerW + 2 * fadeWidth, cornerSize, 'top', edgeWidth, fadeWidth);
+        // Bottom edge
+        drawEdgeWithFade(ctx, cornerSize - fadeWidth, height - cornerSize, centerW + 2 * fadeWidth, cornerSize, 'bottom', edgeWidth, fadeWidth);
+      }
+      if (centerH > 0) {
+        // Left edge
+        drawEdgeWithFade(ctx, 0, cornerSize - fadeWidth, cornerSize, centerH + 2 * fadeWidth, 'left', edgeWidth, fadeWidth);
+        // Right edge
+        drawEdgeWithFade(ctx, width - cornerSize, cornerSize - fadeWidth, cornerSize, centerH + 2 * fadeWidth, 'right', edgeWidth, fadeWidth);
+      }
+
+      // 3. Draw corners LAST (with alpha, they blend over edges)
+      const tileSize = Math.min(256, cornerSize * 2);
+      const cornerTile = generateCornerTileWithFade(r, edgeWidth, fadeWidth, tileSize);
+
+      // TL
+      drawCornerFlipped(ctx, cornerTile, 0, 0, cornerSize, false, false);
+      // TR
+      drawCornerFlipped(ctx, cornerTile, width - cornerSize, 0, cornerSize, true, false);
+      // BL
+      drawCornerFlipped(ctx, cornerTile, 0, height - cornerSize, cornerSize, false, true);
+      // BR
+      drawCornerFlipped(ctx, cornerTile, width - cornerSize, height - cornerSize, cornerSize, true, true);
+
+      return { canvas, cornerTile, cornerSize, edgeWidth };
+    }
+
+    /**
+     * Generate WASM-equivalent reference
+     */
+    function generateWasmRef(width, height, r, edgeWidthRatio) {
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      const imageData = ctx.createImageData(width, height);
+      const data = imageData.data;
+
+      const halfW = width / 2;
+      const halfH = height / 2;
+      const minHalf = Math.min(halfW, halfH);
+      const edgeWidth = minHalf * edgeWidthRatio;
+      const cornerThreshX = halfW - r;
+      const cornerThreshY = halfH - r;
+      const negThree = -3 / edgeWidth;
+
+      for (let py = 0; py < height; py++) {
+        for (let px = 0; px < width; px++) {
+          const idx = (py * width + px) * 4;
+
+          const dx = Math.abs(px - halfW);
+          const dy = Math.abs(py - halfH);
+          const signX = px < halfW ? -1 : 1;
+          const signY = py < halfH ? -1 : 1;
+
+          const inCornerX = dx > cornerThreshX;
+          const inCornerY = dy > cornerThreshY;
+          const inCorner = inCornerX && inCornerY;
+
+          let inBounds = true;
+          let distFromEdge = 0;
+          let dirX = 0, dirY = 0;
+
+          if (inCorner) {
+            const cornerX = dx - cornerThreshX;
+            const cornerY = dy - cornerThreshY;
+            const cornerDistSq = cornerX * cornerX + cornerY * cornerY;
+
+            if (cornerDistSq > r * r) {
+              inBounds = false;
+            } else {
+              const cornerDist = Math.sqrt(cornerDistSq);
+              distFromEdge = r - cornerDist;
+              if (cornerDist > 0.001) {
+                dirX = (cornerX / cornerDist) * signX;
+                dirY = (cornerY / cornerDist) * signY;
+              }
+            }
+          } else {
+            const distX = halfW - dx;
+            const distY = halfH - dy;
+            if (distX < distY) {
+              distFromEdge = distX;
+              dirX = signX;
+            } else {
+              distFromEdge = distY;
+              dirY = signY;
+            }
+          }
+
+          if (!inBounds) {
+            data[idx] = 128;
+            data[idx + 1] = 128;
+          } else {
+            const mag = fastExp(distFromEdge * negThree);
+            data[idx] = Math.round(128 - dirX * mag * 127);
+            data[idx + 1] = Math.round(128 - dirY * mag * 127);
+          }
+          data[idx + 2] = 128;
+          data[idx + 3] = 255;
+        }
+      }
+
+      ctx.putImageData(imageData, 0, 0);
+      return canvas;
+    }
+
+    /**
+     * Compare two canvases and generate diff
+     */
+    function compareAndDiff(canvas1, canvas2, diffCanvas) {
+      const w = canvas1.width, h = canvas1.height;
+      diffCanvas.width = w;
+      diffCanvas.height = h;
+
+      const ctx1 = canvas1.getContext('2d');
+      const ctx2 = canvas2.getContext('2d');
+      const ctxDiff = diffCanvas.getContext('2d');
+
+      const data1 = ctx1.getImageData(0, 0, w, h).data;
+      const data2 = ctx2.getImageData(0, 0, w, h).data;
+      const diffData = ctxDiff.createImageData(w, h);
+
+      let exact = 0, close = 0, total = w * h;
+      let maxDiff = 0;
+
+      for (let i = 0; i < data1.length; i += 4) {
+        const dr = Math.abs(data1[i] - data2[i]);
+        const dg = Math.abs(data1[i + 1] - data2[i + 1]);
+        const diff = Math.max(dr, dg);
+
+        maxDiff = Math.max(maxDiff, diff);
+
+        if (diff === 0) exact++;
+        else if (diff <= 3) close++;
+
+        // Amplified diff visualization
+        const amp = Math.min(255, diff * 4);
+        diffData.data[i] = dr * 4;
+        diffData.data[i + 1] = dg * 4;
+        diffData.data[i + 2] = amp;
+        diffData.data[i + 3] = 255;
+      }
+
+      ctxDiff.putImageData(diffData, 0, 0);
+
+      return {
+        exact,
+        close,
+        total,
+        maxDiff,
+        exactRate: (exact / total * 100).toFixed(1),
+        passRate: ((exact + close) / total * 100).toFixed(1)
+      };
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // UI
+    // ═══════════════════════════════════════════════════════════════════
+
+    const controls = {
+      width: document.getElementById('width'),
+      height: document.getElementById('height'),
+      radius: document.getElementById('radius'),
+      fade: document.getElementById('fade')
+    };
+
+    const vals = {
+      width: document.getElementById('width-val'),
+      height: document.getElementById('height-val'),
+      radius: document.getElementById('radius-val'),
+      fade: document.getElementById('fade-val')
+    };
+
+    const cornerTL = document.getElementById('corner-tl');
+    const cornerAlpha = document.getElementById('corner-alpha');
+    const assembled = document.getElementById('assembled');
+    const wasmRef = document.getElementById('wasm-ref');
+    const diff = document.getElementById('diff');
+    const glassDemoEl = document.getElementById('glass-demo');
+
+    function update() {
+      const w = parseInt(controls.width.value);
+      const h = parseInt(controls.height.value);
+      const r = parseInt(controls.radius.value);
+      const fadeW = parseInt(controls.fade.value);
+      const edgeRatio = 0.5;
+
+      vals.width.textContent = w;
+      vals.height.textContent = h;
+      vals.radius.textContent = r;
+      vals.fade.textContent = fadeW;
+
+      const minHalf = Math.min(w, h) / 2;
+      const edgeWidth = minHalf * edgeRatio;
+      const cornerSize = r + edgeWidth;
+
+      // Generate corner tile preview
+      const t0 = performance.now();
+      const tileSize = 120;
+      const tile = generateCornerTileWithFade(r, edgeWidth, fadeW, tileSize);
+
+      // Draw corner preview
+      const ctxTL = cornerTL.getContext('2d');
+      ctxTL.clearRect(0, 0, tileSize, tileSize);
+      ctxTL.drawImage(tile, 0, 0);
+
+      // Draw alpha channel visualization
+      const ctxAlpha = cornerAlpha.getContext('2d');
+      const tileData = tile.getContext('2d').getImageData(0, 0, tileSize, tileSize);
+      const alphaVis = ctxAlpha.createImageData(tileSize, tileSize);
+      for (let i = 0; i < tileData.data.length; i += 4) {
+        const a = tileData.data[i + 3];
+        alphaVis.data[i] = a;
+        alphaVis.data[i + 1] = a;
+        alphaVis.data[i + 2] = a;
+        alphaVis.data[i + 3] = 255;
+      }
+      ctxAlpha.putImageData(alphaVis, 0, 0);
+
+      document.getElementById('corner-stats').textContent =
+        `cornerSize: ${cornerSize.toFixed(0)}px, fadeWidth: ${fadeW}px`;
+
+      // Assemble full map
+      const result = assembleFadeBlendMap(w, h, r, edgeRatio, fadeW);
+      assembled.width = w;
+      assembled.height = h;
+      assembled.getContext('2d').drawImage(result.canvas, 0, 0);
+
+      const t1 = performance.now();
+      document.getElementById('assembled-stats').innerHTML =
+        `<span class="info">${w}×${h}px in ${(t1 - t0).toFixed(1)}ms</span>`;
+
+      // Generate WASM reference
+      const wasmCanvas = generateWasmRef(w, h, r, edgeRatio);
+      wasmRef.width = w;
+      wasmRef.height = h;
+      wasmRef.getContext('2d').drawImage(wasmCanvas, 0, 0);
+
+      // Compare
+      const stats = compareAndDiff(result.canvas, wasmCanvas, diff);
+      const statusClass = parseFloat(stats.passRate) >= 90 ? 'success' : 'info';
+      document.getElementById('diff-stats').innerHTML =
+        `<span class="${statusClass}">Pass (±3): ${stats.passRate}%</span> | Exact: ${stats.exactRate}% | Max: ${stats.maxDiff}`;
+
+      // Update live demo
+      glassDemoEl.style.width = w + 'px';
+      glassDemoEl.style.borderRadius = r + 'px';
+
+      const dataUrl = result.canvas.toDataURL();
+      document.getElementById('disp-image').setAttribute('href', dataUrl);
+      document.getElementById('disp-image').setAttribute('width', w);
+      document.getElementById('disp-image').setAttribute('height', h);
+      glassDemoEl.style.filter = 'url(#glass-filter)';
+    }
+
+    Object.values(controls).forEach(c => c.addEventListener('input', update));
+    update();
+  </script>
+</body>
+</html>

@@ -1,0 +1,809 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Fixed Corner Tile 9-Slice</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: system-ui, sans-serif;
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+      min-height: 100vh;
+      padding: 20px;
+      color: #fff;
+    }
+    h1 { font-weight: 300; margin-bottom: 8px; }
+    .subtitle { color: rgba(255,255,255,0.6); margin-bottom: 20px; font-size: 14px; }
+
+    .container { display: flex; gap: 20px; flex-wrap: wrap; }
+    .panel {
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 12px;
+      padding: 16px;
+    }
+    .panel h2 {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: rgba(255,255,255,0.5);
+      margin-bottom: 12px;
+    }
+
+    .controls {
+      display: flex;
+      gap: 16px;
+      flex-wrap: wrap;
+      margin-bottom: 20px;
+    }
+    .control {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .control label { font-size: 12px; color: rgba(255,255,255,0.7); }
+    .control input[type="range"] { width: 120px; }
+    .control .value { font-size: 11px; color: rgba(255,255,255,0.5); font-family: monospace; }
+
+    .preview-container {
+      background: repeating-conic-gradient(#222 0% 25%, #333 0% 50%) 50% / 16px 16px;
+      border-radius: 8px;
+      overflow: hidden;
+      display: inline-block;
+    }
+    canvas { display: block; }
+
+    .stats {
+      margin-top: 12px;
+      font-size: 11px;
+      color: rgba(255,255,255,0.5);
+      font-family: monospace;
+    }
+    .success { color: #4ade80; }
+    .info { color: #60a5fa; }
+
+    .demo-section {
+      margin-top: 30px;
+      padding: 40px;
+      background: url('https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=1200') center/cover;
+      border-radius: 16px;
+      position: relative;
+    }
+    .demo-section::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: rgba(0,0,0,0.3);
+      border-radius: 16px;
+    }
+    .glass-element {
+      position: relative;
+      z-index: 1;
+      padding: 30px 40px;
+      color: #fff;
+      text-shadow: 0 1px 2px rgba(0,0,0,0.3);
+      display: inline-block;
+    }
+    .glass-element h3 { font-size: 24px; margin-bottom: 8px; }
+    .glass-element p { opacity: 0.8; font-size: 14px; }
+
+    .tile-preview {
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+    }
+    .tile-info { font-size: 11px; color: rgba(255,255,255,0.6); }
+  </style>
+</head>
+<body>
+  <h1>Fixed Corner Tile 9-Slice</h1>
+  <p class="subtitle">Pre-baked corner tile - only placement changes with radius</p>
+
+  <div class="controls">
+    <div class="control">
+      <label>Width</label>
+      <input type="range" id="width" min="150" max="400" value="280">
+      <span class="value" id="width-val">280</span>
+    </div>
+    <div class="control">
+      <label>Height</label>
+      <input type="range" id="height" min="100" max="300" value="180">
+      <span class="value" id="height-val">180</span>
+    </div>
+    <div class="control">
+      <label>Border Radius</label>
+      <input type="range" id="radius" min="8" max="80" value="24">
+      <span class="value" id="radius-val">24</span>
+    </div>
+    <div class="control">
+      <label>Edge Width Ratio</label>
+      <input type="range" id="edgeRatio" min="30" max="70" value="50">
+      <span class="value" id="edgeRatio-val">0.50</span>
+    </div>
+    <div class="control">
+      <label>Boundary Blur</label>
+      <input type="range" id="boundaryBlur" min="0" max="16" value="4">
+      <span class="value" id="boundaryBlur-val">4</span>
+    </div>
+  </div>
+
+  <div class="container">
+    <div class="panel">
+      <h2>Pre-baked Corner Tile (Fixed)</h2>
+      <div class="tile-preview">
+        <div class="preview-container">
+          <canvas id="corner-tile" width="256" height="256"></canvas>
+        </div>
+        <div class="tile-info">
+          <p>256×256 pixels</p>
+          <p>Generated once</p>
+          <p>Radius changes only</p>
+          <p>affect placement</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel" style="flex: 1;">
+      <h2>Assembled Map (placement varies)</h2>
+      <div class="preview-container">
+        <canvas id="assembled"></canvas>
+      </div>
+      <div class="stats" id="assembled-stats"></div>
+    </div>
+  </div>
+
+  <div class="container" style="margin-top: 20px;">
+    <div class="panel">
+      <h2>WASM Reference</h2>
+      <div class="preview-container">
+        <canvas id="wasm-ref"></canvas>
+      </div>
+    </div>
+    <div class="panel">
+      <h2>Difference</h2>
+      <div class="preview-container">
+        <canvas id="diff"></canvas>
+      </div>
+      <div class="stats" id="diff-stats"></div>
+    </div>
+  </div>
+
+  <div class="demo-section">
+    <div class="glass-element" id="glass-demo">
+      <h3>Fixed Tile Glass</h3>
+      <p>Pre-baked tile, dynamic placement</p>
+    </div>
+  </div>
+
+  <svg style="position: absolute; width: 0; height: 0;">
+    <defs>
+      <filter id="glass-filter" x="-50%" y="-50%" width="200%" height="200%"
+              color-interpolation-filters="sRGB">
+        <feImage id="disp-image" result="dispMap" preserveAspectRatio="none"/>
+        <feDisplacementMap in="SourceGraphic" in2="dispMap"
+                           xChannelSelector="R" yChannelSelector="G" scale="25"/>
+        <feGaussianBlur stdDeviation="0.3"/>
+        <feColorMatrix type="matrix"
+                       values="1 0 0 0 0.03
+                               0 1 0 0 0.03
+                               0 0 1 0 0.06
+                               0 0 0 0.9 0"/>
+      </filter>
+    </defs>
+  </svg>
+
+  <script>
+    // ═══════════════════════════════════════════════════════════════════
+    // Fixed Corner Tile Approach
+    //
+    // Key insight: The corner tile is PRE-BAKED and FIXED.
+    // It represents a "unit" rounded corner with:
+    // - Normalized coordinates [0, 1] for the corner region
+    // - Fixed exponential decay curve
+    //
+    // When radius changes, we only change WHERE we place/crop the tile,
+    // not the tile content itself.
+    // ═══════════════════════════════════════════════════════════════════
+
+    const TILE_SIZE = 256;
+
+    // Pre-baked corner tile (generated ONCE)
+    let prebakedCornerTile = null;
+
+    /**
+     * Get inscribed rectangle that never touches rounded corners
+     * SMT-verified formula for safe blur coverage
+     */
+    function getInscribedBlurRect(width, height, radius, blurRadius = 0) {
+      const halfW = width / 2;
+      const halfH = height / 2;
+
+      // CSS clamping for elliptical corners
+      const rx = Math.min(radius, halfW);
+      const ry = Math.min(radius, halfH);
+
+      // Inscribed rectangle with blur margin
+      const x = rx + blurRadius;
+      const y = ry + blurRadius;
+      const w = Math.max(0, width - 2 * rx - 2 * blurRadius);
+      const h = Math.max(0, height - 2 * ry - 2 * blurRadius);
+
+      return { x, y, width: w, height: h, rx, ry };
+    }
+
+    /**
+     * Apply boundary-aware blur to smooth tile seams
+     * The blur covers the inscribed rectangle with feathered edges
+     */
+    function applyInscribedBlur(canvas, radius, blurRadius) {
+      const width = canvas.width;
+      const height = canvas.height;
+      const ctx = canvas.getContext('2d');
+
+      const rect = getInscribedBlurRect(width, height, radius, 0); // No extra margin for rect calculation
+
+      // Skip if inscribed rectangle is too small
+      if (rect.width <= blurRadius * 2 || rect.height <= blurRadius * 2) {
+        return canvas;
+      }
+
+      // Create blurred version of the entire canvas
+      const blurredCanvas = document.createElement('canvas');
+      blurredCanvas.width = width;
+      blurredCanvas.height = height;
+      const blurredCtx = blurredCanvas.getContext('2d');
+
+      blurredCtx.filter = `blur(${blurRadius}px)`;
+      blurredCtx.drawImage(canvas, 0, 0);
+      blurredCtx.filter = 'none';
+
+      // Create a mask that:
+      // - Is fully opaque in the center of the inscribed rect
+      // - Fades to transparent at the edges (within blurRadius)
+      // - Is fully transparent outside the inscribed rect
+      const maskCanvas = document.createElement('canvas');
+      maskCanvas.width = width;
+      maskCanvas.height = height;
+      const maskCtx = maskCanvas.getContext('2d');
+
+      // Draw the inscribed rectangle with feathered edges
+      const fadeSize = blurRadius * 2;
+
+      // Center region (full opacity)
+      const innerX = rect.x + fadeSize;
+      const innerY = rect.y + fadeSize;
+      const innerW = rect.width - fadeSize * 2;
+      const innerH = rect.height - fadeSize * 2;
+
+      if (innerW > 0 && innerH > 0) {
+        maskCtx.fillStyle = 'white';
+        maskCtx.fillRect(innerX, innerY, innerW, innerH);
+      }
+
+      // Top edge gradient
+      const topGrad = maskCtx.createLinearGradient(0, rect.y, 0, rect.y + fadeSize);
+      topGrad.addColorStop(0, 'rgba(255,255,255,0)');
+      topGrad.addColorStop(1, 'rgba(255,255,255,1)');
+      maskCtx.fillStyle = topGrad;
+      maskCtx.fillRect(innerX, rect.y, innerW, fadeSize);
+
+      // Bottom edge gradient
+      const bottomGrad = maskCtx.createLinearGradient(0, rect.y + rect.height, 0, rect.y + rect.height - fadeSize);
+      bottomGrad.addColorStop(0, 'rgba(255,255,255,0)');
+      bottomGrad.addColorStop(1, 'rgba(255,255,255,1)');
+      maskCtx.fillStyle = bottomGrad;
+      maskCtx.fillRect(innerX, rect.y + rect.height - fadeSize, innerW, fadeSize);
+
+      // Left edge gradient
+      const leftGrad = maskCtx.createLinearGradient(rect.x, 0, rect.x + fadeSize, 0);
+      leftGrad.addColorStop(0, 'rgba(255,255,255,0)');
+      leftGrad.addColorStop(1, 'rgba(255,255,255,1)');
+      maskCtx.fillStyle = leftGrad;
+      maskCtx.fillRect(rect.x, innerY, fadeSize, innerH);
+
+      // Right edge gradient
+      const rightGrad = maskCtx.createLinearGradient(rect.x + rect.width, 0, rect.x + rect.width - fadeSize, 0);
+      rightGrad.addColorStop(0, 'rgba(255,255,255,0)');
+      rightGrad.addColorStop(1, 'rgba(255,255,255,1)');
+      maskCtx.fillStyle = rightGrad;
+      maskCtx.fillRect(rect.x + rect.width - fadeSize, innerY, fadeSize, innerH);
+
+      // Apply mask to blurred canvas
+      blurredCtx.globalCompositeOperation = 'destination-in';
+      blurredCtx.drawImage(maskCanvas, 0, 0);
+      blurredCtx.globalCompositeOperation = 'source-over';
+
+      // Composite blurred region over original
+      ctx.drawImage(blurredCanvas, 0, 0);
+
+      // Debug: draw red border around blur zone
+      ctx.strokeStyle = 'red';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(rect.x, rect.y, rect.width, rect.height);
+
+      return canvas;
+    }
+
+    /**
+     * Generate the pre-baked corner tile (called once at startup)
+     *
+     * NEW APPROACH: Tile represents a LARGE corner region with maximum radius.
+     * The tile size represents edgeWidth in pixels (when scaled).
+     * Arc is positioned at (0,0) with a FIXED radius ratio.
+     *
+     * When assembling:
+     * - Scale tile so that tile width = edgeWidth in pixels
+     * - Crop/position so arc aligns with desired radius
+     */
+    function generatePrebakedCornerTile() {
+      const canvas = document.createElement('canvas');
+      canvas.width = TILE_SIZE;
+      canvas.height = TILE_SIZE;
+      const ctx = canvas.getContext('2d');
+      const imageData = ctx.createImageData(TILE_SIZE, TILE_SIZE);
+      const data = imageData.data;
+
+      // The tile represents a corner where:
+      // - Pixel coordinates go from (0,0) at top-left to (TILE_SIZE, TILE_SIZE)
+      // - The arc is centered at (TILE_SIZE, TILE_SIZE) (bottom-right of tile)
+      // - Arc radius = TILE_SIZE (covers the whole tile)
+      // - This gives us maximum flexibility for any r/edgeWidth ratio
+      //
+      // When we use the tile:
+      // - We scale it so that the portion we need matches our actual dimensions
+      // - For TL corner: we crop from (0,0) to (cornerSize, cornerSize)
+      //   where the arc at bottom-right corresponds to our desired radius
+
+      const tileRadius = TILE_SIZE;  // Arc centered at (TILE_SIZE, TILE_SIZE)
+
+      for (let py = 0; py < TILE_SIZE; py++) {
+        for (let px = 0; px < TILE_SIZE; px++) {
+          const idx = (py * TILE_SIZE + px) * 4;
+
+          // Distance from arc center (bottom-right of tile)
+          const dx = TILE_SIZE - px;
+          const dy = TILE_SIZE - py;
+          const distFromCenter = Math.sqrt(dx * dx + dy * dy);
+
+          let inBounds = true;
+          let distFromEdge = 0;
+          let dirX = 0, dirY = 0;
+
+          if (distFromCenter > tileRadius) {
+            // Outside the arc (in cut-off corner)
+            inBounds = false;
+          } else {
+            // Inside the arc
+            distFromEdge = tileRadius - distFromCenter;
+            if (distFromCenter > 0.001) {
+              // Direction points toward arc center (inward)
+              dirX = dx / distFromCenter;  // Points toward center (right)
+              dirY = dy / distFromCenter;  // Points toward center (down)
+            }
+          }
+
+          // For TL corner, displacement should push content toward center
+          // So we negate to get outward-pointing displacement effect
+          dirX = -dirX;
+          dirY = -dirY;
+
+          // Decay based on distance from edge, normalized to tile size
+          // This creates a scale-invariant decay pattern
+          let dispR = 128, dispG = 128;
+          if (inBounds) {
+            // Use exp(-3 * normalized_dist) for scale-invariant decay
+            const normalizedDist = distFromEdge / TILE_SIZE;
+            const mag = Math.exp(-3 * normalizedDist);
+            dispR = Math.round(Math.max(0, Math.min(255, 128 - dirX * mag * 127)));
+            dispG = Math.round(Math.max(0, Math.min(255, 128 - dirY * mag * 127)));
+          }
+
+          data[idx] = dispR;
+          data[idx + 1] = dispG;
+          data[idx + 2] = 128;
+          data[idx + 3] = 255;
+        }
+      }
+
+      ctx.putImageData(imageData, 0, 0);
+      return canvas;
+    }
+
+    /**
+     * Draw pre-baked corner tile with flip, channel inversion, and anisotropic scaling
+     * destW and destH can differ to create elliptical corners
+     */
+    function drawCornerFromTile(ctx, tile, destX, destY, destW, destH, flipX, flipY) {
+      const tempCanvas = document.createElement('canvas');
+      tempCanvas.width = destW;
+      tempCanvas.height = destH;
+      const tempCtx = tempCanvas.getContext('2d');
+
+      // Draw tile with anisotropic scaling (can create ellipse)
+      tempCtx.save();
+      if (flipX || flipY) {
+        tempCtx.translate(flipX ? destW : 0, flipY ? destH : 0);
+        tempCtx.scale(flipX ? -1 : 1, flipY ? -1 : 1);
+      }
+      // Scale tile to destW × destH (non-uniform scaling for ellipse)
+      tempCtx.drawImage(tile, 0, 0, destW, destH);
+      tempCtx.restore();
+
+      // If flipped, need to invert displacement channels
+      if (flipX || flipY) {
+        const imgData = tempCtx.getImageData(0, 0, destW, destH);
+        const data = imgData.data;
+        for (let i = 0; i < data.length; i += 4) {
+          if (flipX) data[i] = 256 - data[i];
+          if (flipY) data[i + 1] = 256 - data[i + 1];
+        }
+        tempCtx.putImageData(imgData, 0, 0);
+      }
+
+      ctx.drawImage(tempCanvas, destX, destY);
+    }
+
+    /**
+     * Assemble displacement map using fixed pre-baked tile
+     *
+     * CSS border-radius behavior:
+     * - When r > min(halfW, halfH), corners become elliptical/clamped
+     * - effectiveR = min(r, halfW, halfH)
+     * - For pill shapes: corners touch, no edge strips in one direction
+     */
+    function assembleMap(width, height, r, edgeWidthRatio) {
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+
+      const halfW = width / 2;
+      const halfH = height / 2;
+      const minHalf = Math.min(halfW, halfH);
+      const edgeWidth = minHalf * edgeWidthRatio;
+
+      // CSS border-radius creates elliptical corners when r > halfW or r > halfH
+      // Each axis is clamped independently
+
+      // Fill with neutral
+      ctx.fillStyle = 'rgb(128, 128, 128)';
+      ctx.fillRect(0, 0, width, height);
+
+      // Calculate corner sizes for elliptical handling
+      const cornerSizeX = Math.min(r, halfW) + edgeWidth;
+      const cornerSizeY = Math.min(r, halfH) + edgeWidth;
+
+      // Calculate available space for edges (using elliptical corner sizes)
+      const centerW = Math.max(0, width - 2 * cornerSizeX);
+      const centerH = Math.max(0, height - 2 * cornerSizeY);
+
+      // Draw edge gradients (only if there's space)
+      // Top edge (height = cornerSizeY)
+      if (centerW > 0) {
+        const grad = ctx.createLinearGradient(0, 0, 0, cornerSizeY);
+        for (let i = 0; i <= 16; i++) {
+          const t = i / 16;
+          const mag = Math.exp(-3 * t);
+          const g = Math.round(128 + 127 * mag);
+          grad.addColorStop(t, `rgb(128, ${g}, 128)`);
+        }
+        ctx.fillStyle = grad;
+        ctx.fillRect(cornerSizeX, 0, centerW, cornerSizeY);
+      }
+
+      // Bottom edge
+      if (centerW > 0) {
+        const grad = ctx.createLinearGradient(0, height, 0, height - cornerSizeY);
+        for (let i = 0; i <= 16; i++) {
+          const t = i / 16;
+          const mag = Math.exp(-3 * t);
+          const g = Math.round(128 - 127 * mag);
+          grad.addColorStop(t, `rgb(128, ${g}, 128)`);
+        }
+        ctx.fillStyle = grad;
+        ctx.fillRect(cornerSizeX, height - cornerSizeY, centerW, cornerSizeY);
+      }
+
+      // Left edge (width = cornerSizeX)
+      if (centerH > 0) {
+        const grad = ctx.createLinearGradient(0, 0, cornerSizeX, 0);
+        for (let i = 0; i <= 16; i++) {
+          const t = i / 16;
+          const mag = Math.exp(-3 * t);
+          const rv = Math.round(128 + 127 * mag);
+          grad.addColorStop(t, `rgb(${rv}, 128, 128)`);
+        }
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, cornerSizeY, cornerSizeX, centerH);
+      }
+
+      // Right edge
+      if (centerH > 0) {
+        const grad = ctx.createLinearGradient(width, 0, width - cornerSizeX, 0);
+        for (let i = 0; i <= 16; i++) {
+          const t = i / 16;
+          const mag = Math.exp(-3 * t);
+          const rv = Math.round(128 - 127 * mag);
+          grad.addColorStop(t, `rgb(${rv}, 128, 128)`);
+        }
+        ctx.fillStyle = grad;
+        ctx.fillRect(width - cornerSizeX, cornerSizeY, cornerSizeX, centerH);
+      }
+
+      // Calculate corner dimensions with elliptical support
+      // CSS clamps radius independently for each axis
+      const effectiveRx = Math.min(r, halfW) + edgeWidth;  // Horizontal corner size
+      const effectiveRy = Math.min(r, halfH) + edgeWidth;  // Vertical corner size
+
+      // Recalculate overlap with proper elliptical handling
+      const hOverlap = effectiveRx * 2 > width;
+      const vOverlap = effectiveRy * 2 > height;
+
+      // Corner dimensions (may be different for ellipse)
+      const cw = hOverlap ? halfW : effectiveRx;  // Corner width
+      const ch = vOverlap ? halfH : effectiveRy;  // Corner height
+
+      // Draw corners with anisotropic scaling (elliptical when cw ≠ ch)
+      // TL
+      drawCornerFromTile(ctx, prebakedCornerTile, 0, 0, cw, ch, false, false);
+      // TR
+      drawCornerFromTile(ctx, prebakedCornerTile, width - cw, 0, cw, ch, true, false);
+      // BL
+      drawCornerFromTile(ctx, prebakedCornerTile, 0, height - ch, cw, ch, false, true);
+      // BR
+      drawCornerFromTile(ctx, prebakedCornerTile, width - cw, height - ch, cw, ch, true, true);
+
+      // Debug: draw blue borders around all 9-slice parts
+      ctx.strokeStyle = 'blue';
+      ctx.lineWidth = 1;
+
+      // Corner borders
+      ctx.strokeRect(0, 0, cw, ch);                           // TL
+      ctx.strokeRect(width - cw, 0, cw, ch);                  // TR
+      ctx.strokeRect(0, height - ch, cw, ch);                 // BL
+      ctx.strokeRect(width - cw, height - ch, cw, ch);        // BR
+
+      // Edge borders
+      if (centerW > 0) {
+        ctx.strokeRect(cornerSizeX, 0, centerW, cornerSizeY);                    // Top
+        ctx.strokeRect(cornerSizeX, height - cornerSizeY, centerW, cornerSizeY); // Bottom
+      }
+      if (centerH > 0) {
+        ctx.strokeRect(0, cornerSizeY, cornerSizeX, centerH);                    // Left
+        ctx.strokeRect(width - cornerSizeX, cornerSizeY, cornerSizeX, centerH);  // Right
+      }
+
+      // Center border
+      if (centerW > 0 && centerH > 0) {
+        ctx.strokeRect(cornerSizeX, cornerSizeY, centerW, centerH);
+      }
+
+      return canvas;
+    }
+
+    /**
+     * Generate WASM reference
+     */
+    function generateWasmRef(width, height, r, edgeWidthRatio) {
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      const imageData = ctx.createImageData(width, height);
+      const data = imageData.data;
+
+      const halfW = width / 2;
+      const halfH = height / 2;
+      const minHalf = Math.min(halfW, halfH);
+      const edgeWidth = minHalf * edgeWidthRatio;
+
+      // CSS clamping
+      const effectiveR = Math.min(r, halfW, halfH);
+      const cornerThreshX = halfW - effectiveR;
+      const cornerThreshY = halfH - effectiveR;
+      const negThree = -3 / edgeWidth;
+
+      for (let py = 0; py < height; py++) {
+        for (let px = 0; px < width; px++) {
+          const idx = (py * width + px) * 4;
+
+          const dx = Math.abs(px - halfW);
+          const dy = Math.abs(py - halfH);
+          const signX = px < halfW ? -1 : 1;
+          const signY = py < halfH ? -1 : 1;
+
+          const inCornerX = dx > cornerThreshX;
+          const inCornerY = dy > cornerThreshY;
+          const inCorner = inCornerX && inCornerY;
+
+          let inBounds = true;
+          let distFromEdge = 0;
+          let dirX = 0, dirY = 0;
+
+          if (inCorner) {
+            const cornerX = dx - cornerThreshX;
+            const cornerY = dy - cornerThreshY;
+            const cornerDistSq = cornerX * cornerX + cornerY * cornerY;
+
+            if (cornerDistSq > effectiveR * effectiveR) {
+              inBounds = false;
+            } else {
+              const cornerDist = Math.sqrt(cornerDistSq);
+              distFromEdge = effectiveR - cornerDist;
+              if (cornerDist > 0.001) {
+                dirX = (cornerX / cornerDist) * signX;
+                dirY = (cornerY / cornerDist) * signY;
+              }
+            }
+          } else {
+            const distX = halfW - dx;
+            const distY = halfH - dy;
+            if (distX < distY) {
+              distFromEdge = distX;
+              dirX = signX;
+            } else {
+              distFromEdge = distY;
+              dirY = signY;
+            }
+          }
+
+          if (!inBounds) {
+            data[idx] = 128;
+            data[idx + 1] = 128;
+          } else {
+            const mag = Math.exp(distFromEdge * negThree);
+            data[idx] = Math.round(128 - dirX * mag * 127);
+            data[idx + 1] = Math.round(128 - dirY * mag * 127);
+          }
+          data[idx + 2] = 128;
+          data[idx + 3] = 255;
+        }
+      }
+
+      ctx.putImageData(imageData, 0, 0);
+      return canvas;
+    }
+
+    /**
+     * Compare and generate diff
+     */
+    function compareAndDiff(canvas1, canvas2, diffCanvas) {
+      const w = canvas1.width, h = canvas1.height;
+      diffCanvas.width = w;
+      diffCanvas.height = h;
+
+      const ctx1 = canvas1.getContext('2d');
+      const ctx2 = canvas2.getContext('2d');
+      const ctxDiff = diffCanvas.getContext('2d');
+
+      const data1 = ctx1.getImageData(0, 0, w, h).data;
+      const data2 = ctx2.getImageData(0, 0, w, h).data;
+      const diffData = ctxDiff.createImageData(w, h);
+
+      let exact = 0, close = 0, total = w * h;
+      let maxDiff = 0;
+
+      for (let i = 0; i < data1.length; i += 4) {
+        const dr = Math.abs(data1[i] - data2[i]);
+        const dg = Math.abs(data1[i + 1] - data2[i + 1]);
+        const diff = Math.max(dr, dg);
+
+        maxDiff = Math.max(maxDiff, diff);
+
+        if (diff === 0) exact++;
+        else if (diff <= 3) close++;
+
+        diffData.data[i] = dr * 8;
+        diffData.data[i + 1] = dg * 8;
+        diffData.data[i + 2] = diff * 4;
+        diffData.data[i + 3] = 255;
+      }
+
+      ctxDiff.putImageData(diffData, 0, 0);
+
+      return {
+        exact,
+        close,
+        total,
+        maxDiff,
+        exactRate: (exact / total * 100).toFixed(1),
+        passRate: ((exact + close) / total * 100).toFixed(1)
+      };
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // UI
+    // ═══════════════════════════════════════════════════════════════════
+
+    const controls = {
+      width: document.getElementById('width'),
+      height: document.getElementById('height'),
+      radius: document.getElementById('radius'),
+      edgeRatio: document.getElementById('edgeRatio'),
+      boundaryBlur: document.getElementById('boundaryBlur')
+    };
+
+    const vals = {
+      width: document.getElementById('width-val'),
+      height: document.getElementById('height-val'),
+      radius: document.getElementById('radius-val'),
+      edgeRatio: document.getElementById('edgeRatio-val'),
+      boundaryBlur: document.getElementById('boundaryBlur-val')
+    };
+
+    const cornerTileCanvas = document.getElementById('corner-tile');
+    const assembled = document.getElementById('assembled');
+    const wasmRef = document.getElementById('wasm-ref');
+    const diff = document.getElementById('diff');
+    const glassDemoEl = document.getElementById('glass-demo');
+
+    function update() {
+      const w = parseInt(controls.width.value);
+      const h = parseInt(controls.height.value);
+      const r = parseInt(controls.radius.value);
+      const edgeRatio = parseInt(controls.edgeRatio.value) / 100;
+      const blurRadius = parseInt(controls.boundaryBlur.value);
+
+      vals.width.textContent = w;
+      vals.height.textContent = h;
+      vals.radius.textContent = r;
+      vals.edgeRatio.textContent = edgeRatio.toFixed(2);
+      vals.boundaryBlur.textContent = blurRadius;
+
+      const minHalf = Math.min(w, h) / 2;
+      const edgeWidth = minHalf * edgeRatio;
+      const cornerSize = r + edgeWidth;
+
+      // Draw pre-baked tile (always the same, just for display)
+      cornerTileCanvas.getContext('2d').drawImage(prebakedCornerTile, 0, 0);
+
+      // Assemble map
+      const t0 = performance.now();
+      let assembledCanvas = assembleMap(w, h, r, edgeRatio);
+
+      // Apply inscribed boundary blur to smooth tile seams
+      if (blurRadius > 0) {
+        applyInscribedBlur(assembledCanvas, r, blurRadius);
+      }
+      const t1 = performance.now();
+
+      assembled.width = w;
+      assembled.height = h;
+      assembled.getContext('2d').drawImage(assembledCanvas, 0, 0);
+
+      const blurRect = getInscribedBlurRect(w, h, r, blurRadius);
+      document.getElementById('assembled-stats').innerHTML =
+        `<span class="info">${w}×${h} in ${(t1 - t0).toFixed(1)}ms | blur zone: ${blurRect.width.toFixed(0)}×${blurRect.height.toFixed(0)}</span>`;
+
+      // WASM reference
+      const wasmCanvas = generateWasmRef(w, h, r, edgeRatio);
+      wasmRef.width = w;
+      wasmRef.height = h;
+      wasmRef.getContext('2d').drawImage(wasmCanvas, 0, 0);
+
+      // Compare
+      const stats = compareAndDiff(assembledCanvas, wasmCanvas, diff);
+      const statusClass = parseFloat(stats.passRate) >= 90 ? 'success' : 'info';
+      document.getElementById('diff-stats').innerHTML =
+        `<span class="${statusClass}">Pass (±3): ${stats.passRate}%</span> | Exact: ${stats.exactRate}% | Max: ${stats.maxDiff}`;
+
+      // Update glass demo
+      glassDemoEl.style.width = w + 'px';
+      glassDemoEl.style.borderRadius = r + 'px';
+
+      const dataUrl = assembledCanvas.toDataURL();
+      document.getElementById('disp-image').setAttribute('href', dataUrl);
+      document.getElementById('disp-image').setAttribute('width', w);
+      document.getElementById('disp-image').setAttribute('height', h);
+      glassDemoEl.style.filter = 'url(#glass-filter)';
+    }
+
+    // Initialize: generate pre-baked tile once
+    prebakedCornerTile = generatePrebakedCornerTile();
+
+    // Event listeners
+    Object.values(controls).forEach(c => c.addEventListener('input', update));
+    update();
+  </script>
+</body>
+</html>

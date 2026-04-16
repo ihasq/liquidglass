@@ -94,7 +94,6 @@ export function generateDisplacementMap(
   const negThreeOverEdgeWidth: f32 = -3.0 / edgeWidth;
   const cornerThresholdX: f32 = halfW - r;
   const cornerThresholdY: f32 = halfH - r;
-  const rSquared: f32 = r * r;
 
   // Process pixels
   const totalPixels = width * height;
@@ -115,34 +114,29 @@ export function generateDisplacementMap(
     const inCornerY = dy > cornerThresholdY;
     const inCorner = inCornerX && inCornerY;
 
-    let inBounds: bool = true;
     let distFromEdge: f32 = 0.0;
     let dirX: f32 = 0.0;
     let dirY: f32 = 0.0;
 
     if (inCorner) {
-      // Corner region
+      // Corner region (inside or outside the rounded corner)
       const cornerX: f32 = dx - cornerThresholdX;
       const cornerY: f32 = dy - cornerThresholdY;
-      const cornerDistSq: f32 = cornerX * cornerX + cornerY * cornerY;
+      const cornerDist: f32 = sqrt(cornerX * cornerX + cornerY * cornerY);
 
-      if (cornerDistSq > rSquared) {
-        // Outside bounds
-        inBounds = false;
-      } else {
-        const cornerDist: f32 = sqrt(cornerDistSq);
-        distFromEdge = r - cornerDist;
+      // distFromEdge is negative when outside the corner arc (iPhone X style extension)
+      distFromEdge = r - cornerDist;
 
-        if (cornerDist > 0.001) {
-          const invDist: f32 = 1.0 / cornerDist;
-          const signX: f32 = fx < halfW ? -1.0 : 1.0;
-          const signY: f32 = fy < halfH ? -1.0 : 1.0;
-          dirX = cornerX * invDist * signX;
-          dirY = cornerY * invDist * signY;
-        }
+      if (cornerDist > 0.001) {
+        const invDist: f32 = 1.0 / cornerDist;
+        const signX: f32 = fx < halfW ? -1.0 : 1.0;
+        const signY: f32 = fy < halfH ? -1.0 : 1.0;
+        // Direction points radially outward from corner center
+        dirX = cornerX * invDist * signX;
+        dirY = cornerY * invDist * signY;
       }
     } else {
-      // Edge region
+      // Edge region (always inside bounds)
       const distX: f32 = halfW - dx;
       const distY: f32 = halfH - dy;
 
@@ -155,30 +149,26 @@ export function generateDisplacementMap(
       }
     }
 
-    if (!inBounds) {
-      // Neutral displacement for outside bounds
-      store<u8>(idx, 128);
-      store<u8>(idx + 1, 128);
-      store<u8>(idx + 2, 128);
-      store<u8>(idx + 3, 255);
-    } else {
-      // Exponential decay magnitude
-      const expArg: f32 = distFromEdge * negThreeOverEdgeWidth;
-      const magnitude: f32 = distFromEdge < 0.0 ? 0.0 : fastExp(expArg);
+    // Exponential decay magnitude
+    // For pixels outside the boundary (distFromEdge < 0), clamp to 0 to maintain
+    // the edge displacement value - this extends the refraction outward like
+    // iPhone X's display extending beyond the visible bezel
+    const clampedDist: f32 = max(distFromEdge, 0.0);
+    const expArg: f32 = clampedDist * negThreeOverEdgeWidth;
+    const magnitude: f32 = fastExp(expArg);
 
-      // Displacement vector (pointing inward)
-      const dispX: f32 = -dirX * magnitude;
-      const dispY: f32 = -dirY * magnitude;
+    // Displacement vector (pointing inward)
+    const dispX: f32 = -dirX * magnitude;
+    const dispY: f32 = -dirY * magnitude;
 
-      // Encode to RGB (128 = neutral)
-      const rVal: u8 = u8(clamp<i32>(i32(128.0 + dispX * 127.0), 0, 255));
-      const gVal: u8 = u8(clamp<i32>(i32(128.0 + dispY * 127.0), 0, 255));
+    // Encode to RGB (128 = neutral)
+    const rVal: u8 = u8(clamp<i32>(i32(128.0 + dispX * 127.0), 0, 255));
+    const gVal: u8 = u8(clamp<i32>(i32(128.0 + dispY * 127.0), 0, 255));
 
-      store<u8>(idx, rVal);
-      store<u8>(idx + 1, gVal);
-      store<u8>(idx + 2, 128);
-      store<u8>(idx + 3, 255);
-    }
+    store<u8>(idx, rVal);
+    store<u8>(idx + 1, gVal);
+    store<u8>(idx + 2, 128);
+    store<u8>(idx + 3, 255);
   }
 }
 
@@ -206,7 +196,6 @@ export function generateDisplacementMapSIMD(
   const cornerThreshXVec = f32x4.splat(cornerThresholdX);
   const cornerThreshYVec = f32x4.splat(cornerThresholdY);
   const rVec = f32x4.splat(r);
-  const rSquaredVec = f32x4.splat(r * r);
   const negThreeOverEdgeWidth: f32 = -3.0 / edgeWidth;
   const negThreeOverEdgeWidthVec = f32x4.splat(negThreeOverEdgeWidth);
   const zeroVec = f32x4.splat(0.0);
@@ -250,9 +239,6 @@ export function generateDisplacementMapSIMD(
     const cornerY = f32x4.sub(dyVec, cornerThreshYVec);
     const cornerDistSq = f32x4.add(f32x4.mul(cornerX, cornerX), f32x4.mul(cornerY, cornerY));
 
-    // out of bounds: cornerDistSq > rSquared
-    const outOfBoundsMask = v128.and(inCornerMask, f32x4.gt(cornerDistSq, rSquaredVec));
-
     const cornerDist = f32x4.sqrt(cornerDistSq);
 
     // Edge distance calculations
@@ -261,11 +247,11 @@ export function generateDisplacementMapSIMD(
     const useXMask = f32x4.lt(distXEdge, distYEdge);
 
     // Select based on whether in corner or edge
-    // Corner: distFromEdge = r - cornerDist
+    // Corner: distFromEdge = r - cornerDist (can be negative for outside)
     // Edge: distFromEdge = min(distX, distY)
     const cornerDistFromEdge = f32x4.sub(rVec, cornerDist);
     const edgeDistFromEdge = v128.bitselect(distXEdge, distYEdge, useXMask);
-    let distFromEdgeVec = v128.bitselect(cornerDistFromEdge, edgeDistFromEdge, inCornerMask);
+    const distFromEdgeVec = v128.bitselect(cornerDistFromEdge, edgeDistFromEdge, inCornerMask);
 
     // Calculate direction
     // signX = fx < halfW ? -1 : 1
@@ -273,7 +259,6 @@ export function generateDisplacementMapSIMD(
     const signYVec = v128.bitselect(negOneVec, oneVec, f32x4.lt(fyVec, halfHVec));
 
     // Corner: dir = corner / cornerDist * sign (if cornerDist > epsilon)
-    const validCornerMask = f32x4.gt(cornerDist, epsilonVec);
     const invCornerDist = f32x4.div(oneVec, f32x4.max(cornerDist, epsilonVec));
     const cornerDirX = f32x4.mul(f32x4.mul(cornerX, invCornerDist), signXVec);
     const cornerDirY = f32x4.mul(f32x4.mul(cornerY, invCornerDist), signYVec);
@@ -287,11 +272,12 @@ export function generateDisplacementMapSIMD(
     const dirXVec = v128.bitselect(cornerDirX, edgeDirX, inCornerMask);
     const dirYVec = v128.bitselect(cornerDirY, edgeDirY, inCornerMask);
 
-    // Exponential decay: exp(-3 * distFromEdge / edgeWidth)
-    const expArg = f32x4.mul(distFromEdgeVec, negThreeOverEdgeWidthVec);
-    const negativeMask = f32x4.lt(distFromEdgeVec, zeroVec);
-    let magnitudeVec = fastExpSimd(expArg);
-    magnitudeVec = v128.bitselect(zeroVec, magnitudeVec, negativeMask);
+    // Exponential decay: exp(-3 * max(distFromEdge, 0) / edgeWidth)
+    // Clamp distFromEdge to 0 for outside pixels - this extends edge displacement
+    // outward like iPhone X's display extending beyond the visible bezel
+    const clampedDistVec = f32x4.max(distFromEdgeVec, zeroVec);
+    const expArg = f32x4.mul(clampedDistVec, negThreeOverEdgeWidthVec);
+    const magnitudeVec = fastExpSimd(expArg);
 
     // Displacement: disp = -dir * magnitude
     const dispXVec = f32x4.neg(f32x4.mul(dirXVec, magnitudeVec));
@@ -301,15 +287,10 @@ export function generateDisplacementMapSIMD(
     let rValVec = f32x4.add(v128Vec, f32x4.mul(dispXVec, v127Vec));
     let gValVec = f32x4.add(v128Vec, f32x4.mul(dispYVec, v127Vec));
 
-    // Set to 128 for out of bounds
-    rValVec = v128.bitselect(v128Vec, rValVec, outOfBoundsMask);
-    gValVec = v128.bitselect(v128Vec, gValVec, outOfBoundsMask);
-
     // Clamp and convert to integers
-    const zeroIntVec = f32x4.splat(0.0);
     const maxIntVec = f32x4.splat(255.0);
-    rValVec = f32x4.max(f32x4.min(rValVec, maxIntVec), zeroIntVec);
-    gValVec = f32x4.max(f32x4.min(gValVec, maxIntVec), zeroIntVec);
+    rValVec = f32x4.max(f32x4.min(rValVec, maxIntVec), zeroVec);
+    gValVec = f32x4.max(f32x4.min(gValVec, maxIntVec), zeroVec);
 
     // Extract and store results
     const r0 = u8(i32(f32x4.extract_lane(rValVec, 0)));
@@ -364,7 +345,6 @@ export function generateDisplacementMapSIMD(
     const inCornerY = dy > cornerThresholdY;
     const inCorner = inCornerX && inCornerY;
 
-    let inBounds: bool = true;
     let distFromEdge: f32 = 0.0;
     let dirX: f32 = 0.0;
     let dirY: f32 = 0.0;
@@ -372,21 +352,17 @@ export function generateDisplacementMapSIMD(
     if (inCorner) {
       const cornerX: f32 = dx - cornerThresholdX;
       const cornerY: f32 = dy - cornerThresholdY;
-      const cornerDistSq: f32 = cornerX * cornerX + cornerY * cornerY;
+      const cornerDist: f32 = sqrt(cornerX * cornerX + cornerY * cornerY);
 
-      if (cornerDistSq > r * r) {
-        inBounds = false;
-      } else {
-        const cornerDist: f32 = sqrt(cornerDistSq);
-        distFromEdge = r - cornerDist;
+      // distFromEdge can be negative for outside pixels
+      distFromEdge = r - cornerDist;
 
-        if (cornerDist > 0.001) {
-          const invDist: f32 = 1.0 / cornerDist;
-          const signX: f32 = fx < halfW ? -1.0 : 1.0;
-          const signY: f32 = fy < halfH ? -1.0 : 1.0;
-          dirX = cornerX * invDist * signX;
-          dirY = cornerY * invDist * signY;
-        }
+      if (cornerDist > 0.001) {
+        const invDist: f32 = 1.0 / cornerDist;
+        const signX: f32 = fx < halfW ? -1.0 : 1.0;
+        const signY: f32 = fy < halfH ? -1.0 : 1.0;
+        dirX = cornerX * invDist * signX;
+        dirY = cornerY * invDist * signY;
       }
     } else {
       const distX: f32 = halfW - dx;
@@ -401,26 +377,21 @@ export function generateDisplacementMapSIMD(
       }
     }
 
-    if (!inBounds) {
-      store<u8>(idx, 128);
-      store<u8>(idx + 1, 128);
-      store<u8>(idx + 2, 128);
-      store<u8>(idx + 3, 255);
-    } else {
-      const expArg: f32 = distFromEdge * negThreeOverEdgeWidth;
-      const magnitude: f32 = distFromEdge < 0.0 ? 0.0 : fastExp(expArg);
+    // Clamp distFromEdge to 0 for outside pixels - extends edge displacement
+    const clampedDist: f32 = max(distFromEdge, 0.0);
+    const expArg: f32 = clampedDist * negThreeOverEdgeWidth;
+    const magnitude: f32 = fastExp(expArg);
 
-      const dispX: f32 = -dirX * magnitude;
-      const dispY: f32 = -dirY * magnitude;
+    const dispX: f32 = -dirX * magnitude;
+    const dispY: f32 = -dirY * magnitude;
 
-      const rVal: u8 = u8(clamp<i32>(i32(128.0 + dispX * 127.0), 0, 255));
-      const gVal: u8 = u8(clamp<i32>(i32(128.0 + dispY * 127.0), 0, 255));
+    const rVal: u8 = u8(clamp<i32>(i32(128.0 + dispX * 127.0), 0, 255));
+    const gVal: u8 = u8(clamp<i32>(i32(128.0 + dispY * 127.0), 0, 255));
 
-      store<u8>(idx, rVal);
-      store<u8>(idx + 1, gVal);
-      store<u8>(idx + 2, 128);
-      store<u8>(idx + 3, 255);
-    }
+    store<u8>(idx, rVal);
+    store<u8>(idx + 1, gVal);
+    store<u8>(idx + 2, 128);
+    store<u8>(idx + 3, 255);
   }
 }
 
@@ -490,7 +461,6 @@ export function generateDisplacementMapBMP(
   const negThreeOverEdgeWidth: f32 = -3.0 / edgeWidth;
   const cornerThresholdX: f32 = halfW - r;
   const cornerThresholdY: f32 = halfH - r;
-  const rSquared: f32 = r * r;
 
   const totalPixels = width * height;
 
@@ -509,7 +479,6 @@ export function generateDisplacementMapBMP(
     const inCornerY = dy > cornerThresholdY;
     const inCorner = inCornerX && inCornerY;
 
-    let inBounds: bool = true;
     let distFromEdge: f32 = 0.0;
     let dirX: f32 = 0.0;
     let dirY: f32 = 0.0;
@@ -517,21 +486,17 @@ export function generateDisplacementMapBMP(
     if (inCorner) {
       const cornerX: f32 = dx - cornerThresholdX;
       const cornerY: f32 = dy - cornerThresholdY;
-      const cornerDistSq: f32 = cornerX * cornerX + cornerY * cornerY;
+      const cornerDist: f32 = sqrt(cornerX * cornerX + cornerY * cornerY);
 
-      if (cornerDistSq > rSquared) {
-        inBounds = false;
-      } else {
-        const cornerDist: f32 = sqrt(cornerDistSq);
-        distFromEdge = r - cornerDist;
+      // distFromEdge can be negative for outside pixels (iPhone X style extension)
+      distFromEdge = r - cornerDist;
 
-        if (cornerDist > 0.001) {
-          const invDist: f32 = 1.0 / cornerDist;
-          const signX: f32 = fx < halfW ? -1.0 : 1.0;
-          const signY: f32 = fy < halfH ? -1.0 : 1.0;
-          dirX = cornerX * invDist * signX;
-          dirY = cornerY * invDist * signY;
-        }
+      if (cornerDist > 0.001) {
+        const invDist: f32 = 1.0 / cornerDist;
+        const signX: f32 = fx < halfW ? -1.0 : 1.0;
+        const signY: f32 = fy < halfH ? -1.0 : 1.0;
+        dirX = cornerX * invDist * signX;
+        dirY = cornerY * invDist * signY;
       }
     } else {
       const distX: f32 = halfW - dx;
@@ -546,28 +511,22 @@ export function generateDisplacementMapBMP(
       }
     }
 
-    if (!inBounds) {
-      // BGRA format: B=128, G=128, R=128, A=255
-      store<u8>(idx, 128);     // B
-      store<u8>(idx + 1, 128); // G
-      store<u8>(idx + 2, 128); // R
-      store<u8>(idx + 3, 255); // A
-    } else {
-      const expArg: f32 = distFromEdge * negThreeOverEdgeWidth;
-      const magnitude: f32 = distFromEdge < 0.0 ? 0.0 : fastExp(expArg);
+    // Clamp distFromEdge to 0 for outside pixels - extends edge displacement
+    const clampedDist: f32 = max(distFromEdge, 0.0);
+    const expArg: f32 = clampedDist * negThreeOverEdgeWidth;
+    const magnitude: f32 = fastExp(expArg);
 
-      const dispX: f32 = -dirX * magnitude;
-      const dispY: f32 = -dirY * magnitude;
+    const dispX: f32 = -dirX * magnitude;
+    const dispY: f32 = -dirY * magnitude;
 
-      const rVal: u8 = u8(clamp<i32>(i32(128.0 + dispX * 127.0), 0, 255));
-      const gVal: u8 = u8(clamp<i32>(i32(128.0 + dispY * 127.0), 0, 255));
+    const rVal: u8 = u8(clamp<i32>(i32(128.0 + dispX * 127.0), 0, 255));
+    const gVal: u8 = u8(clamp<i32>(i32(128.0 + dispY * 127.0), 0, 255));
 
-      // BGRA format
-      store<u8>(idx, 128);     // B (unused, neutral)
-      store<u8>(idx + 1, gVal); // G = Y displacement
-      store<u8>(idx + 2, rVal); // R = X displacement
-      store<u8>(idx + 3, 255); // A
-    }
+    // BGRA format
+    store<u8>(idx, 128);     // B (unused, neutral)
+    store<u8>(idx + 1, gVal); // G = Y displacement
+    store<u8>(idx + 2, rVal); // R = X displacement
+    store<u8>(idx + 3, 255); // A
   }
 
   return fileSize;

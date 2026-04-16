@@ -5,6 +5,12 @@ node_modules/
 dist/
 build/
 
+# Site subproject (redundant with site/.gitignore, but explicit)
+site/node_modules/
+site/dist/
+site/dist-ssr/
+site/screenshots/
+
 # Test results
 test-results/
 

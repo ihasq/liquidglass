@@ -7,6 +7,226 @@
  * - Displacement and specular map generation
  * - Adaptive throttling and size prediction
  * - Morph transitions between displacement maps
+ *
+ * ============================================================================
+ * DEFERRED RENDERING SYSTEM - TECHNICAL DOCUMENTATION
+ * ============================================================================
+ *
+ * ## Architecture Overview
+ *
+ * ```
+ * ┌─────────────────────────────────────────────────────────────────────────┐
+ * │                    Resize/Radius Change Event                           │
+ * │                              ↓                                          │
+ * │  ┌──────────────────────────────────────────────────────────────────┐  │
+ * │  │                    ResizeObserver                                 │  │
+ * │  │    _resizeObserver.observe(element) → callback fires             │  │
+ * │  └──────────────────────────────────────────────────────────────────┘  │
+ * │                              ↓                                          │
+ * │  ┌──────────────────────────────────────────────────────────────────┐  │
+ * │  │               _scheduleRender(element)                           │  │
+ * │  │  ┌─────────────────────────────────────────────────────────────┐ │  │
+ * │  │  │  timeSinceLastEncode = now - state.lastEncodeTime           │ │  │
+ * │  │  │                                                              │ │  │
+ * │  │  │  if (timeSinceLastEncode >= adaptiveInterval)                │ │  │
+ * │  │  │      → Immediate _render() execution                         │ │  │
+ * │  │  │  else if (!deferredRenderTimeout)                           │ │  │
+ * │  │  │      → Schedule deferred execution via setTimeout            │ │  │
+ * │  │  └─────────────────────────────────────────────────────────────┘ │  │
+ * │  └──────────────────────────────────────────────────────────────────┘  │
+ * │                              ↓                                          │
+ * │  ┌──────────────────────────────────────────────────────────────────┐  │
+ * │  │                      _render(element)                            │  │
+ * │  │  1. Update size history (sizeHistory.push)                       │  │
+ * │  │  2. Predict future size (predictSize)                            │  │
+ * │  │  3. Generate WASM displacement map                               │  │
+ * │  │  4. Morph transition or Filter recreation                        │  │
+ * │  │  5. Recalculate next adaptiveInterval                            │  │
+ * │  └──────────────────────────────────────────────────────────────────┘  │
+ * └─────────────────────────────────────────────────────────────────────────┘
+ * ```
+ *
+ * ## 1. Scheduling Layer
+ *
+ * ### 1.1 _scheduleRender() - Throttling Control
+ *
+ * Key behaviors:
+ * - Trailing edge throttle: Renders with the final value of consecutive events
+ * - Coalescing: Multiple resize events consolidated into a single render
+ * - Existing timer protection: Prevents double scheduling
+ *
+ * ## 2. Adaptive Interval Calculation
+ *
+ * ### 2.1 getAdaptiveInterval() - Dynamic Throttle Interval
+ *
+ * Formula:
+ * ```
+ * areaScore = min(area / 480000, 1)           // Normalized to 800×600
+ * changeScore = min(changeRatio / 0.3, 1)     // Normalized to 30% change
+ * priority = areaScore × 0.6 + changeScore × 0.4
+ * countPenalty = min(elementCount - 1, 5) × 50  // Max 250ms
+ * baseInterval = minInterval + countPenalty
+ * result = baseInterval + (1 - priority) × (maxInterval - baseInterval)
+ * ```
+ *
+ * Example calculations:
+ * | Scenario                        | area      | changeRatio | count | Result  |
+ * |---------------------------------|-----------|-------------|-------|---------|
+ * | Large element, rapid resize     | 1,000,000 | 0.4         | 1     | ~200ms  |
+ * | Small element, gradual resize   | 100,000   | 0.1         | 1     | ~700ms  |
+ * | Medium, multiple elements       | 500,000   | 0.2         | 4     | ~500ms  |
+ *
+ * ## 3. Size Prediction System
+ *
+ * ### 3.1 History Management
+ * - Maintains latest 5 samples (PREDICTION_HISTORY_SIZE = 5)
+ * - Each sample: { width, height, radius, timestamp }
+ *
+ * ### 3.2 Velocity Vector Calculation
+ * ```
+ * vw = Σ(Δwidth / Δt) / n    // px/sec
+ * vh = Σ(Δheight / Δt) / n   // px/sec
+ * vr = Σ(Δradius / Δt) / n   // px/sec
+ * ```
+ *
+ * ### 3.3 Prediction Algorithm
+ * ```
+ * variance = Σ(instantVelocity - avgVelocity)² / n
+ * horizon = 100ms / (1 + 0.01 × variance)   // Adaptive horizon
+ * confidence = historyConfidence × varianceConfidence
+ *
+ * predicted.width  = current.width  + vw × horizon
+ * predicted.height = current.height + vh × horizon
+ * predicted.radius = current.radius + vr × horizon
+ * ```
+ *
+ * Prediction usage: Applied only when confidence > 0.3
+ *
+ * ## 4. Morph Transition
+ *
+ * ### 4.1 Fast Update Criteria
+ * Fast update is possible when:
+ * 1. Existing filter element exists
+ * 2. SVG element references are valid
+ * 3. Effect parameters (refraction, thickness, etc.) unchanged
+ * 4. Only size/radius changed
+ *
+ * ### 4.2 Morph Animation
+ * SVG filter structure:
+ * ```xml
+ * <feImage result="dOld" href="old-displacement.png"/>
+ * <feImage result="dNew" href="new-displacement.png"/>
+ * <feComposite in="dOld" in2="dNew"
+ *              operator="arithmetic"
+ *              k1="0" k2="1" k3="0" k4="0"
+ *              result="d"/>
+ * <!-- output = k1×in×in2 + k2×in + k3×in2 + k4 -->
+ * <!-- k2=old_weight, k3=new_weight -->
+ * ```
+ *
+ * Animation: 150ms duration, smootherstep easing (C2 continuous)
+ * - Start: k2=1, k3=0 (100% old map)
+ * - End:   k2=0, k3=1 (100% new map)
+ *
+ * ## 5. Timeline Diagram
+ *
+ * ```
+ * Time (ms)    0    100   200   300   400   500   600   700
+ *              │     │     │     │     │     │     │     │
+ * Resize Events: ●●●●●●●●●●●●                    ●●●●●●
+ *                ↑ Continuous resize starts      ↑ Resume
+ *                │                                │
+ * Schedule:     [─────────200ms─────────]        [──200ms──]
+ *                ↑ scheduleRender               ↑ scheduleRender
+ *                │ (immediate render)            │
+ *                │                               │
+ * Render:        ●─────────────────────●         ●────────●
+ *                ↑                     ↑         ↑        ↑
+ *                Initial render       Deferred render (final value)
+ *                │
+ *                ├─ sizeHistory update
+ *                ├─ predictSize calculation
+ *                ├─ WASM displacement generation
+ *                ├─ Morph transition start (150ms)
+ *                └─ adaptiveInterval recalculation
+ *                    │
+ * Morph:            [■■■■■■■■■■■■■■]
+ *                    0%            100%
+ *                    (smootherstep interpolation)
+ * ```
+ *
+ * ## 6. State Transition Diagram
+ *
+ * ```
+ *                     ┌─────────────────────────────────────┐
+ *                     │         IDLE STATE                  │
+ *                     │  deferredRenderTimeout = null       │
+ *                     │  morphAnimationId = null            │
+ *                     └─────────────────┬───────────────────┘
+ *                                       │
+ *                     ┌─────────────────▼───────────────────┐
+ *                     │      ResizeObserver callback        │
+ *                     │         _scheduleRender()           │
+ *                     └─────────────────┬───────────────────┘
+ *                                       │
+ *               ┌───────────────────────┼───────────────────────┐
+ *               │                       │                       │
+ *     timeSinceLastEncode >=    timeSinceLastEncode <    Existing timeout
+ *       adaptiveInterval          adaptiveInterval         present
+ *               │                       │                       │
+ *               ▼                       ▼                       ▼
+ *     ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+ *     │ Immediate       │    │ setTimeout      │    │ No action       │
+ *     │ _render()       │    │ (remaining time)│    │ (coalescence)   │
+ *     └────────┬────────┘    └────────┬────────┘    └─────────────────┘
+ *              │                      │
+ *              │         timeout fires│
+ *              │                      │
+ *              └──────────┬───────────┘
+ *                         ▼
+ *           ┌─────────────────────────────┐
+ *           │        _render()            │
+ *           │  1. sizeHistory.push()      │
+ *           │  2. predictSize()           │
+ *           │  3. generateWasmDisp...     │
+ *           │  4. canFastUpdate?          │
+ *           └─────────────┬───────────────┘
+ *                         │
+ *           ┌─────────────┼─────────────┐
+ *           │             │             │
+ *        canFast      !canFast      WASM fail
+ *           │             │             │
+ *           ▼             ▼             ▼
+ *     ┌───────────┐ ┌───────────┐ ┌───────────┐
+ *     │ Morph     │ │ Full      │ │ Fallback  │
+ *     │ Transition│ │ Recreate  │ │ blur(20px)│
+ *     └─────┬─────┘ └───────────┘ └───────────┘
+ *           │
+ *           ▼
+ *     ┌─────────────────────────────┐
+ *     │  _startMorphTransition()   │
+ *     │  - k2: 1→0 (150ms)         │
+ *     │  - k3: 0→1 (150ms)         │
+ *     │  - smootherstep easing     │
+ *     └─────────────────────────────┘
+ * ```
+ *
+ * ## Summary
+ *
+ * | Component            | Purpose                              | Key Parameters           |
+ * |----------------------|--------------------------------------|--------------------------|
+ * | _scheduleRender      | Throttling (prevent over-rendering)  | adaptiveInterval 200-1000ms |
+ * | getAdaptiveInterval  | Dynamic interval based on context    | area, changeRatio, count |
+ * | sizeHistory          | History buffer for velocity tracking | Latest 5 samples         |
+ * | predictSize          | Linear extrapolation prediction      | Variance-based confidence|
+ * | canFastUpdate        | Skip filter recreation check         | Parameter equality       |
+ * | _startMorphTransition| Smooth old/new map blending          | 150ms, smootherstep      |
+ *
+ * This system minimizes CPU load during continuous resize while accelerating
+ * displacement map "catch-up" via prediction, and concealing visual discontinuity
+ * through morph transitions.
+ *
+ * ============================================================================
  */
 
 import { generateSpecularMap } from '../specular/highlight';
@@ -361,15 +581,21 @@ export class FilterManager {
 
     // Predict future size
     const prediction = predictSize(state.sizeHistory);
-    const renderWidth = prediction.confidence > 0.3 ? prediction.width : width;
-    const renderHeight = prediction.confidence > 0.3 ? prediction.height : height;
+    const baseWidth = prediction.confidence > 0.3 ? prediction.width : width;
+    const baseHeight = prediction.confidence > 0.3 ? prediction.height : height;
     const renderRadius = prediction.confidence > 0.3 ? prediction.radius : borderRadius;
 
-    // Generate displacement map
+    // Apply dmap-resolution scaling (0-100 → 0.1-1.0)
+    // Minimum 10% resolution to avoid extreme pixelation
+    const resolutionScale = Math.max(0.1, Math.min(1, params.displacementResolution / 100));
+    const renderWidth = Math.max(16, Math.round(baseWidth * resolutionScale));
+    const renderHeight = Math.max(16, Math.round(baseHeight * resolutionScale));
+
+    // Generate displacement map at (potentially) reduced resolution
     const dispResult = await generateWasmDisplacementMap({
       width: renderWidth,
       height: renderHeight,
-      borderRadius: renderRadius,
+      borderRadius: renderRadius * resolutionScale,
       edgeWidthRatio,
     });
 
@@ -399,21 +625,21 @@ export class FilterManager {
       // Fast path with smooth morphing
       const currentNewHref = state.dispFeImageNew!.getAttribute('href');
       state.dispFeImageOld!.setAttribute('href', currentNewHref || '');
-      state.dispFeImageOld!.setAttribute('width', String(renderWidth));
-      state.dispFeImageOld!.setAttribute('height', String(renderHeight));
+      state.dispFeImageOld!.setAttribute('width', String(baseWidth));
+      state.dispFeImageOld!.setAttribute('height', String(baseHeight));
 
       state.dispFeImageNew!.setAttribute('href', dispResult.dataUrl);
-      state.dispFeImageNew!.setAttribute('width', String(renderWidth));
-      state.dispFeImageNew!.setAttribute('height', String(renderHeight));
+      state.dispFeImageNew!.setAttribute('width', String(baseWidth));
+      state.dispFeImageNew!.setAttribute('height', String(baseHeight));
 
       state.specFeImage!.setAttribute('href', specMap.dataUrl);
-      state.specFeImage!.setAttribute('width', String(renderWidth));
-      state.specFeImage!.setAttribute('height', String(renderHeight));
+      state.specFeImage!.setAttribute('width', String(baseWidth));
+      state.specFeImage!.setAttribute('height', String(baseHeight));
 
       this._startMorphTransition(state);
     } else {
-      // Full recreation
-      this._createFilter(element, state, params, dispResult.dataUrl, specMap.dataUrl, renderWidth, renderHeight);
+      // Full recreation - pass resolution scale for GPU smoothing
+      this._createFilter(element, state, params, dispResult.dataUrl, specMap.dataUrl, baseWidth, baseHeight, resolutionScale);
     }
 
     // Update state
@@ -440,7 +666,8 @@ export class FilterManager {
     dispUrl: string,
     specUrl: string,
     width: number,
-    height: number
+    height: number,
+    resolutionScale: number = 1
   ): void {
     // Remove old filter
     state.filterElement?.remove();
@@ -449,7 +676,7 @@ export class FilterManager {
     const defs = svg.querySelector('defs')!;
 
     const filterId = generateFilterId();
-    const filter = createFilterElement(filterId, params, dispUrl, specUrl, width, height);
+    const filter = createFilterElement(filterId, params, dispUrl, specUrl, width, height, resolutionScale);
     defs.appendChild(filter);
 
     // Update marker
@@ -556,7 +783,9 @@ export class FilterManager {
       a.gloss === b.gloss &&
       a.softness === b.softness &&
       a.saturation === b.saturation &&
-      a.dispersion === b.dispersion
+      a.dispersion === b.dispersion &&
+      a.displacementResolution === b.displacementResolution &&
+      a.displacementSmoothing === b.displacementSmoothing
     );
   }
 }

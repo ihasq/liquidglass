@@ -579,6 +579,8 @@ interface FilterState {
   softness: number;
   saturation: number;
   dispersion: number;
+  displacementResolution: number;
+  displacementSmoothing: number;
   // Timestamp of last PNG encoding
   lastEncodeTime: number;
   // Pending deferred render timeout
@@ -645,7 +647,7 @@ function getStyleSheet(): CSSStyleSheet {
 }
 
 // Observed attributes - minimal, user-facing only
-const ATTRIBUTES = ['refraction', 'thickness', 'gloss', 'softness', 'saturation', 'dispersion', 'disabled'] as const;
+const ATTRIBUTES = ['refraction', 'thickness', 'gloss', 'softness', 'saturation', 'dispersion', 'displacement-resolution', 'displacement-smoothing', 'disabled'] as const;
 type Attribute = typeof ATTRIBUTES[number];
 
 export class LiquidGlassElement extends HTMLElement {
@@ -656,6 +658,8 @@ export class LiquidGlassElement extends HTMLElement {
   #softness = 10;      // 0-100, maps to blur 0-5
   #saturation = 45;    // 0-100, maps to saturation 0-20
   #dispersion = 30;    // 0-100, maps to slope blur 0-6
+  #displacementResolution = 100; // 0-100, displacement map resolution scale
+  #displacementSmoothing = 0;    // 0-100, maps to blur stdDeviation 0-5px
   #disabled = false;
   #resizeObserver: ResizeObserver | null = null;
   // MutationObserver is now global (single observer for all elements)
@@ -713,6 +717,12 @@ export class LiquidGlassElement extends HTMLElement {
       case 'dispersion':
         this.#dispersion = value ? parseFloat(value) : 30;
         break;
+      case 'displacement-resolution':
+        this.#displacementResolution = value ? parseFloat(value) : 100;
+        break;
+      case 'displacement-smoothing':
+        this.#displacementSmoothing = value ? parseFloat(value) : 0;
+        break;
       case 'disabled':
         this.#disabled = value !== null;
         break;
@@ -765,6 +775,25 @@ export class LiquidGlassElement extends HTMLElement {
   set dispersion(v: number) {
     this.#dispersion = v;
     this.setAttribute('dispersion', String(v));
+  }
+
+  /** Displacement map resolution (0-100, default 100)
+   *  Lower values reduce CPU load but may introduce stepping artifacts.
+   *  The GPU smoothing filter compensates for low-resolution maps.
+   */
+  get displacementResolution(): number { return this.#displacementResolution; }
+  set displacementResolution(v: number) {
+    this.#displacementResolution = v;
+    this.setAttribute('displacement-resolution', String(v));
+  }
+
+  /** Displacement map smoothing blur (0-100, default 0)
+   *  Direct control of GPU smoothing stdDeviation (0-100 → 0-5px)
+   */
+  get displacementSmoothing(): number { return this.#displacementSmoothing; }
+  set displacementSmoothing(v: number) {
+    this.#displacementSmoothing = v;
+    this.setAttribute('displacement-smoothing', String(v));
   }
 
   /** Disable the effect */
@@ -994,6 +1023,8 @@ export class LiquidGlassElement extends HTMLElement {
         softness: 0,
         saturation: 0,
         dispersion: 0,
+        displacementResolution: 100,
+        displacementSmoothing: 0,
         lastEncodeTime: 0,
         deferredRenderTimeout: null,
         adaptiveInterval: ENCODE_INTERVAL_MIN_MS,
@@ -1036,6 +1067,8 @@ export class LiquidGlassElement extends HTMLElement {
         softness: 0,
         saturation: 0,
         dispersion: 0,
+        displacementResolution: 100,
+        displacementSmoothing: 0,
         lastEncodeTime: 0,
         deferredRenderTimeout: null,
         adaptiveInterval: ENCODE_INTERVAL_MIN_MS,
@@ -1051,9 +1084,9 @@ export class LiquidGlassElement extends HTMLElement {
     // Update size history for prediction
     const existingState = _filterRegistry.get(this);
     const now = performance.now();
-    let renderWidth = width;
-    let renderHeight = height;
-    let renderRadius = borderRadius;
+    let baseWidth = width;
+    let baseHeight = height;
+    let baseRadius = borderRadius;
 
     if (existingState) {
       // Add current sample to history
@@ -1075,14 +1108,20 @@ export class LiquidGlassElement extends HTMLElement {
       if (prediction.confidence > 0.3) {
         // Use predicted size for displacement map generation
         // This reduces visual "lag" during continuous resizing
-        renderWidth = prediction.width;
-        renderHeight = prediction.height;
-        renderRadius = prediction.radius;
+        baseWidth = prediction.width;
+        baseHeight = prediction.height;
+        baseRadius = prediction.radius;
       }
     }
 
-    // Generate displacement map using WASM SIMD
-    // Use predicted dimensions for smoother animation
+    // Apply displacement-resolution scaling (0-100 → 0.1-1.0)
+    // Lower resolution = less CPU work, but needs GPU smoothing
+    const resolutionScale = Math.max(0.1, Math.min(1, this.#displacementResolution / 100));
+    const renderWidth = Math.max(16, Math.round(baseWidth * resolutionScale));
+    const renderHeight = Math.max(16, Math.round(baseHeight * resolutionScale));
+    const renderRadius = baseRadius * resolutionScale;
+
+    // Generate displacement map using WASM SIMD at (potentially) reduced resolution
     const dispResult = await generateWasmDisplacementMap({
       width: renderWidth,
       height: renderHeight,
@@ -1121,25 +1160,28 @@ export class LiquidGlassElement extends HTMLElement {
       stateForUpdate.gloss === this.#gloss &&
       stateForUpdate.softness === this.#softness &&
       stateForUpdate.saturation === this.#saturation &&
-      stateForUpdate.dispersion === this.#dispersion;
+      stateForUpdate.dispersion === this.#dispersion &&
+      stateForUpdate.displacementResolution === this.#displacementResolution &&
+      stateForUpdate.displacementSmoothing === this.#displacementSmoothing;
 
     if (canFastUpdate) {
       // Fast path with smooth morphing transition
+      // Use baseWidth/baseHeight for feImage (upscale low-res map to element size)
       // 1. Copy current "new" to "old" (this is what's currently displayed)
       const currentNewHref = stateForUpdate.dispFeImageNew!.getAttribute('href');
       stateForUpdate.dispFeImageOld!.setAttribute('href', currentNewHref || '');
-      stateForUpdate.dispFeImageOld!.setAttribute('width', String(renderWidth));
-      stateForUpdate.dispFeImageOld!.setAttribute('height', String(renderHeight));
+      stateForUpdate.dispFeImageOld!.setAttribute('width', String(baseWidth));
+      stateForUpdate.dispFeImageOld!.setAttribute('height', String(baseHeight));
 
-      // 2. Set the new displacement map (using predicted dimensions)
+      // 2. Set the new displacement map (low-res map upscaled to element size)
       stateForUpdate.dispFeImageNew!.setAttribute('href', dispResult.dataUrl);
-      stateForUpdate.dispFeImageNew!.setAttribute('width', String(renderWidth));
-      stateForUpdate.dispFeImageNew!.setAttribute('height', String(renderHeight));
+      stateForUpdate.dispFeImageNew!.setAttribute('width', String(baseWidth));
+      stateForUpdate.dispFeImageNew!.setAttribute('height', String(baseHeight));
 
-      // 3. Update specular map
+      // 3. Update specular map (also upscaled)
       stateForUpdate.specFeImage!.setAttribute('href', specMap.dataUrl);
-      stateForUpdate.specFeImage!.setAttribute('width', String(renderWidth));
-      stateForUpdate.specFeImage!.setAttribute('height', String(renderHeight));
+      stateForUpdate.specFeImage!.setAttribute('width', String(baseWidth));
+      stateForUpdate.specFeImage!.setAttribute('height', String(baseHeight));
 
       // 4. Start morphing animation (old → new)
       this.#startMorphTransition(stateForUpdate);
@@ -1160,9 +1202,9 @@ export class LiquidGlassElement extends HTMLElement {
       return;
     }
 
-    // Full recreation path (use predicted dimensions)
+    // Full recreation path (use base dimensions for display, pass resolutionScale for GPU smoothing)
     const filterId = generateFilterId();
-    const filter = this.#createFilter(filterId, dispResult.dataUrl, specMap.dataUrl, renderWidth, renderHeight);
+    const filter = this.#createFilter(filterId, dispResult.dataUrl, specMap.dataUrl, baseWidth, baseHeight, resolutionScale);
 
     // Check if this render was superseded by a newer one
     if (this.#renderVersion !== renderVersion) {
@@ -1231,6 +1273,8 @@ export class LiquidGlassElement extends HTMLElement {
       softness: this.#softness,
       saturation: this.#saturation,
       dispersion: this.#dispersion,
+      displacementResolution: this.#displacementResolution,
+      displacementSmoothing: this.#displacementSmoothing,
       lastEncodeTime: performance.now(),
       deferredRenderTimeout: null,
       adaptiveInterval: ENCODE_INTERVAL_MIN_MS,
@@ -1244,7 +1288,8 @@ export class LiquidGlassElement extends HTMLElement {
     dispUrl: string,
     specUrl: string,
     width: number,
-    height: number
+    height: number,
+    resolutionScale: number = 1
   ): SVGFilterElement {
     const svg = getSvgRoot();
     const defs = svg.querySelector('defs')!;
@@ -1256,6 +1301,21 @@ export class LiquidGlassElement extends HTMLElement {
     const specAlpha = (this.#gloss / 100);                       // 0-100 → 0-1
     const slopeBlurStdDev = (this.#dispersion / 100) * 6;        // 0-100 → 0-6
     const slopeIntensity = (this.#dispersion / 100) * 1.5;       // 0-100 → 0-1.5
+
+    // Calculate GPU smoothing blur for displacement map
+    // If displacementSmoothing is set (>0), use it directly (0-100 → 0-5px)
+    // Otherwise, auto-calculate based on resolution scale
+    let dmapSmoothBlur: number;
+    if (this.#displacementSmoothing > 0) {
+      // Direct control: 0-100 → 0-5px stdDeviation
+      dmapSmoothBlur = (this.#displacementSmoothing / 100) * 5;
+    } else {
+      // Auto-calculate based on resolution scale
+      // At scale=1.0: no blur. At scale=0.1: significant blur to hide pixelation
+      // Max blur capped at 3px to avoid over-smoothing refraction edges
+      dmapSmoothBlur = Math.min(3, Math.max(0, (1 / resolutionScale - 1) * 0.5));
+    }
+    const needsDmapSmoothing = dmapSmoothBlur > 0.1;
 
     const filter = document.createElementNS('http://www.w3.org/2000/svg', 'filter');
     filter.id = id;
@@ -1273,9 +1333,26 @@ export class LiquidGlassElement extends HTMLElement {
 
     // Build filter chain dynamically
     let filterChain = `
-      <!-- Load displacement maps for morphing -->
+      <!-- Load displacement map -->
+      <feImage href="${dispUrl}" x="0" y="0" width="${width}" height="${height}" preserveAspectRatio="none" result="dRaw"/>
+    `;
+
+    if (needsDmapSmoothing) {
+      // GPU-accelerated smoothing for low-resolution displacement map
+      // This offloads work from CPU (WASM) to GPU (SVG filter)
+      filterChain += `
+      <!-- Smooth low-res displacement map to reduce stepping artifacts -->
+      <feGaussianBlur in="dRaw" stdDeviation="${dmapSmoothBlur.toFixed(2)}" result="dOld"/>
+      <feGaussianBlur in="dRaw" stdDeviation="${dmapSmoothBlur.toFixed(2)}" result="dNew"/>
+      `;
+    } else {
+      filterChain += `
       <feImage href="${dispUrl}" x="0" y="0" width="${width}" height="${height}" preserveAspectRatio="none" result="dOld"/>
       <feImage href="${dispUrl}" x="0" y="0" width="${width}" height="${height}" preserveAspectRatio="none" result="dNew"/>
+      `;
+    }
+
+    filterChain += `
       <feComposite in="dOld" in2="dNew" operator="arithmetic" k1="0" k2="0" k3="1" k4="0" result="d"/>
     `;
 
