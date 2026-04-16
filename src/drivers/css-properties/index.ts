@@ -29,6 +29,7 @@ const PROPS = {
   displacementMinResolution: `${PROP_PREFIX}displacement-min-resolution`,
   displacementSmoothing: `${PROP_PREFIX}displacement-smoothing`,
   enableOptimization: `${PROP_PREFIX}enable-optimization`,
+  refreshRate: `${PROP_PREFIX}refresh-rate`,
 } as const;
 
 // Sentinel value to detect "not set" (uses CSS @property initial-value)
@@ -165,6 +166,12 @@ function injectPropertyRules(): void {
   inherits: true;
   initial-value: ${SENTINEL};
 }
+
+@property ${PROPS.refreshRate} {
+  syntax: '<number>';
+  inherits: true;
+  initial-value: ${SENTINEL};
+}
 `;
 
   document.head.appendChild(style);
@@ -194,6 +201,7 @@ function readParams(element: HTMLElement): LiquidGlassParams | null {
   const displacementMinResolution = parseFloat(style.getPropertyValue(PROPS.displacementMinResolution));
   const displacementSmoothing = parseFloat(style.getPropertyValue(PROPS.displacementSmoothing));
   const enableOptimization = parseFloat(style.getPropertyValue(PROPS.enableOptimization));
+  const refreshRate = parseFloat(style.getPropertyValue(PROPS.refreshRate));
 
   // Check if any property is set (not sentinel)
   const hasRefraction = refraction !== SENTINEL && !isNaN(refraction);
@@ -206,14 +214,16 @@ function readParams(element: HTMLElement): LiquidGlassParams | null {
   const hasDmapMinResolution = displacementMinResolution !== SENTINEL && !isNaN(displacementMinResolution);
   const hasDmapSmoothing = displacementSmoothing !== SENTINEL && !isNaN(displacementSmoothing);
   const hasEnableOptimization = enableOptimization !== SENTINEL && !isNaN(enableOptimization);
+  const hasRefreshRate = refreshRate !== SENTINEL && !isNaN(refreshRate);
 
   // If no property is set, return null
-  if (!hasRefraction && !hasThickness && !hasGloss && !hasSoftness && !hasSaturation && !hasDispersion && !hasDmapResolution && !hasDmapMinResolution && !hasDmapSmoothing && !hasEnableOptimization) {
+  if (!hasRefraction && !hasThickness && !hasGloss && !hasSoftness && !hasSaturation && !hasDispersion && !hasDmapResolution && !hasDmapMinResolution && !hasDmapSmoothing && !hasEnableOptimization && !hasRefreshRate) {
     return null;
   }
 
   // Return params with defaults for unset values
   // enableOptimization: normalize to 0 or 1 (0 stays 0, any non-zero becomes 1)
+  // refreshRate: clamp to 1-10 range
   return {
     refraction: hasRefraction ? refraction : DEFAULT_PARAMS.refraction,
     thickness: hasThickness ? thickness : DEFAULT_PARAMS.thickness,
@@ -225,6 +235,7 @@ function readParams(element: HTMLElement): LiquidGlassParams | null {
     displacementMinResolution: hasDmapMinResolution ? displacementMinResolution : DEFAULT_PARAMS.displacementMinResolution,
     displacementSmoothing: hasDmapSmoothing ? displacementSmoothing : DEFAULT_PARAMS.displacementSmoothing,
     enableOptimization: hasEnableOptimization ? normalizeOptimization(enableOptimization) : DEFAULT_PARAMS.enableOptimization,
+    refreshRate: hasRefreshRate ? Math.max(1, Math.min(10, Math.round(refreshRate))) : DEFAULT_PARAMS.refreshRate,
   };
 }
 
@@ -404,6 +415,11 @@ export class CSSPropertiesDriver {
 
     if (params) {
       if (this._trackedElements.has(element)) {
+        // Check if params actually changed before triggering update
+        const currentParams = this._manager.getParams(element);
+        if (currentParams && this._paramsEqual(currentParams, params)) {
+          return; // No change - skip update to avoid unnecessary renders
+        }
         // Update existing
         this._manager.update(element, params);
       } else {
@@ -418,6 +434,25 @@ export class CSSPropertiesDriver {
       this._trackedElements.delete(element);
       this._resizeObserver.unobserve(element);
     }
+  }
+
+  /**
+   * Compare two LiquidGlassParams objects for equality
+   * Used to avoid unnecessary updates when params haven't changed
+   */
+  private _paramsEqual(a: LiquidGlassParams, b: LiquidGlassParams): boolean {
+    return (
+      a.refraction === b.refraction &&
+      a.thickness === b.thickness &&
+      a.gloss === b.gloss &&
+      a.softness === b.softness &&
+      a.saturation === b.saturation &&
+      a.dispersion === b.dispersion &&
+      a.displacementResolution === b.displacementResolution &&
+      a.displacementMinResolution === b.displacementMinResolution &&
+      a.displacementSmoothing === b.displacementSmoothing &&
+      a.enableOptimization === b.enableOptimization
+    );
   }
 }
 

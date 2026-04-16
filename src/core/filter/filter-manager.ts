@@ -232,16 +232,89 @@
 import { generateSpecularMap } from '../specular/highlight';
 import { generateWasmDisplacementMap, preloadWasm } from '../displacement/wasm-generator';
 import { smootherstep } from '../math/interpolation';
-import { createFilterElement, supportsBackdropSvgFilter } from './svg-builder';
+import {
+  createFilterDOM,
+  updateDisplacementMaps,
+  updateSpecularMap,
+  updateFilterParams,
+  updateMorphWeights,
+  calculateSmoothingBlur,
+  supportsBackdropSvgFilter,
+} from './svg-builder';
+import { __DEV__, isLogEnabled } from '../../env';
 import {
   DEFAULT_PARAMS,
   type LiquidGlassParams,
   type FilterState,
   type FilterManagerOptions,
   type FilterCallbacks,
+  type FilterElementRefs,
   type SizeSample,
   type PredictedSize,
 } from './types';
+
+// =============================================================================
+// DEBUG LOGGING UTILITIES
+// =============================================================================
+
+const LOG_PREFIX = '[LiquidGlass]';
+const LOG_COLORS = {
+  throttle: 'color: #f59e0b', // amber
+  prediction: 'color: #8b5cf6', // purple
+  morph: 'color: #06b6d4', // cyan
+  progressive: 'color: #10b981', // emerald
+  interval: 'color: #ec4899', // pink
+};
+
+/**
+ * Log throttle-related messages
+ * Enable with: lgc_dev.debug.log.throttle.enable()
+ */
+function logThrottle(message: string, data?: Record<string, unknown>): void {
+  if (__DEV__ && isLogEnabled('throttle')) {
+    console.log(`%c${LOG_PREFIX} [Throttle] ${message}`, LOG_COLORS.throttle, data ?? '');
+  }
+}
+
+/**
+ * Log prediction-related messages
+ * Enable with: lgc_dev.debug.log.prediction.enable()
+ */
+function logPrediction(message: string, data?: Record<string, unknown>): void {
+  if (__DEV__ && isLogEnabled('prediction')) {
+    console.log(`%c${LOG_PREFIX} [Prediction] ${message}`, LOG_COLORS.prediction, data ?? '');
+  }
+}
+
+/**
+ * Log morph transition messages
+ * Enable with: lgc_dev.debug.log.morph.enable()
+ */
+function logMorph(message: string, data?: Record<string, unknown>): void {
+  if (__DEV__ && isLogEnabled('morph')) {
+    console.log(`%c${LOG_PREFIX} [Morph] ${message}`, LOG_COLORS.morph, data ?? '');
+  }
+}
+
+/**
+ * Log progressive rendering messages
+ * Enable with: lgc_dev.debug.log.progressive.enable()
+ */
+function logProgressive(message: string, data?: Record<string, unknown>): void {
+  if (__DEV__ && isLogEnabled('progressive')) {
+    console.log(`%c${LOG_PREFIX} [Progressive] ${message}`, LOG_COLORS.progressive, data ?? '');
+  }
+}
+
+/**
+ * Log adaptive interval messages
+ * Enable with: lgc_dev.debug.log.interval.enable()
+ */
+function logInterval(message: string, data?: Record<string, unknown>): void {
+  if (__DEV__ && isLogEnabled('interval')) {
+    console.log(`%c${LOG_PREFIX} [Interval] ${message}`, LOG_COLORS.interval, data ?? '');
+  }
+}
 
 // Re-export for convenience
 export { supportsBackdropSvgFilter } from './svg-builder';
@@ -313,6 +386,12 @@ function calculateVelocity(history: SizeSample[]): { vw: number; vh: number; vr:
 function predictSize(history: SizeSample[]): PredictedSize {
   if (history.length < 2) {
     const last = history[history.length - 1] || { width: 0, height: 0, radius: 0 };
+    if (__DEV__) {
+      logPrediction('Insufficient history for prediction', {
+        historyLength: history.length,
+        fallback: { width: last.width, height: last.height, radius: last.radius },
+      });
+    }
     return { width: last.width, height: last.height, radius: last.radius, confidence: 0 };
   }
 
@@ -341,12 +420,30 @@ function predictSize(history: SizeSample[]): PredictedSize {
   const varianceConfidence = 1 / (1 + avgVariance * 0.001);
   const confidence = historyConfidence * varianceConfidence;
 
-  return {
+  const predicted = {
     width: Math.max(1, Math.round(last.width + vw * t)),
     height: Math.max(1, Math.round(last.height + vh * t)),
     radius: Math.max(0, last.radius + vr * t),
     confidence,
   };
+
+  if (__DEV__) {
+    logPrediction('Size prediction calculated', {
+      velocity: { vw: vw.toFixed(1), vh: vh.toFixed(1), vr: vr.toFixed(2) },
+      variance: avgVariance.toFixed(2),
+      horizon: `${horizon.toFixed(1)}ms`,
+      confidence: `${(confidence * 100).toFixed(1)}%`,
+      current: { w: last.width, h: last.height, r: last.radius.toFixed(1) },
+      predicted: { w: predicted.width, h: predicted.height, r: predicted.radius.toFixed(1) },
+      delta: {
+        w: predicted.width - last.width,
+        h: predicted.height - last.height,
+        r: (predicted.radius - last.radius).toFixed(1),
+      },
+    });
+  }
+
+  return predicted;
 }
 
 function getAdaptiveInterval(
@@ -361,7 +458,27 @@ function getAdaptiveInterval(
   const priority = areaScore * 0.6 + changeScore * 0.4;
   const countPenalty = Math.min(elementCount - 1, 5) * 50;
   const baseInterval = minInterval + countPenalty;
-  return Math.round(baseInterval + (1 - priority) * (maxInterval - baseInterval));
+  const result = Math.round(baseInterval + (1 - priority) * (maxInterval - baseInterval));
+
+  if (__DEV__) {
+    logInterval('Adaptive interval calculated', {
+      input: {
+        area: `${(area / 1000).toFixed(1)}k px²`,
+        changeRatio: `${(changeRatio * 100).toFixed(1)}%`,
+        elementCount,
+      },
+      scores: {
+        areaScore: `${(areaScore * 100).toFixed(1)}%`,
+        changeScore: `${(changeScore * 100).toFixed(1)}%`,
+        priority: `${(priority * 100).toFixed(1)}%`,
+      },
+      penalty: `${countPenalty}ms (${elementCount} elements)`,
+      baseInterval: `${baseInterval}ms`,
+      result: `${result}ms`,
+    });
+  }
+
+  return result;
 }
 
 /**
@@ -471,6 +588,9 @@ export class FilterManager {
     if (state.highResRenderTimeout) {
       clearTimeout(state.highResRenderTimeout);
     }
+    if (state.pendingStretchTimeout) {
+      clearTimeout(state.pendingStretchTimeout);
+    }
     if (state.styleObserver) {
       state.styleObserver.disconnect();
       state.styleObserver = null;
@@ -548,10 +668,7 @@ export class FilterManager {
       markerElement: marker,
       filterId: '',
       filterElement: null!,
-      dispFeImageOld: null,
-      dispFeImageNew: null,
-      dispComposite: null,
-      specFeImage: null,
+      refs: null,
       currentWidth: 0,
       currentHeight: 0,
       encodedWidth: 0,
@@ -570,6 +687,10 @@ export class FilterManager {
       // Style change tracking
       pendingStyleChange: false,
       styleObserver: null,
+      // Frame skip state (refreshRate-based throttling)
+      frameCounter: 0,
+      lastResizeTime: 0,
+      pendingStretchTimeout: null,
     };
   }
 
@@ -577,48 +698,24 @@ export class FilterManager {
     const state = this._registry.get(element);
     if (!state) return;
 
-    const optimizationEnabled = this._isOptimizationEnabled(state.params);
-
     // Progressive rendering: cancel pending high-res render (resize is active)
-    // This is ALWAYS active regardless of enable-optimization
     if (state.highResRenderTimeout) {
       clearTimeout(state.highResRenderTimeout);
       state.highResRenderTimeout = null;
-    }
-
-    if (!optimizationEnabled) {
-      // Optimization disabled: render immediately without throttling
-      // But still use progressive rendering (low-res → high-res)
-      if (state.deferredRenderTimeout) {
-        clearTimeout(state.deferredRenderTimeout);
-        state.deferredRenderTimeout = null;
+      if (__DEV__) {
+        logProgressive('High-res render cancelled (resize active)');
       }
-      // Render with low-res preview
-      this._render(element, state.params, true);
-      // Schedule high-res render after resize stops
-      this._scheduleHighResRender(element);
-      return;
     }
 
-    // Optimization enabled: use adaptive throttling with low-res preview
-    const now = performance.now();
-    const timeSinceLastEncode = now - state.lastEncodeTime;
-
-    if (timeSinceLastEncode >= state.adaptiveInterval) {
-      // Render with low-res preview during active resize
-      this._render(element, state.params, true);
-      // Schedule high-res render after resize stops
-      this._scheduleHighResRender(element);
-    } else if (!state.deferredRenderTimeout) {
-      const delay = state.adaptiveInterval - timeSinceLastEncode;
-      state.deferredRenderTimeout = setTimeout(() => {
-        state.deferredRenderTimeout = null;
-        // Render with low-res preview
-        this._render(element, state.params, true);
-        // Schedule high-res render after resize stops
-        this._scheduleHighResRender(element);
-      }, delay);
+    // Clear any pending deferred render
+    if (state.deferredRenderTimeout) {
+      clearTimeout(state.deferredRenderTimeout);
+      state.deferredRenderTimeout = null;
     }
+
+    // Use refreshRate frame skipping with progressive rendering
+    // enableOptimization controls prediction, morph transitions, and adaptive interval in _render
+    this._renderWithRefreshRate(element, state);
   }
 
   /**
@@ -633,19 +730,153 @@ export class FilterManager {
     if (!state) return;
 
     // Don't schedule if already at high-res
-    if (!state.isLowResPreview) return;
+    if (!state.isLowResPreview) {
+      if (__DEV__) {
+        logProgressive('High-res scheduling SKIPPED - already at high-res');
+      }
+      return;
+    }
 
     // Clear any existing high-res timeout
     if (state.highResRenderTimeout) {
       clearTimeout(state.highResRenderTimeout);
     }
 
+    if (__DEV__) {
+      logProgressive('High-res render SCHEDULED', {
+        delay: `${this._options.highResDelay}ms`,
+        currentResolution: `${(state.currentResolutionScale * 100).toFixed(0)}%`,
+        targetResolution: `${state.params.displacementResolution}%`,
+      });
+    }
+
     // Schedule high-res render after delay
     state.highResRenderTimeout = setTimeout(() => {
       state.highResRenderTimeout = null;
+      if (__DEV__) {
+        logProgressive('High-res render EXECUTING (idle detected)');
+      }
       // Render at full resolution
       this._render(element, state.params, false);
     }, this._options.highResDelay);
+  }
+
+  /**
+   * Stretch existing filter to new element size without regenerating maps
+   * This is a lightweight operation for frame skipping during resize
+   *
+   * Updates the feImage width/height attributes to stretch the existing
+   * displacement and specular maps to the new element size
+   */
+  private _stretchFilter(element: HTMLElement, state: FilterState): void {
+    const rect = element.getBoundingClientRect();
+    const width = Math.ceil(rect.width);
+    const height = Math.ceil(rect.height);
+
+    if (width <= 0 || height <= 0) return;
+
+    // Update current size tracking
+    state.currentWidth = width;
+    state.currentHeight = height;
+
+    // Update filter element references if available
+    if (state.refs) {
+      // Stretch displacement images to new size
+      state.refs.dispImageOld.setAttribute('width', String(width));
+      state.refs.dispImageOld.setAttribute('height', String(height));
+      state.refs.dispImageNew.setAttribute('width', String(width));
+      state.refs.dispImageNew.setAttribute('height', String(height));
+
+      // Stretch specular image to new size
+      state.refs.specImage.setAttribute('width', String(width));
+      state.refs.specImage.setAttribute('height', String(height));
+
+      if (__DEV__) {
+        logProgressive('Filter STRETCHED to new size', {
+          newSize: { w: width, h: height },
+          encodedSize: { w: state.encodedWidth, h: state.encodedHeight },
+          stretchRatio: {
+            x: (width / state.encodedWidth).toFixed(2),
+            y: (height / state.encodedHeight).toFixed(2),
+          },
+        });
+      }
+    }
+  }
+
+  /**
+   * Render with refreshRate-based frame skipping
+   *
+   * Implements frame skip logic:
+   * - refreshRate=1: every frame renders
+   * - refreshRate=2: frames 1,3,5,... render, 2,4,6,... stretch
+   * - refreshRate=3: frames 1,4,7,... render, others stretch
+   *
+   * When resize stops, a final render is forced to ensure accuracy.
+   */
+  private _renderWithRefreshRate(element: HTMLElement, state: FilterState): void {
+    const refreshRate = Math.max(1, Math.min(10, Math.round(state.params.refreshRate)));
+
+    // Cancel pending stretch timeout (resize is still active)
+    if (state.pendingStretchTimeout) {
+      clearTimeout(state.pendingStretchTimeout);
+      state.pendingStretchTimeout = null;
+    }
+
+    // Increment frame counter
+    state.frameCounter++;
+    state.lastResizeTime = performance.now();
+
+    // Determine if this frame should do a full render
+    // Frame 1 always renders, then every Nth frame after that
+    const shouldRender = state.frameCounter % refreshRate === 1 || refreshRate === 1;
+
+    if (shouldRender) {
+      if (__DEV__) {
+        logThrottle('RefreshRate - rendering frame', {
+          frameCounter: state.frameCounter,
+          refreshRate,
+          action: 'full render',
+        });
+      }
+      // Render with low-res preview
+      this._render(element, state.params, true);
+    } else {
+      if (__DEV__) {
+        logThrottle('RefreshRate - stretching filter', {
+          frameCounter: state.frameCounter,
+          refreshRate,
+          action: 'stretch only',
+        });
+      }
+      // Stretch existing filter to new size (no map regeneration)
+      this._stretchFilter(element, state);
+    }
+
+    // Schedule final render after resize stops
+    state.pendingStretchTimeout = setTimeout(() => {
+      state.pendingStretchTimeout = null;
+
+      // If last action was a stretch, force a final render for accuracy
+      const lastWasStretch = state.frameCounter % refreshRate !== 1 && refreshRate !== 1;
+      if (lastWasStretch) {
+        if (__DEV__) {
+          logThrottle('RefreshRate - forced final render', {
+            frameCounter: state.frameCounter,
+            refreshRate,
+            reason: 'resize stopped after stretch',
+          });
+        }
+        // Do a final low-res render to match current size
+        this._render(element, state.params, true);
+      }
+
+      // Reset frame counter for next resize sequence
+      state.frameCounter = 0;
+
+      // Schedule high-res render (always, for final quality)
+      this._scheduleHighResRender(element);
+    }, 50); // Short delay to detect resize end
   }
 
   /**
@@ -697,17 +928,49 @@ export class FilterManager {
         state.sizeHistory.shift();
       }
 
+      if (__DEV__) {
+        logPrediction('Size history updated', {
+          historyLength: state.sizeHistory.length,
+          maxHistory: PREDICTION_HISTORY_SIZE,
+          latestSample: { width, height, radius: borderRadius.toFixed(1) },
+        });
+      }
+
       // Apply prediction only for high-res render (not during active resize)
       // Low-res preview uses exact current size for pixel-perfect match
       if (!isLowRes) {
         const prediction = predictSize(state.sizeHistory);
-        baseWidth = prediction.confidence > 0.3 ? prediction.width : width;
-        baseHeight = prediction.confidence > 0.3 ? prediction.height : height;
-        renderRadius = prediction.confidence > 0.3 ? prediction.radius : borderRadius;
+        const predictionApplied = prediction.confidence > 0.3;
+        baseWidth = predictionApplied ? prediction.width : width;
+        baseHeight = predictionApplied ? prediction.height : height;
+        renderRadius = predictionApplied ? prediction.radius : borderRadius;
+
+        if (__DEV__) {
+          logPrediction(predictionApplied ? 'Prediction APPLIED' : 'Prediction REJECTED (low confidence)', {
+            confidence: `${(prediction.confidence * 100).toFixed(1)}%`,
+            threshold: '30%',
+            applied: predictionApplied,
+            renderSize: predictionApplied
+              ? { w: baseWidth, h: baseHeight, r: renderRadius.toFixed(1), source: 'predicted' }
+              : { w: width, h: height, r: borderRadius.toFixed(1), source: 'actual' },
+          });
+        }
+      } else {
+        if (__DEV__) {
+          logPrediction('Prediction SKIPPED (low-res preview mode)', {
+            reason: 'Using exact current size for pixel-perfect low-res match',
+          });
+        }
       }
     } else {
       // Optimization disabled: clear history, use current size directly
       state.sizeHistory = [];
+      if (__DEV__) {
+        logPrediction('Prediction DISABLED', {
+          reason: 'enableOptimization=0',
+          sizeHistoryCleared: true,
+        });
+      }
     }
 
     // Progressive rendering: choose resolution based on isLowRes flag
@@ -722,6 +985,17 @@ export class FilterManager {
     const resolutionScale = Math.max(0.1, Math.min(1, targetResolution / 100));
     const renderWidth = Math.max(16, Math.round(baseWidth * resolutionScale));
     const renderHeight = Math.max(16, Math.round(baseHeight * resolutionScale));
+
+    if (__DEV__) {
+      logProgressive(`Rendering at ${isLowRes ? 'LOW' : 'HIGH'} resolution`, {
+        mode: isLowRes ? 'low-res preview' : 'high-res final',
+        targetResolution: `${targetResolution}%`,
+        resolutionScale: `${(resolutionScale * 100).toFixed(0)}%`,
+        baseSize: { w: baseWidth, h: baseHeight },
+        renderSize: { w: renderWidth, h: renderHeight },
+        pixelReduction: `${(100 - (renderWidth * renderHeight) / (baseWidth * baseHeight) * 100).toFixed(1)}%`,
+      });
+    }
 
     // Track progressive rendering state
     state.isLowResPreview = isLowRes;
@@ -753,30 +1027,87 @@ export class FilterManager {
 
     // Check if we can do a fast update with morphing
     // Morph transitions are only available when optimization is enabled
-    const canFastUpdate = optimizationEnabled &&
-      state.filterElement &&
-      state.dispFeImageOld && state.dispFeImageNew &&
-      state.dispComposite && state.specFeImage &&
-      this._paramsEqual(state.params, params);
+    const hasFilterElement = !!state.filterElement;
+    const hasRefs = !!state.refs;
+    const paramsUnchanged = this._paramsEqual(state.params, params);
+
+    // Fast update: only size changed, can update DOM attributes directly
+    const canFastUpdate = optimizationEnabled && hasFilterElement && hasRefs && paramsUnchanged;
+
+    // Medium update: params changed but filter exists, update params + maps
+    const canParamUpdate = hasFilterElement && hasRefs && !paramsUnchanged;
+
+    if (__DEV__) {
+      logMorph('Fast update eligibility check', {
+        optimizationEnabled,
+        hasFilterElement,
+        hasRefs,
+        paramsUnchanged,
+        canFastUpdate,
+        canParamUpdate,
+        verdict: canFastUpdate ? 'MORPH transition' : (canParamUpdate ? 'PARAM update' : 'FULL recreation'),
+      });
+    }
+
+    const smoothingBlur = calculateSmoothingBlur(params.displacementSmoothing, resolutionScale);
 
     if (canFastUpdate) {
-      // Fast path with smooth morphing
-      const currentNewHref = state.dispFeImageNew!.getAttribute('href');
-      state.dispFeImageOld!.setAttribute('href', currentNewHref || '');
-      state.dispFeImageOld!.setAttribute('width', String(baseWidth));
-      state.dispFeImageOld!.setAttribute('height', String(baseHeight));
+      // Fast path: only size changed - update displacement/specular maps and morph
+      const refs = state.refs!;
+      const currentNewHref = refs.dispImageNew.getAttribute('href');
 
-      state.dispFeImageNew!.setAttribute('href', dispResult.dataUrl);
-      state.dispFeImageNew!.setAttribute('width', String(baseWidth));
-      state.dispFeImageNew!.setAttribute('height', String(baseHeight));
+      updateDisplacementMaps(
+        refs,
+        currentNewHref,
+        dispResult.dataUrl,
+        baseWidth,
+        baseHeight,
+        smoothingBlur
+      );
 
-      state.specFeImage!.setAttribute('href', specMap.dataUrl);
-      state.specFeImage!.setAttribute('width', String(baseWidth));
-      state.specFeImage!.setAttribute('height', String(baseHeight));
+      updateSpecularMap(refs, specMap.dataUrl, baseWidth, baseHeight);
+
+      if (__DEV__) {
+        logMorph('Starting MORPH transition', {
+          fromSize: { w: state.currentWidth, h: state.currentHeight },
+          toSize: { w: baseWidth, h: baseHeight },
+          duration: `${this._options.morphDuration}ms`,
+        });
+      }
 
       this._startMorphTransition(state);
+    } else if (canParamUpdate) {
+      // Medium path: params changed - update params and maps (no morph)
+      const refs = state.refs!;
+
+      updateFilterParams(refs, params, resolutionScale);
+      updateDisplacementMaps(refs, null, dispResult.dataUrl, baseWidth, baseHeight, smoothingBlur);
+      updateSpecularMap(refs, specMap.dataUrl, baseWidth, baseHeight);
+
+      // Reset morph to show new map immediately
+      updateMorphWeights(refs, 0, 1);
+      state.morphProgress = 1;
+
+      if (__DEV__) {
+        logMorph('PARAM update completed (no morph)', {
+          newSize: { w: baseWidth, h: baseHeight },
+          resolutionScale: `${(resolutionScale * 100).toFixed(0)}%`,
+        });
+      }
     } else {
-      // Full recreation - pass resolution scale for GPU smoothing
+      if (__DEV__) {
+        const reasons: string[] = [];
+        if (!optimizationEnabled) reasons.push('optimization disabled');
+        if (!hasFilterElement) reasons.push('no existing filter');
+        if (!hasRefs) reasons.push('missing element refs');
+
+        logMorph('FULL filter creation required', {
+          reasons,
+          newSize: { w: baseWidth, h: baseHeight },
+          resolutionScale: `${(resolutionScale * 100).toFixed(0)}%`,
+        });
+      }
+      // Full creation (first time only) - creates DOM elements
       this._createFilter(element, state, params, dispResult.dataUrl, specMap.dataUrl, baseWidth, baseHeight, resolutionScale);
     }
 
@@ -791,6 +1122,7 @@ export class FilterManager {
 
     // Only calculate adaptive interval when optimization is enabled
     if (optimizationEnabled) {
+      const prevInterval = state.adaptiveInterval;
       state.adaptiveInterval = getAdaptiveInterval(
         width * height,
         Math.abs(renderWidth - state.encodedWidth) / Math.max(state.encodedWidth, 1),
@@ -798,9 +1130,23 @@ export class FilterManager {
         this._options.minEncodeInterval,
         this._options.maxEncodeInterval
       );
+
+      if (__DEV__) {
+        logInterval('Adaptive interval UPDATED', {
+          previous: `${prevInterval}ms`,
+          new: `${state.adaptiveInterval}ms`,
+          change: `${state.adaptiveInterval - prevInterval}ms`,
+        });
+      }
     } else {
       // Optimization disabled: use minimum interval (renders as fast as possible)
       state.adaptiveInterval = this._options.minEncodeInterval;
+      if (__DEV__) {
+        logInterval('Adaptive interval FIXED (optimization disabled)', {
+          interval: `${state.adaptiveInterval}ms`,
+          reason: 'enableOptimization=0, using minEncodeInterval',
+        });
+      }
     }
   }
 
@@ -814,81 +1160,99 @@ export class FilterManager {
     height: number,
     resolutionScale: number = 1
   ): void {
-    // Remove old filter
-    state.filterElement?.remove();
-
     const svg = getSvgRoot();
     const defs = svg.querySelector('defs')!;
 
+    // Remove existing filter if present
+    state.filterElement?.remove();
+
+    // Create new filter with DOM elements (no innerHTML)
     const filterId = generateFilterId();
-    const filter = createFilterElement(filterId, params, dispUrl, specUrl, width, height, resolutionScale);
+    const { filter, refs } = createFilterDOM(filterId, params, dispUrl, specUrl, width, height, resolutionScale);
     defs.appendChild(filter);
 
-    // Update marker
+    // Update marker (only if not already present)
     if (!element.contains(state.markerElement)) {
       element.appendChild(state.markerElement);
     }
 
-    // Apply CSS rule using :has() to select the parent element
-    const sheet = getStyleSheet();
-    const markerClass = state.markerElement.className;
-    const selector = `*:has(> .${markerClass})`;
+    // Apply CSS rule only when filter ID changes
+    if (filterId !== state.filterId) {
+      const sheet = getStyleSheet();
+      const markerClass = state.markerElement.className;
+      const selector = `*:has(> .${markerClass})`;
 
-    // Remove old rule if exists
-    for (let i = sheet.cssRules.length - 1; i >= 0; i--) {
-      const rule = sheet.cssRules[i] as CSSStyleRule;
-      if (rule.selectorText === selector) {
-        sheet.deleteRule(i);
-        break;
+      // Remove old rule if exists
+      for (let i = sheet.cssRules.length - 1; i >= 0; i--) {
+        const rule = sheet.cssRules[i] as CSSStyleRule;
+        if (rule.selectorText === selector) {
+          sheet.deleteRule(i);
+          break;
+        }
       }
+
+      const filterUrl = `url(#${filterId})`;
+      sheet.insertRule(
+        `${selector} { backdrop-filter: ${filterUrl}; -webkit-backdrop-filter: ${filterUrl}; }`,
+        sheet.cssRules.length
+      );
     }
 
-    const filterUrl = `url(#${filterId})`;
-    sheet.insertRule(
-      `${selector} { backdrop-filter: ${filterUrl}; -webkit-backdrop-filter: ${filterUrl}; }`,
-      sheet.cssRules.length
-    );
-
-    // Store references
+    // Store references (DOM elements, not just selectors)
     state.filterId = filterId;
     state.filterElement = filter;
-    state.dispFeImageOld = filter.querySelector('feImage[result="dOld"]');
-    state.dispFeImageNew = filter.querySelector('feImage[result="dNew"]');
-    state.dispComposite = filter.querySelector('feComposite[result="d"]');
-    state.specFeImage = filter.querySelector('feImage[result="sp"]');
+    state.refs = refs;
     state.morphProgress = 1;
   }
 
   private _startMorphTransition(state: FilterState): void {
     if (state.morphAnimationId !== null) {
       cancelAnimationFrame(state.morphAnimationId);
+      if (__DEV__) {
+        logMorph('Previous morph animation CANCELLED', {
+          previousProgress: `${(state.morphProgress * 100).toFixed(0)}%`,
+        });
+      }
     }
 
-    const composite = state.dispComposite;
-    if (!composite) return;
+    const refs = state.refs;
+    if (!refs) return;
 
-    composite.setAttribute('k2', '1');
-    composite.setAttribute('k3', '0');
+    // Start morph: 100% old, 0% new
+    updateMorphWeights(refs, 1, 0);
     state.morphProgress = 0;
 
     const startTime = performance.now();
     const duration = this._options.morphDuration;
+
+    if (__DEV__) {
+      logMorph('Morph animation STARTED', {
+        duration: `${duration}ms`,
+        easing: 'smootherstep (C2 continuous)',
+        blendFormula: 'output = k2×old + k3×new',
+      });
+    }
 
     const animate = () => {
       const elapsed = performance.now() - startTime;
       const progress = Math.min(elapsed / duration, 1);
       const eased = smootherstep(0, 1, progress);
 
-      composite.setAttribute('k2', (1 - eased).toFixed(3));
-      composite.setAttribute('k3', eased.toFixed(3));
+      updateMorphWeights(refs, 1 - eased, eased);
       state.morphProgress = progress;
 
       if (progress < 1) {
         state.morphAnimationId = requestAnimationFrame(animate);
       } else {
         state.morphAnimationId = null;
-        composite.setAttribute('k2', '0');
-        composite.setAttribute('k3', '1');
+        updateMorphWeights(refs, 0, 1);
+
+        if (__DEV__) {
+          logMorph('Morph animation COMPLETED', {
+            actualDuration: `${elapsed.toFixed(0)}ms`,
+            targetDuration: `${duration}ms`,
+          });
+        }
       }
     };
 
@@ -932,7 +1296,8 @@ export class FilterManager {
       a.displacementResolution === b.displacementResolution &&
       a.displacementMinResolution === b.displacementMinResolution &&
       a.displacementSmoothing === b.displacementSmoothing &&
-      this._normalizeOptimization(a.enableOptimization) === this._normalizeOptimization(b.enableOptimization)
+      this._normalizeOptimization(a.enableOptimization) === this._normalizeOptimization(b.enableOptimization) &&
+      a.refreshRate === b.refreshRate
     );
   }
 

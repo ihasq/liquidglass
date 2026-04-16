@@ -20,6 +20,10 @@
  * ```
  */
 
+// === Environment Detection ===
+export { __DEV__, __VERSION__, lgc_dev } from './env';
+export type { LogCategory, LiquidGlassDevAPI } from './env';
+
 // === Core Filter API ===
 export {
   FilterManager,

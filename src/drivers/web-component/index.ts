@@ -24,7 +24,7 @@ function getManager(): FilterManager {
 }
 
 // Observable attributes
-const ATTRIBUTES = ['refraction', 'thickness', 'gloss', 'softness', 'saturation', 'dispersion', 'displacement-resolution', 'displacement-min-resolution', 'displacement-smoothing', 'enable-optimization', 'disabled'] as const;
+const ATTRIBUTES = ['refraction', 'thickness', 'gloss', 'softness', 'saturation', 'dispersion', 'displacement-resolution', 'displacement-min-resolution', 'displacement-smoothing', 'enable-optimization', 'refresh-rate', 'disabled'] as const;
 type Attribute = (typeof ATTRIBUTES)[number];
 
 /**
@@ -53,6 +53,7 @@ export class LiquidGlassElement extends HTMLElement {
   #displacementMinResolution = DEFAULT_PARAMS.displacementMinResolution;
   #displacementSmoothing = DEFAULT_PARAMS.displacementSmoothing;
   #enableOptimization = DEFAULT_PARAMS.enableOptimization;
+  #refreshRate = DEFAULT_PARAMS.refreshRate;
   #disabled = false;
 
   #initialized = false;
@@ -118,6 +119,10 @@ export class LiquidGlassElement extends HTMLElement {
         // Normalize: 0 stays 0, any non-zero becomes 1
         this.#enableOptimization = value ? normalizeOptimization(parseFloat(value)) : DEFAULT_PARAMS.enableOptimization;
         break;
+      case 'refresh-rate':
+        // Clamp to 1-10 range
+        this.#refreshRate = value ? Math.max(1, Math.min(10, Math.round(parseFloat(value)))) : DEFAULT_PARAMS.refreshRate;
+        break;
       case 'disabled':
         this.#disabled = value !== null;
         if (this.#initialized) {
@@ -147,6 +152,7 @@ export class LiquidGlassElement extends HTMLElement {
       displacementMinResolution: this.#displacementMinResolution,
       displacementSmoothing: this.#displacementSmoothing,
       enableOptimization: this.#enableOptimization,
+      refreshRate: this.#refreshRate,
     };
   }
 
@@ -230,6 +236,16 @@ export class LiquidGlassElement extends HTMLElement {
   set enableOptimization(v: number) {
     this.#enableOptimization = normalizeOptimization(v);
     this.setAttribute('enable-optimization', String(this.#enableOptimization));
+  }
+
+  /** Frame skip rate during continuous resize (1-10, default 1)
+   *  1 = render every frame, 2 = every 2nd frame, etc.
+   *  Non-rendered frames use filter stretching instead of map regeneration.
+   */
+  get refreshRate(): number { return this.#refreshRate; }
+  set refreshRate(v: number) {
+    this.#refreshRate = Math.max(1, Math.min(10, Math.round(v)));
+    this.setAttribute('refresh-rate', String(this.#refreshRate));
   }
 
   /** Disable the effect */
