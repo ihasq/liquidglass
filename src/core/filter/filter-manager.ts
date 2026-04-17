@@ -847,7 +847,7 @@ export class FilterManager {
    * When resize stops, a final render is forced to ensure accuracy.
    */
   private _renderWithRefreshRate(element: HTMLElement, state: FilterState): void {
-    const refreshInterval = Math.max(1, Math.min(10, Math.round(state.params.refreshInterval)));
+    const refreshInterval = Math.max(1, Math.round(state.params.refreshInterval));
 
     // Cancel pending stretch timeout (resize is still active)
     if (state.pendingStretchTimeout) {

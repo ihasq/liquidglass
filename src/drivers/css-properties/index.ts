@@ -192,7 +192,7 @@ export async function initCSSPropertiesV2(): Promise<CSSPropertyEngine> {
     [PROPERTY_NAMES.displacementMinResolution]: createNumberProperty('displacementMinResolution', DEFAULT_PARAMS.displacementMinResolution),
     [PROPERTY_NAMES.displacementSmoothing]: createNumberProperty('displacementSmoothing', DEFAULT_PARAMS.displacementSmoothing),
     [PROPERTY_NAMES.enableOptimization]: createNumberProperty('enableOptimization', DEFAULT_PARAMS.enableOptimization, v => v === 0 ? 0 : 1),
-    [PROPERTY_NAMES.refreshInterval]: createNumberProperty('refreshInterval', DEFAULT_PARAMS.refreshInterval, v => Math.max(1, Math.min(10, Math.round(v)))),
+    [PROPERTY_NAMES.refreshInterval]: createNumberProperty('refreshInterval', DEFAULT_PARAMS.refreshInterval, v => Math.max(1, Math.round(v))),
     [PROPERTY_NAMES.displacementRenderer]: {
       syntax: 'wasm-simd | gl2 | gpu',
       inherits: true,
@@ -265,7 +265,7 @@ export async function initLiquidGlassCSS(): Promise<void> {
     [PROPERTY_NAMES.displacementMinResolution]: createNumberProperty('displacementMinResolution', DEFAULT_PARAMS.displacementMinResolution),
     [PROPERTY_NAMES.displacementSmoothing]: createNumberProperty('displacementSmoothing', DEFAULT_PARAMS.displacementSmoothing),
     [PROPERTY_NAMES.enableOptimization]: createNumberProperty('enableOptimization', DEFAULT_PARAMS.enableOptimization, v => v === 0 ? 0 : 1),
-    [PROPERTY_NAMES.refreshInterval]: createNumberProperty('refreshInterval', DEFAULT_PARAMS.refreshInterval, v => Math.max(1, Math.min(10, Math.round(v)))),
+    [PROPERTY_NAMES.refreshInterval]: createNumberProperty('refreshInterval', DEFAULT_PARAMS.refreshInterval, v => Math.max(1, Math.round(v))),
     [PROPERTY_NAMES.displacementRenderer]: {
       syntax: 'wasm-simd | gl2 | gpu',
       inherits: true,

@@ -30,7 +30,7 @@ export interface LiquidGlassParams {
   enableOptimization: number;      // Enable rendering optimizations (0 or 1, default 1)
                            // 0 = disabled, any non-zero value = enabled
                            // Controls: size prediction, adaptive throttling, morph transitions
-  refreshInterval: number; // Frame skip interval during continuous resize (1-10, default 1)
+  refreshInterval: number; // Frame skip interval during continuous resize (1+, default 1)
                            // 1 = every frame, 2 = every 2nd frame, etc.
                            // Non-rendered frames use filter stretching instead of map regeneration
   displacementRenderer: DisplacementRenderer;  // Displacement map generation backend
