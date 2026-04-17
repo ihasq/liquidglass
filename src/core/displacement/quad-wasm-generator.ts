@@ -75,7 +75,7 @@ async function loadQuadWasmModule(): Promise<QuadWasmExports | null> {
   wasmSupported = true;
 
   try {
-    const wasmUrl = new URL('../../../build/release-quad.wasm', import.meta.url);
+    const wasmUrl = new URL('../../../build/release.wasm', import.meta.url);
     const response = await fetch(wasmUrl);
     const wasmBytes = await response.arrayBuffer();
 
