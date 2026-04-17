@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Single-Pass Verification</title>
+  <style>
+    body { margin: 0; padding: 20px; background: #1a1a2e; color: #eee; font-family: monospace; }
+    .container { display: flex; gap: 20px; flex-wrap: wrap; }
+    .glass { background: rgba(255,255,255,0.1); border-radius: 24px; width: 300px; height: 200px; }
+    #log { margin-top: 20px; white-space: pre-wrap; font-size: 12px; max-height: 400px; overflow-y: auto; background: #000; padding: 10px; border-radius: 8px; }
+    button { padding: 10px 20px; margin: 5px; font-size: 14px; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <h2>Single-Pass WebGPU Verification</h2>
+  <div class="container">
+    <div id="test1" class="glass"></div>
+    <div id="test2" class="glass"></div>
+  </div>
+  <div>
+    <button onclick="runMemoryTest()">Run Memory Test (100 iterations)</button>
+    <button onclick="copyResults()">Copy Results</button>
+  </div>
+  <div id="log"></div>
+  <script type="module">
+    import { FilterManager, DEFAULT_PARAMS } from '../../src/index.ts';
+
+    const log = (msg) => {
+      const now = new Date().toLocaleTimeString();
+      document.getElementById('log').textContent += `[${now}] ${msg}\n`;
+      console.log(msg);
+    };
+
+    log('Initializing FilterManager...');
+    const manager = new FilterManager();
+    const el1 = document.getElementById('test1');
+    const el2 = document.getElementById('test2');
+
+    // Attach initial elements
+    manager.attach(el1, { ...DEFAULT_PARAMS });
+    manager.attach(el2, { ...DEFAULT_PARAMS });
+    log('Attached 2 elements');
+    log('Ready for testing');
+
+    window.runMemoryTest = async function() {
+      const iterations = 100;
+      log(`\n=== MEMORY TEST (${iterations} resize iterations) ===`);
+      
+      const initialHeap = performance.memory?.usedJSHeapSize || 0;
+      log(`Initial heap: ${(initialHeap / 1024 / 1024).toFixed(2)} MB`);
+
+      const results = [];
+      
+      for (let i = 0; i < iterations; i++) {
+        const phase = (i / iterations) * Math.PI * 4;
+        const w = 300 + Math.sin(phase) * 100;
+        const h = 200 + Math.cos(phase) * 80;
+
+        el1.style.width = w + 'px';
+        el1.style.height = h + 'px';
+        el2.style.width = (400 - w + 200) + 'px';
+        el2.style.height = (280 - h + 120) + 'px';
+
+        await new Promise(r => setTimeout(r, 20));
+
+        if ((i + 1) % 20 === 0) {
+          const heap = performance.memory?.usedJSHeapSize || 0;
+          results.push({ iteration: i + 1, heap });
+          log(`  [${i + 1}/${iterations}] Heap: ${(heap / 1024 / 1024).toFixed(2)} MB`);
+        }
+      }
+
+      // Attempt cleanup
+      manager.detach(el1);
+      manager.detach(el2);
+      log('Detached elements');
+
+      // Re-attach for visual
+      manager.attach(el1, { ...DEFAULT_PARAMS });
+      manager.attach(el2, { ...DEFAULT_PARAMS });
+
+      const finalHeap = performance.memory?.usedJSHeapSize || 0;
+      const growth = finalHeap - initialHeap;
+      
+      log(`\n=== RESULTS ===`);
+      log(`Initial: ${(initialHeap / 1024 / 1024).toFixed(2)} MB`);
+      log(`Final:   ${(finalHeap / 1024 / 1024).toFixed(2)} MB`);
+      log(`Growth:  ${(growth / 1024 / 1024).toFixed(2)} MB`);
+      log(`Per iteration: ${(growth / 1024 / iterations).toFixed(2)} KB`);
+      
+      if (growth / 1024 / iterations > 10) {
+        log(`⚠️ Potential memory leak: ${(growth / 1024 / iterations).toFixed(2)} KB/iteration`);
+      } else {
+        log(`✓ Memory appears stable`);
+      }
+    };
+
+    window.copyResults = function() {
+      const text = document.getElementById('log').textContent;
+      navigator.clipboard.writeText(text).then(() => {
+        log('Results copied to clipboard!');
+      });
+    };
+  </script>
+</body>
+</html>

@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>WASM Optimization Benchmark</title>
+  <style>
+    body { margin: 0; padding: 20px; background: #1a1a2e; color: #eee; font-family: monospace; }
+    #log { white-space: pre-wrap; font-size: 11px; background: #000; padding: 15px; border-radius: 8px; max-height: 700px; overflow-y: auto; }
+    button { padding: 12px 24px; margin: 10px 5px 10px 0; font-size: 14px; cursor: pointer; background: #4a4a8a; color: white; border: none; border-radius: 4px; }
+    button:hover { background: #5a5a9a; }
+  </style>
+</head>
+<body>
+  <h2>WASM Displacement Map Optimization Benchmark</h2>
+  <div>
+    <button onclick="runBenchmark()">Run Benchmark</button>
+    <button onclick="copyResults()">Copy Results</button>
+  </div>
+  <div id="log"></div>
+
+<script type="module">
+import { generateWasmDisplacementMap, preloadWasm } from '/src/core/displacement/wasm-generator.ts';
+
+const log = (msg) => {
+  const el = document.getElementById('log');
+  el.textContent += msg + '\n';
+  el.scrollTop = el.scrollHeight;
+  console.log(msg);
+};
+
+async function runBenchmark() {
+  log('=== WASM Displacement Map Benchmark ===\n');
+
+  // Preload WASM
+  log('Loading WASM module...');
+  await preloadWasm();
+  log('WASM loaded.\n');
+
+  const sizes = [
+    { w: 256, h: 256 },
+    { w: 512, h: 512 },
+    { w: 1024, h: 1024 },
+    { w: 2048, h: 2048 },
+  ];
+
+  const iterations = 100;
+  const warmup = 20;
+
+  log(`Testing ${sizes.length} sizes × ${iterations} iterations (${warmup} warmup)\n`);
+
+  const results = [];
+
+  for (const { w, h } of sizes) {
+    const options = {
+      width: w,
+      height: h,
+      borderRadius: Math.min(w, h) * 0.1,
+      edgeWidthRatio: 0.5
+    };
+
+    // Warmup
+    for (let i = 0; i < warmup; i++) {
+      await generateWasmDisplacementMap(options);
+    }
+
+    // Benchmark
+    const times = [];
+    for (let i = 0; i < iterations; i++) {
+      const start = performance.now();
+      await generateWasmDisplacementMap(options);
+      times.push(performance.now() - start);
+    }
+
+    const avg = times.reduce((a, b) => a + b, 0) / times.length;
+    const min = Math.min(...times);
+    const max = Math.max(...times);
+    const std = Math.sqrt(times.reduce((acc, t) => acc + (t - avg) ** 2, 0) / times.length);
+
+    const pixels = w * h;
+    const mpps = (pixels / avg / 1000).toFixed(2); // Million pixels per second
+
+    results.push({ w, h, avg, min, max, std, mpps });
+
+    log(`${w}x${h}:`);
+    log(`  Avg: ${avg.toFixed(3)}ms  Min: ${min.toFixed(3)}ms  Max: ${max.toFixed(3)}ms`);
+    log(`  Std: ${std.toFixed(3)}ms  Throughput: ${mpps} MP/s`);
+    log('');
+  }
+
+  log('=== SUMMARY ===');
+  log('Size        Avg(ms)   Min(ms)   MP/s');
+  log('─'.repeat(45));
+  for (const r of results) {
+    log(`${r.w}x${r.h}`.padEnd(12) +
+        r.avg.toFixed(3).padStart(8) +
+        r.min.toFixed(3).padStart(10) +
+        r.mpps.padStart(10));
+  }
+
+  log('\nBenchmark complete!');
+
+  // Store for CDP access
+  window.__benchmarkResults = results;
+  window.__benchmarkComplete = true;
+}
+
+window.runBenchmark = runBenchmark;
+window.copyResults = () => navigator.clipboard.writeText(document.getElementById('log').textContent).then(() => log('\nCopied!'));
+
+log('Ready. Click "Run Benchmark" to measure WASM performance.');
+log('');
+log('This benchmark measures:');
+log('  - Quadrant displacement computation (WASM-SIMD)');
+log('  - Canvas2D compositing (JavaScript)');
+log('  - Full pipeline latency');
+</script>
+</body>
+</html>

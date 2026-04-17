@@ -295,7 +295,7 @@
       --liquidglass-displacement-smoothing: 0;
       --liquidglass-enable-optimization: 1;
       --liquidglass-refresh-interval: 12;
-      --liquidglass-displacement-renderer: wasm-simd;
+      --liquidglass-displacement-renderer: gpu;
       display: flex;
       flex-direction: column;
       align-items: center;
@@ -831,13 +831,13 @@
       <div class="control">
         <div class="control-header">
           <span class="control-label">Displacement Renderer</span>
-          <span class="control-value" id="displacement-renderer-val">wasm-simd</span>
+          <span class="control-value" id="displacement-renderer-val">gpu</span>
         </div>
         <div class="control-desc">Backend for displacement map generation. WebGPU/WebGL2 use GPU, WASM-SIMD uses CPU with SIMD</div>
         <div class="view-mode-toggle" style="margin-top: 8px;">
-          <button class="view-mode-btn active" id="renderer-wasm-btn" data-renderer="wasm-simd">WASM-SIMD</button>
+          <button class="view-mode-btn active" id="renderer-gpu-btn" data-renderer="gpu">WebGPU</button>
           <button class="view-mode-btn" id="renderer-gl2-btn" data-renderer="gl2">WebGL2</button>
-          <button class="view-mode-btn" id="renderer-gpu-btn" data-renderer="gpu">WebGPU</button>
+          <button class="view-mode-btn" id="renderer-wasm-btn" data-renderer="wasm-simd">WASM-SIMD</button>
         </div>
       </div>
     </section>
@@ -1054,7 +1054,7 @@
   --liquidglass-displacement-smoothing: 0;
   --liquidglass-enable-optimization: 1;
   --liquidglass-refresh-interval: 12;
-  --liquidglass-displacement-renderer: wasm-simd;
+  --liquidglass-displacement-renderer: gpu;
   border-radius: 24px;
 }</code>
     <button class="copy-btn" id="copy-btn">Copy to Clipboard</button>
@@ -1161,17 +1161,17 @@
     // Enable optimization state (separate since it's a toggle, not a range)
     let enableOptimization = 1;
 
-    // Displacement renderer state ('wasm-simd' or 'gl2')
-    let displacementRenderer = 'wasm-simd';
+    // Displacement renderer state (default: 'gpu' with fallback chain gpu -> gl2 -> wasm-simd)
+    let displacementRenderer = 'gpu';
 
     // Presets
     const presets = {
-      default: { refraction: 50, thickness: 50, gloss: 50, softness: 10, saturation: 45, dispersion: 30, displacementResolution: 40, displacementMinResolution: 10, displacementSmoothing: 0, enableOptimization: 1, refreshInterval: 12, displacementRenderer: 'wasm-simd', radius: 24 },
-      subtle: { refraction: 30, thickness: 40, gloss: 30, softness: 5, saturation: 30, dispersion: 20, displacementResolution: 100, displacementMinResolution: 20, displacementSmoothing: 0, enableOptimization: 1, refreshInterval: 1, displacementRenderer: 'wasm-simd', radius: 16 },
-      bold: { refraction: 80, thickness: 70, gloss: 70, softness: 15, saturation: 60, dispersion: 50, displacementResolution: 100, displacementMinResolution: 20, displacementSmoothing: 0, enableOptimization: 1, refreshInterval: 1, displacementRenderer: 'wasm-simd', radius: 32 },
-      frosted: { refraction: 40, thickness: 50, gloss: 40, softness: 50, saturation: 20, dispersion: 60, displacementResolution: 50, displacementMinResolution: 15, displacementSmoothing: 20, enableOptimization: 1, refreshInterval: 1, displacementRenderer: 'wasm-simd', radius: 20 },
-      crystal: { refraction: 70, thickness: 60, gloss: 80, softness: 0, saturation: 70, dispersion: 40, displacementResolution: 100, displacementMinResolution: 25, displacementSmoothing: 0, enableOptimization: 1, refreshInterval: 1, displacementRenderer: 'wasm-simd', radius: 28 },
-      ios: { refraction: 45, thickness: 55, gloss: 55, softness: 20, saturation: 50, dispersion: 35, displacementResolution: 75, displacementMinResolution: 20, displacementSmoothing: 10, enableOptimization: 1, refreshInterval: 1, displacementRenderer: 'wasm-simd', radius: 22 }
+      default: { refraction: 50, thickness: 50, gloss: 50, softness: 10, saturation: 45, dispersion: 30, displacementResolution: 40, displacementMinResolution: 10, displacementSmoothing: 0, enableOptimization: 1, refreshInterval: 12, displacementRenderer: 'gpu', radius: 24 },
+      subtle: { refraction: 30, thickness: 40, gloss: 30, softness: 5, saturation: 30, dispersion: 20, displacementResolution: 100, displacementMinResolution: 20, displacementSmoothing: 0, enableOptimization: 1, refreshInterval: 1, displacementRenderer: 'gpu', radius: 16 },
+      bold: { refraction: 80, thickness: 70, gloss: 70, softness: 15, saturation: 60, dispersion: 50, displacementResolution: 100, displacementMinResolution: 20, displacementSmoothing: 0, enableOptimization: 1, refreshInterval: 1, displacementRenderer: 'gpu', radius: 32 },
+      frosted: { refraction: 40, thickness: 50, gloss: 40, softness: 50, saturation: 20, dispersion: 60, displacementResolution: 50, displacementMinResolution: 15, displacementSmoothing: 20, enableOptimization: 1, refreshInterval: 1, displacementRenderer: 'gpu', radius: 20 },
+      crystal: { refraction: 70, thickness: 60, gloss: 80, softness: 0, saturation: 70, dispersion: 40, displacementResolution: 100, displacementMinResolution: 25, displacementSmoothing: 0, enableOptimization: 1, refreshInterval: 1, displacementRenderer: 'gpu', radius: 28 },
+      ios: { refraction: 45, thickness: 55, gloss: 55, softness: 20, saturation: 50, dispersion: 35, displacementResolution: 75, displacementMinResolution: 20, displacementSmoothing: 10, enableOptimization: 1, refreshInterval: 1, displacementRenderer: 'gpu', radius: 22 }
     };
 
     // View mode state
@@ -1940,7 +1940,7 @@
       controls.displacementSmoothing.value = 30;
       controls.refreshInterval.value = 1;
       setEnableOptimization(1);
-      setDisplacementRenderer('wasm-simd');
+      setDisplacementRenderer('gpu');
       controls.bgSpeed.value = 30;
       controls.bgDirection.value = 135;
       updateBackgroundAnimation();

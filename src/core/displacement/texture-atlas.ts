@@ -107,7 +107,13 @@ async function loadWasm(): Promise<void> {
       const wasmUrl = new URL('../../../build/release.wasm', import.meta.url);
       const response = await fetch(wasmUrl);
       const wasmBytes = await response.arrayBuffer();
-      const { instance } = await WebAssembly.instantiate(wasmBytes, {});
+      // AssemblyScript runtime requires abort import
+      const imports = {
+        env: {
+          abort: () => console.error('WASM abort called')
+        }
+      };
+      const { instance } = await WebAssembly.instantiate(wasmBytes, imports);
       const exports = instance.exports as any;
 
       if (exports.memory.buffer.byteLength === 0) {

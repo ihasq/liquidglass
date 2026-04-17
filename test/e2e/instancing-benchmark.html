@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>WebGPU Instancing Benchmark - Optimization Search</title>
+  <style>
+    body { margin: 0; padding: 20px; background: #1a1a2e; color: #eee; font-family: monospace; }
+    #log { white-space: pre-wrap; font-size: 12px; background: #000; padding: 15px; border-radius: 8px; max-height: 600px; overflow-y: auto; }
+    button { padding: 12px 24px; margin: 10px 5px 10px 0; font-size: 14px; cursor: pointer; background: #4a4a8a; color: white; border: none; border-radius: 4px; }
+    button:hover { background: #5a5a9a; }
+    h2 { margin-bottom: 10px; }
+  </style>
+</head>
+<body>
+  <h2>WebGPU Optimization Search</h2>
+  <div>
+    <button onclick="runBenchmark()">Run Benchmark</button>
+    <button onclick="copyResults()">Copy Results</button>
+  </div>
+  <div id="log"></div>
+
+<script type="module">
+const log = (msg) => {
+  const el = document.getElementById('log');
+  el.textContent += msg + '\n';
+  el.scrollTop = el.scrollHeight;
+  console.log(msg);
+};
+
+// ============================================================================
+// Shared: Fullscreen triangle vertex shader
+// ============================================================================
+const FULLSCREEN_VERT = `
+@vertex
+fn main(@builtin(vertex_index) vertexIndex: u32) -> @builtin(position) vec4<f32> {
+    var pos = array<vec2<f32>, 3>(
+        vec2<f32>(-1.0, -1.0),
+        vec2<f32>(3.0, -1.0),
+        vec2<f32>(-1.0, 3.0)
+    );
+    return vec4<f32>(pos[vertexIndex], 0.0, 1.0);
+}
+`;
+
+// ============================================================================
+// Single-Pass: Full computation
+// ============================================================================
+const SINGLE_PASS_FRAG = `
+struct Uniforms { u_resolution: vec2<f32>, u_borderRadius: f32, u_edgeWidthRatio: f32 }
+@group(0) @binding(0) var<uniform> uniforms: Uniforms;
+
+const LOG2E: f32 = 1.4426950408889634;
+const LN2: f32 = 0.6931471805599453;
+
+fn fastExp(x: f32) -> f32 {
+    if (x < -87.0) { return 0.0; }
+    if (x > 0.0) { return 1.0; }
+    let k = floor(x * LOG2E);
+    let r = x - k * LN2;
+    let r2 = r * r;
+    return (1.0 + r + r2 * 0.5 + r2 * r * 0.16666667 + r2 * r2 * 0.04166667) * exp2(k);
+}
+
+@fragment
+fn main(@builtin(position) fragCoord: vec4<f32>) -> @location(0) vec4<f32> {
+    let fw = uniforms.u_resolution.x;
+    let fh = uniforms.u_resolution.y;
+    let halfW = fw * 0.5;
+    let halfH = fh * 0.5;
+    let minHalf = min(halfW, halfH);
+    let edgeW = minHalf * uniforms.u_edgeWidthRatio;
+    let r = min(uniforms.u_borderRadius, minHalf);
+    let neg3ew = -3.0 / edgeW;
+    let ctX = halfW - r;
+    let ctY = halfH - r;
+
+    let px = fragCoord.x - 0.5;
+    let py = fragCoord.y - 0.5;
+    let dx = abs(px - halfW + 0.5);
+    let dy = abs(py - halfH + 0.5);
+    let sx = select(-1.0, 1.0, px >= halfW);
+    let sy = select(-1.0, 1.0, py >= halfH);
+
+    let inCorner = dx > ctX && dy > ctY;
+    var dist: f32; var dirX: f32 = 0.0; var dirY: f32 = 0.0;
+
+    if (inCorner) {
+        let cx = dx - ctX; let cy = dy - ctY;
+        let cd = sqrt(cx * cx + cy * cy);
+        dist = r - cd;
+        if (cd > 0.001) { let inv = 1.0 / cd; dirX = cx * inv * sx; dirY = cy * inv * sy; }
+    } else {
+        let distX = halfW - dx; let distY = halfH - dy;
+        if (distX < distY) { dist = distX; dirX = sx; } else { dist = distY; dirY = sy; }
+    }
+
+    let mag = fastExp(max(dist, 0.0) * neg3ew);
+    let dispX = -dirX * mag;
+    let dispY = -dirY * mag;
+    return vec4<f32>(
+        clamp(floor(128.0 + dispX * 127.0), 0.0, 255.0) / 255.0,
+        clamp(floor(128.0 + dispY * 127.0), 0.0, 255.0) / 255.0,
+        128.0 / 255.0, 1.0
+    );
+}
+`;
+
+// ============================================================================
+// Quadrant computation shader (Pass 1)
+// ============================================================================
+const QUADRANT_FRAG = `
+struct Uniforms { u_quadRes: vec2<f32>, u_fullRes: vec2<f32>, u_borderRadius: f32, u_edgeWidthRatio: f32 }
+@group(0) @binding(0) var<uniform> uniforms: Uniforms;
+
+const LOG2E: f32 = 1.4426950408889634;
+const LN2: f32 = 0.6931471805599453;
+
+fn fastExp(x: f32) -> f32 {
+    if (x < -87.0) { return 0.0; }
+    if (x > 0.0) { return 1.0; }
+    let k = floor(x * LOG2E);
+    let r = x - k * LN2;
+    let r2 = r * r;
+    return (1.0 + r + r2 * 0.5 + r2 * r * 0.16666667 + r2 * r2 * 0.04166667) * exp2(k);
+}
+
+@fragment
+fn main(@builtin(position) fragCoord: vec4<f32>) -> @location(0) vec4<f32> {
+    let fw = uniforms.u_fullRes.x;
+    let fh = uniforms.u_fullRes.y;
+    let halfW = fw * 0.5;
+    let halfH = fh * 0.5;
+    let minHalf = min(halfW, halfH);
+    let edgeW = minHalf * uniforms.u_edgeWidthRatio;
+    let r = min(uniforms.u_borderRadius, minHalf);
+    let neg3ew = -3.0 / edgeW;
+    let ctX = halfW - r;
+    let ctY = halfH - r;
+
+    let dx = fragCoord.x - 0.5;
+    let dy = fragCoord.y - 0.5;
+    let inCorner = dx > ctX && dy > ctY;
+
+    var dist: f32; var dirX: f32 = 0.0; var dirY: f32 = 0.0;
+    if (inCorner) {
+        let cx = dx - ctX; let cy = dy - ctY;
+        let cd = sqrt(cx * cx + cy * cy);
+        dist = r - cd;
+        if (cd > 0.001) { let inv = 1.0 / cd; dirX = cx * inv; dirY = cy * inv; }
+    } else {
+        let distX = halfW - dx; let distY = halfH - dy;
+        if (distX < distY) { dist = distX; dirX = 1.0; } else { dist = distY; dirY = 1.0; }
+    }
+
+    let mag = fastExp(max(dist, 0.0) * neg3ew);
+    return vec4<f32>(
+        clamp(floor(128.0 - dirX * mag * 127.0), 0.0, 255.0) / 255.0,
+        clamp(floor(128.0 - dirY * mag * 127.0), 0.0, 255.0) / 255.0,
+        128.0 / 255.0, 1.0
+    );
+}
+`;
+
+// ============================================================================
+// Approach A: Instanced 6-vertex quads (current)
+// ============================================================================
+const INST_6V_VERT = `
+struct Out { @builtin(position) pos: vec4<f32>, @location(0) @interpolate(flat) qid: u32, @location(1) uv: vec2<f32> }
+@vertex fn main(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> Out {
+    var v = array<vec2<f32>, 6>(
+        vec2<f32>(0.0, 0.0), vec2<f32>(1.0, 0.0), vec2<f32>(0.0, 1.0),
+        vec2<f32>(0.0, 1.0), vec2<f32>(1.0, 0.0), vec2<f32>(1.0, 1.0)
+    );
+    let lp = v[vi];
+    let qx = f32(ii & 1u); let qy = f32(ii >> 1u);
+    var o: Out;
+    o.pos = vec4<f32>((lp.x + qx) - 1.0, 1.0 - (lp.y + qy), 0.0, 1.0);
+    o.qid = ii; o.uv = lp;
+    return o;
+}
+`;
+
+// ============================================================================
+// Approach B: Instanced 4-vertex triangle strip
+// ============================================================================
+const INST_4V_VERT = `
+struct Out { @builtin(position) pos: vec4<f32>, @location(0) @interpolate(flat) qid: u32, @location(1) uv: vec2<f32> }
+@vertex fn main(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> Out {
+    // Triangle strip: TL, TR, BL, BR
+    var v = array<vec2<f32>, 4>(
+        vec2<f32>(0.0, 0.0), vec2<f32>(1.0, 0.0),
+        vec2<f32>(0.0, 1.0), vec2<f32>(1.0, 1.0)
+    );
+    let lp = v[vi];
+    let qx = f32(ii & 1u); let qy = f32(ii >> 1u);
+    var o: Out;
+    o.pos = vec4<f32>((lp.x + qx) - 1.0, 1.0 - (lp.y + qy), 0.0, 1.0);
+    o.qid = ii; o.uv = lp;
+    return o;
+}
+`;
+
+// ============================================================================
+// Approach C: Fullscreen composite (no instancing, branch in fragment)
+// ============================================================================
+const COMPOSITE_FRAG = `
+struct Uniforms { u_fullRes: vec2<f32>, u_quadRes: vec2<f32> }
+@group(0) @binding(0) var<uniform> u: Uniforms;
+@group(0) @binding(1) var tex: texture_2d<f32>;
+@group(0) @binding(2) var samp: sampler;
+
+@fragment fn main(@builtin(position) fc: vec4<f32>) -> @location(0) vec4<f32> {
+    let px = fc.x - 0.5; let py = fc.y - 0.5;
+    let cx = floor(u.u_fullRes.x * 0.5);
+    let cy = floor(u.u_fullRes.y * 0.5);
+    let isR = px >= cx; let isB = py >= cy;
+
+    var qx: f32; var qy: f32;
+    let invR = !isR; let invG = !isB;
+
+    qx = select(cx - 1.0 - px, px - cx, isR);
+    qy = select(cy - 1.0 - py, py - cy, isB);
+
+    qx = clamp(qx, 0.0, u.u_quadRes.x - 1.0);
+    qy = clamp(qy, 0.0, u.u_quadRes.y - 1.0);
+
+    let uv = (vec2<f32>(qx, qy) + 0.5) / u.u_quadRes;
+    var c = textureSample(tex, samp, uv);
+    c.r = select(c.r, 1.0 - c.r, invR);
+    c.g = select(c.g, 1.0 - c.g, invG);
+    return c;
+}
+`;
+
+// ============================================================================
+// Shared instanced composite fragment
+// ============================================================================
+const INST_FRAG = `
+@group(0) @binding(0) var tex: texture_2d<f32>;
+@group(0) @binding(1) var samp: sampler;
+
+@fragment fn main(@location(0) @interpolate(flat) qid: u32, @location(1) uv: vec2<f32>) -> @location(0) vec4<f32> {
+    let mx = (qid & 1u) == 0u;
+    let my = qid < 2u;
+    var u = uv;
+    u.x = select(u.x, 1.0 - u.x, mx);
+    u.y = select(u.y, 1.0 - u.y, my);
+    var c = textureSample(tex, samp, u);
+    c.r = select(c.r, 1.0 - c.r, mx);
+    c.g = select(c.g, 1.0 - c.g, my);
+    return c;
+}
+`;
+
+// ============================================================================
+// Benchmark
+// ============================================================================
+async function runBenchmark() {
+  log('=== OPTIMIZATION SEARCH ===\n');
+
+  if (!navigator.gpu) { log('ERROR: No WebGPU'); return; }
+  const adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
+  if (!adapter) { log('ERROR: No adapter'); return; }
+  const device = await adapter.requestDevice();
+  log(`Device: ${adapter.info?.device || 'unknown'}`);
+
+  const format = navigator.gpu.getPreferredCanvasFormat();
+  const sizes = [{ w: 256, h: 256 }, { w: 512, h: 512 }, { w: 1024, h: 1024 }];
+  const iterations = 300;
+  const warmup = 100;
+
+  log(`Testing ${sizes.length} sizes × ${iterations} iterations\n`);
+  log('Approaches:');
+  log('  A: Single-Pass (full computation)');
+  log('  B: 2-Pass + Instanced 6v quads');
+  log('  C: 2-Pass + Instanced 4v strip');
+  log('  D: 2-Pass + Fullscreen composite\n');
+
+  // Create pipelines
+  const singlePipe = device.createRenderPipeline({
+    layout: 'auto',
+    vertex: { module: device.createShaderModule({ code: FULLSCREEN_VERT }), entryPoint: 'main' },
+    fragment: { module: device.createShaderModule({ code: SINGLE_PASS_FRAG }), entryPoint: 'main', targets: [{ format }] },
+    primitive: { topology: 'triangle-list' },
+  });
+
+  const quadPipe = device.createRenderPipeline({
+    layout: 'auto',
+    vertex: { module: device.createShaderModule({ code: FULLSCREEN_VERT }), entryPoint: 'main' },
+    fragment: { module: device.createShaderModule({ code: QUADRANT_FRAG }), entryPoint: 'main', targets: [{ format: 'rgba8unorm' }] },
+    primitive: { topology: 'triangle-list' },
+  });
+
+  const inst6vPipe = device.createRenderPipeline({
+    layout: 'auto',
+    vertex: { module: device.createShaderModule({ code: INST_6V_VERT }), entryPoint: 'main' },
+    fragment: { module: device.createShaderModule({ code: INST_FRAG }), entryPoint: 'main', targets: [{ format }] },
+    primitive: { topology: 'triangle-list' },
+  });
+
+  const inst4vPipe = device.createRenderPipeline({
+    layout: 'auto',
+    vertex: { module: device.createShaderModule({ code: INST_4V_VERT }), entryPoint: 'main' },
+    fragment: { module: device.createShaderModule({ code: INST_FRAG }), entryPoint: 'main', targets: [{ format }] },
+    primitive: { topology: 'triangle-strip' },
+  });
+
+  const compositePipe = device.createRenderPipeline({
+    layout: 'auto',
+    vertex: { module: device.createShaderModule({ code: FULLSCREEN_VERT }), entryPoint: 'main' },
+    fragment: { module: device.createShaderModule({ code: COMPOSITE_FRAG }), entryPoint: 'main', targets: [{ format }] },
+    primitive: { topology: 'triangle-list' },
+  });
+
+  const sampler = device.createSampler({ magFilter: 'nearest', minFilter: 'nearest' });
+
+  const singleUB = device.createBuffer({ size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+  const quadUB = device.createBuffer({ size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+  const compUB = device.createBuffer({ size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+
+  const singleBG = device.createBindGroup({ layout: singlePipe.getBindGroupLayout(0), entries: [{ binding: 0, resource: { buffer: singleUB } }] });
+  const quadBG = device.createBindGroup({ layout: quadPipe.getBindGroupLayout(0), entries: [{ binding: 0, resource: { buffer: quadUB } }] });
+
+  for (const { w, h } of sizes) {
+    const canvas = new OffscreenCanvas(w, h);
+    const ctx = canvas.getContext('webgpu');
+    ctx.configure({ device, format, alphaMode: 'premultiplied' });
+
+    const qw = Math.ceil(w / 2), qh = Math.ceil(h / 2);
+    const quadTex = device.createTexture({ size: [qw, qh], format: 'rgba8unorm', usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING });
+    const quadTV = quadTex.createView();
+
+    device.queue.writeBuffer(singleUB, 0, new Float32Array([w, h, 24, 0.5]));
+    device.queue.writeBuffer(quadUB, 0, new Float32Array([qw, qh, w, h, 24, 0.5, 0, 0]));
+    device.queue.writeBuffer(compUB, 0, new Float32Array([w, h, qw, qh]));
+
+    const instBG = device.createBindGroup({ layout: inst6vPipe.getBindGroupLayout(0), entries: [{ binding: 0, resource: quadTV }, { binding: 1, resource: sampler }] });
+    const compBG = device.createBindGroup({ layout: compositePipe.getBindGroupLayout(0), entries: [{ binding: 0, resource: { buffer: compUB } }, { binding: 1, resource: quadTV }, { binding: 2, resource: sampler }] });
+
+    const runTest = async (name, fn) => {
+      for (let i = 0; i < warmup; i++) fn();
+      await device.queue.onSubmittedWorkDone();
+      const start = performance.now();
+      for (let i = 0; i < iterations; i++) fn();
+      await device.queue.onSubmittedWorkDone();
+      return (performance.now() - start) / iterations;
+    };
+
+    const tA = await runTest('A', () => {
+      const enc = device.createCommandEncoder();
+      const p = enc.beginRenderPass({ colorAttachments: [{ view: ctx.getCurrentTexture().createView(), loadOp: 'clear', storeOp: 'store', clearValue: { r: 0.5, g: 0.5, b: 0.5, a: 1 } }] });
+      p.setPipeline(singlePipe); p.setBindGroup(0, singleBG); p.draw(3); p.end();
+      device.queue.submit([enc.finish()]);
+    });
+
+    const tB = await runTest('B', () => {
+      const enc = device.createCommandEncoder();
+      const p1 = enc.beginRenderPass({ colorAttachments: [{ view: quadTV, loadOp: 'clear', storeOp: 'store', clearValue: { r: 0.5, g: 0.5, b: 0.5, a: 1 } }] });
+      p1.setPipeline(quadPipe); p1.setBindGroup(0, quadBG); p1.draw(3); p1.end();
+      const p2 = enc.beginRenderPass({ colorAttachments: [{ view: ctx.getCurrentTexture().createView(), loadOp: 'clear', storeOp: 'store', clearValue: { r: 0.5, g: 0.5, b: 0.5, a: 1 } }] });
+      p2.setPipeline(inst6vPipe); p2.setBindGroup(0, instBG); p2.draw(6, 4); p2.end();
+      device.queue.submit([enc.finish()]);
+    });
+
+    const tC = await runTest('C', () => {
+      const enc = device.createCommandEncoder();
+      const p1 = enc.beginRenderPass({ colorAttachments: [{ view: quadTV, loadOp: 'clear', storeOp: 'store', clearValue: { r: 0.5, g: 0.5, b: 0.5, a: 1 } }] });
+      p1.setPipeline(quadPipe); p1.setBindGroup(0, quadBG); p1.draw(3); p1.end();
+      const p2 = enc.beginRenderPass({ colorAttachments: [{ view: ctx.getCurrentTexture().createView(), loadOp: 'clear', storeOp: 'store', clearValue: { r: 0.5, g: 0.5, b: 0.5, a: 1 } }] });
+      p2.setPipeline(inst4vPipe); p2.setBindGroup(0, instBG); p2.draw(4, 4); p2.end();
+      device.queue.submit([enc.finish()]);
+    });
+
+    const tD = await runTest('D', () => {
+      const enc = device.createCommandEncoder();
+      const p1 = enc.beginRenderPass({ colorAttachments: [{ view: quadTV, loadOp: 'clear', storeOp: 'store', clearValue: { r: 0.5, g: 0.5, b: 0.5, a: 1 } }] });
+      p1.setPipeline(quadPipe); p1.setBindGroup(0, quadBG); p1.draw(3); p1.end();
+      const p2 = enc.beginRenderPass({ colorAttachments: [{ view: ctx.getCurrentTexture().createView(), loadOp: 'clear', storeOp: 'store', clearValue: { r: 0.5, g: 0.5, b: 0.5, a: 1 } }] });
+      p2.setPipeline(compositePipe); p2.setBindGroup(0, compBG); p2.draw(3); p2.end();
+      device.queue.submit([enc.finish()]);
+    });
+
+    const times = { A: tA, B: tB, C: tC, D: tD };
+    const sorted = Object.entries(times).sort((a, b) => a[1] - b[1]);
+    const best = sorted[0][0];
+    const worst = sorted[sorted.length - 1][1];
+    const speedup = (worst / sorted[0][1]).toFixed(2);
+
+    log(`${w}x${h}: A=${tA.toFixed(3)}ms B=${tB.toFixed(3)}ms C=${tC.toFixed(3)}ms D=${tD.toFixed(3)}ms => ${best} wins (${speedup}x vs worst)`);
+
+    quadTex.destroy();
+  }
+
+  log('\nBenchmark complete!');
+}
+
+window.runBenchmark = runBenchmark;
+window.copyResults = () => navigator.clipboard.writeText(document.getElementById('log').textContent).then(() => log('\nCopied!'));
+
+log('Ready. Comparing 4 approaches to find the optimal one.');
+</script>
+</body>
+</html>

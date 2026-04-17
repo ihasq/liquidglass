@@ -251,7 +251,14 @@ import {
   calculateSmoothingBlur,
   supportsBackdropSvgFilter,
 } from './svg-builder';
-import { __DEV__, isLogEnabled } from '../../env';
+import {
+  __DEV__,
+  isLogEnabled,
+  _profilerStartFrame,
+  _profilerMarkStep,
+  _profilerEndStep,
+  _profilerEndFrame,
+} from '../../env';
 import {
   DEFAULT_PARAMS,
   type LiquidGlassParams,
@@ -521,8 +528,24 @@ export class FilterManager {
       for (const entry of entries) {
         const el = entry.target as HTMLElement;
         if (this._elements.has(el)) {
-          // Size changed - use cached borderRadius (no getComputedStyle needed)
-          this._scheduleRender(el);
+          // Extract border-box size from ResizeObserverEntry
+          // borderBoxSize includes padding (unlike contentRect which is content-only)
+          // This ensures filter matches the visual element bounds
+          let width: number;
+          let height: number;
+
+          if (entry.borderBoxSize && entry.borderBoxSize[0]) {
+            // Modern browsers: use borderBoxSize for accurate border-box dimensions
+            width = Math.ceil(entry.borderBoxSize[0].inlineSize);
+            height = Math.ceil(entry.borderBoxSize[0].blockSize);
+          } else {
+            // Fallback for older browsers: use getBoundingClientRect once per resize
+            const rect = el.getBoundingClientRect();
+            width = Math.ceil(rect.width);
+            height = Math.ceil(rect.height);
+          }
+
+          this._scheduleRender(el, width, height);
         }
       }
     });
@@ -723,12 +746,20 @@ export class FilterManager {
       frameCounter: 0,
       lastResizeTime: 0,
       pendingStretchTimeout: null,
+      // Stride-based throttling (integrated with refreshInterval)
+      strideBaseWidth: 0,
+      strideBaseHeight: 0,
+      lastIntervalTime: 0,
     };
   }
 
-  private _scheduleRender(element: HTMLElement): void {
+  private _scheduleRender(element: HTMLElement, width?: number, height?: number): void {
     const state = this._registry.get(element);
     if (!state) return;
+
+    // Use provided size or fall back to cached current size
+    const currentWidth = width ?? state.currentWidth;
+    const currentHeight = height ?? state.currentHeight;
 
     // Progressive rendering: cancel pending high-res render (resize is active)
     if (state.highResRenderTimeout) {
@@ -747,7 +778,7 @@ export class FilterManager {
 
     // Use refreshInterval frame skipping with progressive rendering
     // enableOptimization controls prediction, morph transitions, and adaptive interval in _render
-    this._renderWithRefreshRate(element, state);
+    this._renderWithRefreshRate(element, state, currentWidth, currentHeight);
   }
 
   /**
@@ -800,11 +831,7 @@ export class FilterManager {
    * Updates the feImage width/height attributes to stretch the existing
    * displacement and specular maps to the new element size
    */
-  private _stretchFilter(element: HTMLElement, state: FilterState): void {
-    const rect = element.getBoundingClientRect();
-    const width = Math.ceil(rect.width);
-    const height = Math.ceil(rect.height);
-
+  private _stretchFilter(state: FilterState, width: number, height: number): void {
     if (width <= 0 || height <= 0) return;
 
     // Update current size tracking
@@ -837,17 +864,22 @@ export class FilterManager {
   }
 
   /**
-   * Render with refreshInterval-based frame skipping
+   * Render with integrated stride/interval throttling
    *
-   * Implements frame skip logic:
-   * - refreshInterval=1: every frame renders
-   * - refreshInterval=2: frames 1,3,5,... render, 2,4,6,... stretch
-   * - refreshInterval=3: frames 1,4,7,... render, others stretch
+   * Unified flow:
+   * - Stride trigger: √((Δw/strideWidth)² + (Δh/strideHeight)²) >= 1 → render, reset interval timer
+   * - Interval trigger: refreshInterval frames elapsed → render, reset stride baseline
    *
-   * When resize stops, a final render is forced to ensure accuracy.
+   * Both triggers reset each other's measurement, preventing redundant renders.
+   * Skipped frames apply _stretchFilter() to maintain visual continuity.
+   *
+   * @param width - Current element width (from ResizeObserver, avoids getBoundingClientRect)
+   * @param height - Current element height (from ResizeObserver)
    */
-  private _renderWithRefreshRate(element: HTMLElement, state: FilterState): void {
+  private _renderWithRefreshRate(element: HTMLElement, state: FilterState, width: number, height: number): void {
     const refreshInterval = Math.max(1, Math.round(state.params.refreshInterval));
+    const strideWidth = Math.max(1, Math.round(state.params.strideWidth));
+    const strideHeight = Math.max(1, Math.round(state.params.strideHeight));
 
     // Cancel pending stretch timeout (resize is still active)
     if (state.pendingStretchTimeout) {
@@ -855,52 +887,93 @@ export class FilterManager {
       state.pendingStretchTimeout = null;
     }
 
+    const now = performance.now();
+
     // Increment frame counter
     state.frameCounter++;
-    state.lastResizeTime = performance.now();
+    state.lastResizeTime = now;
 
-    // Determine if this frame should do a full render
-    // Frame 1 always renders, then every Nth frame after that
-    const shouldRender = state.frameCounter % refreshInterval === 1 || refreshInterval === 1;
+    // Calculate normalized Euclidean distance from stride baseline
+    const deltaW = Math.abs(width - state.strideBaseWidth);
+    const deltaH = Math.abs(height - state.strideBaseHeight);
+    const normalizedDistance = Math.sqrt(
+      (deltaW / strideWidth) ** 2 + (deltaH / strideHeight) ** 2
+    );
+
+    // Determine trigger conditions
+    const strideTrigger = normalizedDistance >= 1;
+    // Interval trigger: render every N frames (frameCounter counts up from 1 after reset)
+    const intervalTrigger = state.frameCounter >= refreshInterval || refreshInterval === 1;
+
+    // First frame always renders (stride baseline not yet set)
+    const isFirstFrame = state.strideBaseWidth === 0 && state.strideBaseHeight === 0;
+
+    const shouldRender = isFirstFrame || strideTrigger || intervalTrigger;
 
     if (shouldRender) {
+      const triggerReason = isFirstFrame ? 'first-frame' : strideTrigger ? 'stride' : 'interval';
+
       if (__DEV__) {
-        logThrottle('RefreshRate - rendering frame', {
+        logThrottle('Unified throttle - rendering', {
+          trigger: triggerReason,
           frameCounter: state.frameCounter,
           refreshInterval,
+          stride: { width: strideWidth, height: strideHeight },
+          delta: { w: deltaW, h: deltaH },
+          normalizedDistance: normalizedDistance.toFixed(3),
           action: 'full render',
         });
       }
+
+      // Update current size before rendering
+      state.currentWidth = width;
+      state.currentHeight = height;
+
       // Render with low-res preview
       this._render(element, state.params, true);
+
+      // Reset BOTH measurements on any trigger (unified flow)
+      state.strideBaseWidth = width;
+      state.strideBaseHeight = height;
+      state.frameCounter = 0;
+      state.lastIntervalTime = now;
     } else {
       if (__DEV__) {
-        logThrottle('RefreshRate - stretching filter', {
+        logThrottle('Unified throttle - stretching', {
           frameCounter: state.frameCounter,
           refreshInterval,
+          stride: { width: strideWidth, height: strideHeight },
+          delta: { w: deltaW, h: deltaH },
+          normalizedDistance: normalizedDistance.toFixed(3),
           action: 'stretch only',
         });
       }
       // Stretch existing filter to new size (no map regeneration)
-      this._stretchFilter(element, state);
+      this._stretchFilter(state, width, height);
     }
 
     // Schedule final render after resize stops
+    // Capture current size for closure (avoids getBoundingClientRect in timeout)
+    const capturedWidth = width;
+    const capturedHeight = height;
+
     state.pendingStretchTimeout = setTimeout(() => {
       state.pendingStretchTimeout = null;
 
       // If last action was a stretch, force a final render for accuracy
-      const lastWasStretch = state.frameCounter % refreshInterval !== 1 && refreshInterval !== 1;
-      if (lastWasStretch) {
+      if (!shouldRender) {
         if (__DEV__) {
-          logThrottle('RefreshRate - forced final render', {
+          logThrottle('Unified throttle - forced final render', {
             frameCounter: state.frameCounter,
-            refreshInterval,
             reason: 'resize stopped after stretch',
           });
         }
         // Do a final low-res render to match current size
         this._render(element, state.params, true);
+
+        // Update stride baseline to current size (use state.currentWidth/Height which is updated by _render)
+        state.strideBaseWidth = state.currentWidth;
+        state.strideBaseHeight = state.currentHeight;
       }
 
       // Reset frame counter for next resize sequence
@@ -917,23 +990,52 @@ export class FilterManager {
    *                   If false, use displacementResolution for final quality
    */
   private async _render(element: HTMLElement, params: LiquidGlassParams, isLowRes: boolean = false): Promise<void> {
-    const rect = element.getBoundingClientRect();
-    const width = Math.ceil(rect.width);
-    const height = Math.ceil(rect.height);
+    // Start frame profiling
+    if (__DEV__) {
+      _profilerStartFrame();
+      _profilerMarkStep('getBounds');
+    }
 
-    if (width <= 0 || height <= 0) return;
+    const state = this._registry.get(element);
+    if (!state) {
+      if (__DEV__) _profilerEndFrame();
+      return;
+    }
+
+    // Use cached size from state (updated by ResizeObserver -> _scheduleRender -> _stretchFilter)
+    // Fall back to getBoundingClientRect only if state hasn't been initialized yet
+    let width = state.currentWidth;
+    let height = state.currentHeight;
+
+    if (width <= 0 || height <= 0) {
+      // First render or invalid cached size - must query DOM
+      const rect = element.getBoundingClientRect();
+      width = Math.ceil(rect.width);
+      height = Math.ceil(rect.height);
+      state.currentWidth = width;
+      state.currentHeight = height;
+    }
+
+    if (__DEV__) {
+      _profilerEndStep('getBounds');
+    }
+
+    if (width <= 0 || height <= 0) {
+      if (__DEV__) _profilerEndFrame();
+      return;
+    }
 
     // Check browser support
     if (!supportsBackdropSvgFilter()) {
       this._applyFallback(element);
+      if (__DEV__) _profilerEndFrame();
       return;
     }
 
-    const state = this._registry.get(element);
-    if (!state) return;
-
     // Get border-radius: only recalculate when style changed, otherwise use cache
     // This avoids expensive getComputedStyle calls during pure resize operations
+    if (__DEV__) _profilerMarkStep('getStyle');
+
     let borderRadius: number;
     if (state.pendingStyleChange) {
       const computedStyle = getComputedStyle(element);
@@ -944,6 +1046,8 @@ export class FilterManager {
       borderRadius = state.borderRadius;
     }
 
+    if (__DEV__) _profilerEndStep('getStyle');
+
     // Calculate effect parameters
     const edgeWidthRatio = 0.3 + (params.thickness / 100) * 0.4;
     const optimizationEnabled = this._isOptimizationEnabled(params);
@@ -952,6 +1056,8 @@ export class FilterManager {
     let baseWidth = width;
     let baseHeight = height;
     let renderRadius = borderRadius;
+
+    if (__DEV__) _profilerMarkStep('prediction');
 
     if (optimizationEnabled) {
       // Update size history for prediction (always, to maintain prediction accuracy)
@@ -1033,8 +1139,12 @@ export class FilterManager {
     state.isLowResPreview = isLowRes;
     state.currentResolutionScale = resolutionScale;
 
+    if (__DEV__) _profilerEndStep('prediction');
+
     // Generate displacement map at (potentially) reduced resolution
     // Select renderer based on params.displacementRenderer with automatic fallback
+    if (__DEV__) _profilerMarkStep('displacementMap');
+
     const dispOptions = {
       width: renderWidth,
       height: renderHeight,
@@ -1044,12 +1154,17 @@ export class FilterManager {
 
     const dispResult = await this._generateDisplacementMap(params.displacementRenderer, dispOptions);
 
+    if (__DEV__) _profilerEndStep('displacementMap');
+
     if (!dispResult) {
       console.warn('Liquid Glass: Displacement map generation failed (all backends)');
+      if (__DEV__) _profilerEndFrame();
       return;
     }
 
     // Generate specular map
+    if (__DEV__) _profilerMarkStep('specularMap');
+
     const specMap = generateSpecularMap({
       width: renderWidth,
       height: renderHeight,
@@ -1059,6 +1174,8 @@ export class FilterManager {
       saturation: 0,
       borderRadius: renderRadius,
     });
+
+    if (__DEV__) _profilerEndStep('specularMap');
 
     // Check if we can do a fast update with morphing
     // Morph transitions are only available when optimization is enabled
@@ -1085,6 +1202,8 @@ export class FilterManager {
     }
 
     const smoothingBlur = calculateSmoothingBlur(params.displacementSmoothing, resolutionScale);
+
+    if (__DEV__) _profilerMarkStep('svgUpdate');
 
     if (canFastUpdate) {
       // Fast path: only size changed - update displacement/specular maps
@@ -1138,9 +1257,12 @@ export class FilterManager {
             toSize: { w: baseWidth, h: baseHeight },
             duration: `${this._options.morphDuration}ms`,
           });
+          _profilerMarkStep('morph');
         }
 
         this._startMorphTransition(state);
+
+        if (__DEV__) _profilerEndStep('morph');
       }
     } else if (canParamUpdate) {
       // Medium path: params changed - update params and maps (no morph)
@@ -1176,6 +1298,8 @@ export class FilterManager {
       // Full creation (first time only) - creates DOM elements
       this._createFilter(element, state, params, dispResult.dataUrl, specMap.dataUrl, baseWidth, baseHeight, resolutionScale);
     }
+
+    if (__DEV__) _profilerEndStep('svgUpdate');
 
     // Update state
     state.currentWidth = width;
@@ -1214,6 +1338,9 @@ export class FilterManager {
         });
       }
     }
+
+    // End frame profiling
+    if (__DEV__) _profilerEndFrame();
   }
 
   private _createFilter(
@@ -1364,6 +1491,8 @@ export class FilterManager {
       a.displacementSmoothing === b.displacementSmoothing &&
       this._normalizeOptimization(a.enableOptimization) === this._normalizeOptimization(b.enableOptimization) &&
       a.refreshInterval === b.refreshInterval &&
+      a.strideWidth === b.strideWidth &&
+      a.strideHeight === b.strideHeight &&
       a.displacementRenderer === b.displacementRenderer
     );
   }

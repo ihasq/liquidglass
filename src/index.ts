@@ -13,7 +13,14 @@
 
 // === Environment Detection ===
 export { __DEV__, __VERSION__, lgc_dev } from './env';
-export type { LogCategory, LiquidGlassDevAPI } from './env';
+export type {
+  LogCategory,
+  LiquidGlassDevAPI,
+  RenderStep,
+  FrameTiming,
+  PerformanceProfiler,
+  LiquidGlassDevAPIWithProfiler,
+} from './env';
 
 // === Core Filter API ===
 export {

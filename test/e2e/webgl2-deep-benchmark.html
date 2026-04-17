@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>WebGL2 Deep Optimization Benchmark</title>
+  <style>
+    body { margin: 0; padding: 20px; background: #1a1a2e; color: #eee; font-family: monospace; }
+    #log { white-space: pre-wrap; font-size: 11px; background: #000; padding: 15px; border-radius: 8px; max-height: 700px; overflow-y: auto; }
+    button { padding: 12px 24px; margin: 10px 5px 10px 0; font-size: 14px; cursor: pointer; background: #4a4a8a; color: white; border: none; border-radius: 4px; }
+    button:hover { background: #5a5a9a; }
+    h2 { margin-bottom: 10px; }
+  </style>
+</head>
+<body>
+  <h2>WebGL2 Deep Optimization Search</h2>
+  <div>
+    <button onclick="runBenchmark()">Run Deep Benchmark</button>
+    <button onclick="copyResults()">Copy Results</button>
+  </div>
+  <div id="log"></div>
+
+<script>
+const log = (msg) => {
+  const el = document.getElementById('log');
+  el.textContent += msg + '\n';
+  el.scrollTop = el.scrollHeight;
+};
+
+// ============================================================================
+// Shared shader code
+// ============================================================================
+const DISPLACEMENT_CORE = `
+const float LOG2E = 1.4426950408889634;
+const float LN2 = 0.6931471805599453;
+
+float fastExp(float x) {
+    if (x < -87.0) return 0.0;
+    if (x > 0.0) return 1.0;
+    float k = floor(x * LOG2E);
+    float r = x - k * LN2;
+    float r2 = r * r;
+    return (1.0 + r + r2 * 0.5 + r2 * r * 0.16666667 + r2 * r2 * 0.04166667) * exp2(k);
+}
+
+vec2 computeDisplacement(float px, float py, float halfW, float halfH, float r, float neg3ew, float ctX, float ctY) {
+    float dx = abs(px - halfW + 0.5);
+    float dy = abs(py - halfH + 0.5);
+    float sx = px >= halfW ? 1.0 : -1.0;
+    float sy = py >= halfH ? 1.0 : -1.0;
+
+    float dist; float dirX = 0.0; float dirY = 0.0;
+
+    if (dx > ctX && dy > ctY) {
+        float cx = dx - ctX; float cy = dy - ctY;
+        float cd = sqrt(cx * cx + cy * cy);
+        dist = r - cd;
+        if (cd > 0.001) { float inv = 1.0 / cd; dirX = cx * inv * sx; dirY = cy * inv * sy; }
+    } else {
+        float distX = halfW - dx; float distY = halfH - dy;
+        if (distX < distY) { dist = distX; dirX = sx; } else { dist = distY; dirY = sy; }
+    }
+
+    float mag = fastExp(max(dist, 0.0) * neg3ew);
+    return vec2(-dirX * mag, -dirY * mag);
+}
+`;
+
+// ============================================================================
+// A: Single-Pass baseline
+// ============================================================================
+const A_VERT = `#version 300 es
+void main() {
+    vec2 pos[3] = vec2[3](vec2(-1,-1), vec2(3,-1), vec2(-1,3));
+    gl_Position = vec4(pos[gl_VertexID], 0, 1);
+}`;
+
+const A_FRAG = `#version 300 es
+precision highp float;
+uniform vec2 u_res;
+uniform float u_radius;
+uniform float u_edge;
+out vec4 fragColor;
+${DISPLACEMENT_CORE}
+void main() {
+    float halfW = u_res.x * 0.5, halfH = u_res.y * 0.5;
+    float minHalf = min(halfW, halfH);
+    float r = min(u_radius, minHalf);
+    float neg3ew = -3.0 / (minHalf * u_edge);
+    vec2 d = computeDisplacement(gl_FragCoord.x - 0.5, gl_FragCoord.y - 0.5, halfW, halfH, r, neg3ew, halfW - r, halfH - r);
+    fragColor = vec4(clamp(floor(128.0 + d.x * 127.0), 0.0, 255.0) / 255.0,
+                     clamp(floor(128.0 + d.y * 127.0), 0.0, 255.0) / 255.0, 0.5, 1.0);
+}`;
+
+// ============================================================================
+// B: 2-Pass with fullscreen composite (original approach)
+// ============================================================================
+const B_QUAD_FRAG = `#version 300 es
+precision highp float;
+uniform vec2 u_quadRes;
+uniform vec2 u_fullRes;
+uniform float u_radius;
+uniform float u_edge;
+out vec4 fragColor;
+${DISPLACEMENT_CORE}
+void main() {
+    float halfW = u_fullRes.x * 0.5, halfH = u_fullRes.y * 0.5;
+    float minHalf = min(halfW, halfH);
+    float r = min(u_radius, minHalf);
+    float neg3ew = -3.0 / (minHalf * u_edge);
+    float px = gl_FragCoord.x - 0.5, py = gl_FragCoord.y - 0.5;
+    float dist, dirX = 0.0, dirY = 0.0;
+    float ctX = halfW - r, ctY = halfH - r;
+    if (px > ctX && py > ctY) {
+        float cx = px - ctX, cy = py - ctY;
+        float cd = sqrt(cx*cx + cy*cy);
+        dist = r - cd;
+        if (cd > 0.001) { float inv = 1.0/cd; dirX = cx*inv; dirY = cy*inv; }
+    } else {
+        float distX = halfW - px, distY = halfH - py;
+        if (distX < distY) { dist = distX; dirX = 1.0; } else { dist = distY; dirY = 1.0; }
+    }
+    float mag = fastExp(max(dist, 0.0) * neg3ew);
+    fragColor = vec4(clamp(floor(128.0 - dirX*mag*127.0), 0.0, 255.0)/255.0,
+                     clamp(floor(128.0 - dirY*mag*127.0), 0.0, 255.0)/255.0, 0.5, 1.0);
+}`;
+
+const B_COMP_FRAG = `#version 300 es
+precision highp float;
+uniform sampler2D u_tex;
+uniform vec2 u_fullRes;
+uniform vec2 u_quadRes;
+out vec4 fragColor;
+void main() {
+    float px = gl_FragCoord.x - 0.5, py = gl_FragCoord.y - 0.5;
+    float cx = floor(u_fullRes.x * 0.5), cy = floor(u_fullRes.y * 0.5);
+    bool isR = px >= cx, isB = py >= cy;
+    float qx, qy; bool invR = false, invG = false;
+    if (isR && isB) { qx = px - cx; qy = py - cy; }
+    else if (!isR && isB) { qx = cx - 1.0 - px; qy = py - cy; invR = true; }
+    else if (isR && !isB) { qx = px - cx; qy = cy - 1.0 - py; invG = true; }
+    else { qx = cx - 1.0 - px; qy = cy - 1.0 - py; invR = true; invG = true; }
+    vec2 uv = (vec2(clamp(qx, 0.0, u_quadRes.x-1.0), clamp(qy, 0.0, u_quadRes.y-1.0)) + 0.5) / u_quadRes;
+    vec4 c = texture(u_tex, uv);
+    if (invR) c.r = 1.0 - c.r;
+    if (invG) c.g = 1.0 - c.g;
+    fragColor = c;
+}`;
+
+// ============================================================================
+// C: 2-Pass with instanced triangle strip (4v × 4 instances)
+// ============================================================================
+const C_INST_VERT = `#version 300 es
+flat out int v_qid;
+out vec2 v_uv;
+void main() {
+    vec2 v[4] = vec2[4](vec2(0,0), vec2(1,0), vec2(0,1), vec2(1,1));
+    vec2 lp = v[gl_VertexID];
+    float qx = float(gl_InstanceID & 1), qy = float(gl_InstanceID >> 1);
+    gl_Position = vec4((lp.x + qx) - 1.0, 1.0 - (lp.y + qy), 0, 1);
+    v_qid = gl_InstanceID;
+    v_uv = lp;
+}`;
+
+const C_INST_FRAG = `#version 300 es
+precision highp float;
+uniform sampler2D u_tex;
+flat in int v_qid;
+in vec2 v_uv;
+out vec4 fragColor;
+void main() {
+    vec2 uv = v_uv;
+    bool mx = (v_qid & 1) == 0, my = v_qid < 2;
+    if (mx) uv.x = 1.0 - uv.x;
+    if (my) uv.y = 1.0 - uv.y;
+    vec4 c = texture(u_tex, uv);
+    if (mx) c.r = 1.0 - c.r;
+    if (my) c.g = 1.0 - c.g;
+    fragColor = c;
+}`;
+
+// ============================================================================
+// D: 4 separate draw calls (no instancing overhead)
+// ============================================================================
+const D_QUAD_VERT = `#version 300 es
+precision highp int;
+uniform int u_qid;
+out vec2 v_uv;
+void main() {
+    vec2 v[4] = vec2[4](vec2(0,0), vec2(1,0), vec2(0,1), vec2(1,1));
+    vec2 lp = v[gl_VertexID];
+    float qx = float(u_qid & 1), qy = float(u_qid >> 1);
+    gl_Position = vec4((lp.x + qx) - 1.0, 1.0 - (lp.y + qy), 0, 1);
+    v_uv = lp;
+}`;
+
+const D_QUAD_FRAG = `#version 300 es
+precision highp float;
+precision highp int;
+uniform sampler2D u_tex;
+uniform int u_qid;
+in vec2 v_uv;
+out vec4 fragColor;
+void main() {
+    vec2 uv = v_uv;
+    bool mx = (u_qid & 1) == 0, my = u_qid < 2;
+    if (mx) uv.x = 1.0 - uv.x;
+    if (my) uv.y = 1.0 - uv.y;
+    vec4 c = texture(u_tex, uv);
+    if (mx) c.r = 1.0 - c.r;
+    if (my) c.g = 1.0 - c.g;
+    fragColor = c;
+}`;
+
+// ============================================================================
+// E: UBO-based uniforms (reduce uniform call overhead)
+// ============================================================================
+const E_UBO_VERT = `#version 300 es
+layout(std140) uniform Params { vec4 resRadius; float edge; };
+void main() {
+    vec2 pos[3] = vec2[3](vec2(-1,-1), vec2(3,-1), vec2(-1,3));
+    gl_Position = vec4(pos[gl_VertexID], 0, 1);
+}`;
+
+const E_UBO_FRAG = `#version 300 es
+precision highp float;
+layout(std140) uniform Params { vec4 resRadius; float edge; };
+out vec4 fragColor;
+${DISPLACEMENT_CORE}
+void main() {
+    float halfW = resRadius.x * 0.5, halfH = resRadius.y * 0.5;
+    float minHalf = min(halfW, halfH);
+    float r = min(resRadius.z, minHalf);
+    float neg3ew = -3.0 / (minHalf * edge);
+    vec2 d = computeDisplacement(gl_FragCoord.x - 0.5, gl_FragCoord.y - 0.5, halfW, halfH, r, neg3ew, halfW - r, halfH - r);
+    fragColor = vec4(clamp(floor(128.0 + d.x * 127.0), 0.0, 255.0) / 255.0,
+                     clamp(floor(128.0 + d.y * 127.0), 0.0, 255.0) / 255.0, 0.5, 1.0);
+}`;
+
+// ============================================================================
+// F: Symmetry-aware single-pass (compute BR, derive others mathematically)
+// ============================================================================
+const F_SYM_FRAG = `#version 300 es
+precision highp float;
+uniform vec2 u_res;
+uniform float u_radius;
+uniform float u_edge;
+out vec4 fragColor;
+${DISPLACEMENT_CORE}
+void main() {
+    float halfW = u_res.x * 0.5, halfH = u_res.y * 0.5;
+    float minHalf = min(halfW, halfH);
+    float r = min(u_radius, minHalf);
+    float neg3ew = -3.0 / (minHalf * u_edge);
+    float ctX = halfW - r, ctY = halfH - r;
+
+    float px = gl_FragCoord.x - 0.5, py = gl_FragCoord.y - 0.5;
+
+    // Mirror to BR quadrant for computation
+    float mx = px < halfW ? (halfW * 2.0 - 1.0 - px) : px;
+    float my = py < halfH ? (halfH * 2.0 - 1.0 - py) : py;
+
+    // Compute in BR space
+    float dx = mx - halfW + 0.5;
+    float dy = my - halfH + 0.5;
+
+    float dist, dirX = 0.0, dirY = 0.0;
+    if (dx > ctX - halfW + 0.5 && dy > ctY - halfH + 0.5) {
+        float cx = dx - (ctX - halfW + 0.5);
+        float cy = dy - (ctY - halfH + 0.5);
+        float cd = sqrt(cx*cx + cy*cy);
+        dist = r - cd;
+        if (cd > 0.001) { float inv = 1.0/cd; dirX = cx*inv; dirY = cy*inv; }
+    } else {
+        float distX = halfW - dx;
+        float distY = halfH - dy;
+        if (distX < distY) { dist = distX; dirX = 1.0; } else { dist = distY; dirY = 1.0; }
+    }
+
+    float mag = fastExp(max(dist, 0.0) * neg3ew);
+    float dispX = -dirX * mag;
+    float dispY = -dirY * mag;
+
+    // Apply sign based on original quadrant
+    if (px < halfW) dispX = -dispX;
+    if (py < halfH) dispY = -dispY;
+
+    fragColor = vec4(clamp(floor(128.0 + dispX * 127.0), 0.0, 255.0) / 255.0,
+                     clamp(floor(128.0 + dispY * 127.0), 0.0, 255.0) / 255.0, 0.5, 1.0);
+}`;
+
+// ============================================================================
+// G: R8 texture format (smaller memory bandwidth)
+// ============================================================================
+// Uses same shaders as C but with R8 texture
+
+// ============================================================================
+// H: Render to half-res, sample with bilinear
+// ============================================================================
+const H_HALF_FRAG = `#version 300 es
+precision highp float;
+uniform sampler2D u_tex;
+out vec4 fragColor;
+void main() {
+    vec2 uv = gl_FragCoord.xy / vec2(textureSize(u_tex, 0) * 2);
+    fragColor = texture(u_tex, uv);
+}`;
+
+// ============================================================================
+// Utilities
+// ============================================================================
+function compileShader(gl, type, src) {
+    const s = gl.createShader(type);
+    gl.shaderSource(s, src);
+    gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+        console.error('Shader error:', src.substring(0, 100), gl.getShaderInfoLog(s));
+        throw new Error(gl.getShaderInfoLog(s));
+    }
+    return s;
+}
+
+function createProg(gl, vs, fs) {
+    const p = gl.createProgram();
+    gl.attachShader(p, vs);
+    gl.attachShader(p, fs);
+    gl.linkProgram(p);
+    if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+    return p;
+}
+
+async function runBenchmark() {
+    log('=== WebGL2 DEEP OPTIMIZATION BENCHMARK ===\n');
+
+    const canvas = document.createElement('canvas');
+    const gl = canvas.getContext('webgl2', { antialias: false, depth: false, stencil: false, preserveDrawingBuffer: true });
+    if (!gl) { log('ERROR: WebGL2 not available'); return; }
+
+    log('WebGL2: ' + gl.getParameter(gl.RENDERER));
+    log('Max Texture Size: ' + gl.getParameter(gl.MAX_TEXTURE_SIZE));
+
+    const sizes = [{ w: 256, h: 256 }, { w: 512, h: 512 }, { w: 1024, h: 1024 }];
+    const iterations = 500;
+    const warmup = 100;
+
+    log(`\nTesting ${sizes.length} sizes × ${iterations} iterations (${warmup} warmup)\n`);
+    log('Approaches:');
+    log('  A: Single-Pass (baseline)');
+    log('  B: 2-Pass + Fullscreen composite');
+    log('  C: 2-Pass + Instanced strip (4v×4)');
+    log('  D: 2-Pass + 4 separate draws');
+    log('  E: Single-Pass + UBO');
+    log('  F: Single-Pass Symmetry-aware');
+    log('');
+
+    const vao = gl.createVertexArray();
+    gl.bindVertexArray(vao);
+
+    // Compile all programs
+    const fsVert = compileShader(gl, gl.VERTEX_SHADER, A_VERT);
+
+    const progA = createProg(gl, fsVert, compileShader(gl, gl.FRAGMENT_SHADER, A_FRAG));
+    const progBq = createProg(gl, fsVert, compileShader(gl, gl.FRAGMENT_SHADER, B_QUAD_FRAG));
+    const progBc = createProg(gl, fsVert, compileShader(gl, gl.FRAGMENT_SHADER, B_COMP_FRAG));
+    const progCi = createProg(gl, compileShader(gl, gl.VERTEX_SHADER, C_INST_VERT), compileShader(gl, gl.FRAGMENT_SHADER, C_INST_FRAG));
+    const progDv = compileShader(gl, gl.VERTEX_SHADER, D_QUAD_VERT);
+    const progDf = compileShader(gl, gl.FRAGMENT_SHADER, D_QUAD_FRAG);
+    const progD = createProg(gl, progDv, progDf);
+    const progE = createProg(gl, compileShader(gl, gl.VERTEX_SHADER, E_UBO_VERT), compileShader(gl, gl.FRAGMENT_SHADER, E_UBO_FRAG));
+    const progF = createProg(gl, fsVert, compileShader(gl, gl.FRAGMENT_SHADER, F_SYM_FRAG));
+
+    // UBO setup for E
+    const ubo = gl.createBuffer();
+    gl.bindBuffer(gl.UNIFORM_BUFFER, ubo);
+    gl.bufferData(gl.UNIFORM_BUFFER, 32, gl.DYNAMIC_DRAW);
+    const uboIndex = gl.getUniformBlockIndex(progE, 'Params');
+    gl.uniformBlockBinding(progE, uboIndex, 0);
+    gl.bindBufferBase(gl.UNIFORM_BUFFER, 0, ubo);
+
+    const results = {};
+
+    for (const { w, h } of sizes) {
+        canvas.width = w;
+        canvas.height = h;
+        const qw = Math.ceil(w / 2), qh = Math.ceil(h / 2);
+
+        // Create FBO and texture
+        const tex = gl.createTexture();
+        gl.bindTexture(gl.TEXTURE_2D, tex);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, qw, qh, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+        const fbo = gl.createFramebuffer();
+        gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+
+        const runTest = (name, fn) => {
+            // Warmup
+            for (let i = 0; i < warmup; i++) fn();
+            gl.finish();
+
+            const start = performance.now();
+            for (let i = 0; i < iterations; i++) fn();
+            gl.finish();
+            return (performance.now() - start) / iterations;
+        };
+
+        // A: Single-Pass
+        const tA = runTest('A', () => {
+            gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+            gl.viewport(0, 0, w, h);
+            gl.useProgram(progA);
+            gl.uniform2f(gl.getUniformLocation(progA, 'u_res'), w, h);
+            gl.uniform1f(gl.getUniformLocation(progA, 'u_radius'), 24);
+            gl.uniform1f(gl.getUniformLocation(progA, 'u_edge'), 0.5);
+            gl.drawArrays(gl.TRIANGLES, 0, 3);
+        });
+
+        // B: 2-Pass + Fullscreen
+        const tB = runTest('B', () => {
+            gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+            gl.viewport(0, 0, qw, qh);
+            gl.useProgram(progBq);
+            gl.uniform2f(gl.getUniformLocation(progBq, 'u_quadRes'), qw, qh);
+            gl.uniform2f(gl.getUniformLocation(progBq, 'u_fullRes'), w, h);
+            gl.uniform1f(gl.getUniformLocation(progBq, 'u_radius'), 24);
+            gl.uniform1f(gl.getUniformLocation(progBq, 'u_edge'), 0.5);
+            gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+            gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+            gl.viewport(0, 0, w, h);
+            gl.useProgram(progBc);
+            gl.activeTexture(gl.TEXTURE0);
+            gl.bindTexture(gl.TEXTURE_2D, tex);
+            gl.uniform1i(gl.getUniformLocation(progBc, 'u_tex'), 0);
+            gl.uniform2f(gl.getUniformLocation(progBc, 'u_fullRes'), w, h);
+            gl.uniform2f(gl.getUniformLocation(progBc, 'u_quadRes'), qw, qh);
+            gl.drawArrays(gl.TRIANGLES, 0, 3);
+        });
+
+        // C: 2-Pass + Instanced
+        const tC = runTest('C', () => {
+            gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+            gl.viewport(0, 0, qw, qh);
+            gl.useProgram(progBq);
+            gl.uniform2f(gl.getUniformLocation(progBq, 'u_quadRes'), qw, qh);
+            gl.uniform2f(gl.getUniformLocation(progBq, 'u_fullRes'), w, h);
+            gl.uniform1f(gl.getUniformLocation(progBq, 'u_radius'), 24);
+            gl.uniform1f(gl.getUniformLocation(progBq, 'u_edge'), 0.5);
+            gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+            gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+            gl.viewport(0, 0, w, h);
+            gl.useProgram(progCi);
+            gl.activeTexture(gl.TEXTURE0);
+            gl.bindTexture(gl.TEXTURE_2D, tex);
+            gl.uniform1i(gl.getUniformLocation(progCi, 'u_tex'), 0);
+            gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, 4);
+        });
+
+        // D: 2-Pass + 4 separate draws
+        const tD = runTest('D', () => {
+            gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+            gl.viewport(0, 0, qw, qh);
+            gl.useProgram(progBq);
+            gl.uniform2f(gl.getUniformLocation(progBq, 'u_quadRes'), qw, qh);
+            gl.uniform2f(gl.getUniformLocation(progBq, 'u_fullRes'), w, h);
+            gl.uniform1f(gl.getUniformLocation(progBq, 'u_radius'), 24);
+            gl.uniform1f(gl.getUniformLocation(progBq, 'u_edge'), 0.5);
+            gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+            gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+            gl.viewport(0, 0, w, h);
+            gl.useProgram(progD);
+            gl.activeTexture(gl.TEXTURE0);
+            gl.bindTexture(gl.TEXTURE_2D, tex);
+            gl.uniform1i(gl.getUniformLocation(progD, 'u_tex'), 0);
+            for (let q = 0; q < 4; q++) {
+                gl.uniform1i(gl.getUniformLocation(progD, 'u_qid'), q);
+                gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+            }
+        });
+
+        // E: Single-Pass + UBO
+        const uboData = new Float32Array([w, h, 24, 0, 0.5, 0, 0, 0]);
+        const tE = runTest('E', () => {
+            gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+            gl.viewport(0, 0, w, h);
+            gl.useProgram(progE);
+            gl.bindBuffer(gl.UNIFORM_BUFFER, ubo);
+            gl.bufferSubData(gl.UNIFORM_BUFFER, 0, uboData);
+            gl.drawArrays(gl.TRIANGLES, 0, 3);
+        });
+
+        // F: Single-Pass Symmetry
+        const tF = runTest('F', () => {
+            gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+            gl.viewport(0, 0, w, h);
+            gl.useProgram(progF);
+            gl.uniform2f(gl.getUniformLocation(progF, 'u_res'), w, h);
+            gl.uniform1f(gl.getUniformLocation(progF, 'u_radius'), 24);
+            gl.uniform1f(gl.getUniformLocation(progF, 'u_edge'), 0.5);
+            gl.drawArrays(gl.TRIANGLES, 0, 3);
+        });
+
+        const times = { A: tA, B: tB, C: tC, D: tD, E: tE, F: tF };
+        const sorted = Object.entries(times).sort((a, b) => a[1] - b[1]);
+        const best = sorted[0][0];
+        const worst = sorted[sorted.length - 1][1];
+        const speedup = (worst / sorted[0][1]).toFixed(2);
+
+        results[`${w}x${h}`] = times;
+
+        log(`${w}x${h}:`);
+        for (const [k, v] of sorted) {
+            const bar = '█'.repeat(Math.round(v / worst * 20));
+            log(`  ${k}: ${v.toFixed(4)}ms ${bar}${k === best ? ' ★ BEST' : ''}`);
+        }
+        log('');
+
+        gl.deleteTexture(tex);
+        gl.deleteFramebuffer(fbo);
+    }
+
+    log('=== SUMMARY ===');
+    for (const [size, times] of Object.entries(results)) {
+        const sorted = Object.entries(times).sort((a, b) => a[1] - b[1]);
+        const best = sorted[0];
+        log(`${size}: Winner = ${best[0]} (${best[1].toFixed(4)}ms)`);
+    }
+
+    log('\nBenchmark complete!');
+}
+
+window.runBenchmark = runBenchmark;
+window.copyResults = () => navigator.clipboard.writeText(document.getElementById('log').textContent).then(() => log('\nCopied!'));
+
+log('Ready. Click "Run Deep Benchmark" for comprehensive WebGL2 optimization search.');
+log('');
+log('Testing 6 approaches:');
+log('  A: Single-Pass baseline');
+log('  B: 2-Pass + Fullscreen composite');
+log('  C: 2-Pass + Instanced triangle strip');
+log('  D: 2-Pass + 4 separate draw calls');
+log('  E: Single-Pass + UBO uniforms');
+log('  F: Single-Pass with symmetry optimization');
+</script>
+</body>
+</html>

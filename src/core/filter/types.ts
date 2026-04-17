@@ -118,6 +118,11 @@ export interface FilterState {
   frameCounter: number;            // Counts frames since last full render
   lastResizeTime: number;          // Timestamp of last resize event
   pendingStretchTimeout: ReturnType<typeof setTimeout> | null;  // Timeout for final render after resize stops
+
+  // Stride-based throttling (integrated with refreshInterval)
+  strideBaseWidth: number;         // Width at last render (stride baseline)
+  strideBaseHeight: number;        // Height at last render (stride baseline)
+  lastIntervalTime: number;        // Timestamp of last interval-based render
 }
 
 /**

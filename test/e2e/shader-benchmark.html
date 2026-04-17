@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Shader Approach Benchmark</title>
+  <style>
+    body { margin: 0; padding: 20px; background: #111; color: #0f0; font-family: monospace; font-size: 12px; }
+    .result { margin: 5px 0; }
+    .header { color: #0ff; font-weight: bold; margin-top: 15px; }
+    canvas { border: 1px solid #333; margin: 5px; }
+    #canvases { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px; }
+  </style>
+</head>
+<body>
+  <h2>Shader Composite Approach Benchmark</h2>
+  <div id="log"></div>
+  <div id="canvases"></div>
+
+  <script type="module">
+    const log = (msg, isHeader = false) => {
+      const div = document.createElement('div');
+      div.className = isHeader ? 'header' : 'result';
+      div.textContent = msg;
+      document.getElementById('log').appendChild(div);
+      console.log(msg);
+    };
+
+    // ============================================================
+    // Shaders
+    // ============================================================
+
+    const FULLSCREEN_VERT = `
+      struct VertexOutput {
+        @builtin(position) position: vec4<f32>,
+        @location(0) texCoord: vec2<f32>,
+      }
+
+      @vertex
+      fn main(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
+        var positions = array<vec2<f32>, 3>(
+          vec2<f32>(-1.0, -3.0),
+          vec2<f32>(-1.0, 1.0),
+          vec2<f32>(3.0, 1.0)
+        );
+        var uvs = array<vec2<f32>, 3>(
+          vec2<f32>(0.0, 2.0),
+          vec2<f32>(0.0, 0.0),
+          vec2<f32>(2.0, 0.0)
+        );
+        var output: VertexOutput;
+        output.position = vec4<f32>(positions[vertexIndex], 0.0, 1.0);
+        output.texCoord = uvs[vertexIndex];
+        return output;
+      }
+    `;
+
+    // Approach 1: Current (2-pass with composite shader)
+    const QUADRANT_FRAG = `
+      struct Uniforms {
+        quadResolution: vec2<f32>,
+        fullResolution: vec2<f32>,
+        borderRadius: f32,
+        edgeWidthRatio: f32,
+      }
+      @group(0) @binding(0) var<uniform> u: Uniforms;
+
+      fn fastExp(x: f32) -> f32 {
+        let t = 1.0 + x * 0.03125;
+        let t2 = t * t; let t4 = t2 * t2; let t8 = t4 * t4;
+        let t16 = t8 * t8; let t32 = t16 * t16;
+        return t32;
+      }
+
+      @fragment
+      fn main(@builtin(position) fragCoord: vec4<f32>) -> @location(0) vec4<f32> {
+        let px = fragCoord.x - 0.5;
+        let py = fragCoord.y - 0.5;
+        let fullW = u.fullResolution.x;
+        let fullH = u.fullResolution.y;
+        let globalX = px + floor(fullW * 0.5);
+        let globalY = py + floor(fullH * 0.5);
+        let halfW = fullW * 0.5;
+        let halfH = fullH * 0.5;
+        let r = min(u.borderRadius, min(halfW, halfH));
+        let innerW = halfW - r;
+        let innerH = halfH - r;
+        let dx = globalX - halfW;
+        let dy = globalY - halfH;
+        let absX = abs(dx);
+        let absY = abs(dy);
+        var edgeDist: f32 = 0.0;
+        if (absX <= innerW && absY <= innerH) {
+          edgeDist = min(halfW - absX, halfH - absY);
+        } else if (absX <= innerW) {
+          edgeDist = halfH - absY;
+        } else if (absY <= innerH) {
+          edgeDist = halfW - absX;
+        } else {
+          let cornerX = absX - innerW;
+          let cornerY = absY - innerH;
+          edgeDist = r - sqrt(cornerX * cornerX + cornerY * cornerY);
+        }
+        let edgeWidth = max(halfW, halfH) * u.edgeWidthRatio;
+        let edgeNorm = clamp(edgeDist / edgeWidth, 0.0, 1.0);
+        let intensity = fastExp(-3.0 * edgeNorm);
+        let dispX = intensity * sign(dx) * 0.5 + 0.5;
+        let dispY = intensity * sign(dy) * 0.5 + 0.5;
+        return vec4<f32>(dispX, dispY, 0.5, 1.0);
+      }
+    `;
+
+    const COMPOSITE_FRAG = `
+      struct Uniforms {
+        fullResolution: vec2<f32>,
+        quadResolution: vec2<f32>,
+      }
+      @group(0) @binding(0) var<uniform> u: Uniforms;
+      @group(0) @binding(1) var quadTex: texture_2d<f32>;
+      @group(0) @binding(2) var quadSampler: sampler;
+
+      @fragment
+      fn main(@builtin(position) fragCoord: vec4<f32>) -> @location(0) vec4<f32> {
+        let px = fragCoord.x - 0.5;
+        let py = fragCoord.y - 0.5;
+        let centerX = floor(u.fullResolution.x * 0.5);
+        let centerY = floor(u.fullResolution.y * 0.5);
+        let isRight = px >= centerX;
+        let isBottom = py >= centerY;
+        var qx: f32; var qy: f32;
+        var invR = false; var invG = false;
+        if (isRight && isBottom) { qx = px - centerX; qy = py - centerY; }
+        else if (!isRight && isBottom) { qx = centerX - 1.0 - px; qy = py - centerY; invR = true; }
+        else if (isRight && !isBottom) { qx = px - centerX; qy = centerY - 1.0 - py; invG = true; }
+        else { qx = centerX - 1.0 - px; qy = centerY - 1.0 - py; invR = true; invG = true; }
+        qx = clamp(qx, 0.0, u.quadResolution.x - 1.0);
+        qy = clamp(qy, 0.0, u.quadResolution.y - 1.0);
+        let tc = (vec2<f32>(qx, qy) + 0.5) / u.quadResolution;
+        var c = textureSample(quadTex, quadSampler, tc);
+        if (invR) { c.r = 1.0 - c.r; }
+        if (invG) { c.g = 1.0 - c.g; }
+        return c;
+      }
+    `;
+
+    // Approach 2: Instanced rendering (4 instances)
+    const INSTANCED_VERT = `
+      struct VertexOutput {
+        @builtin(position) position: vec4<f32>,
+        @location(0) texCoord: vec2<f32>,
+        @location(1) @interpolate(flat) instanceId: u32,
+      }
+      struct Uniforms {
+        fullResolution: vec2<f32>,
+        quadResolution: vec2<f32>,
+      }
+      @group(0) @binding(0) var<uniform> u: Uniforms;
+
+      @vertex
+      fn main(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> VertexOutput {
+        // 4 instances: TL=0, TR=1, BL=2, BR=3
+        let halfW = u.fullResolution.x * 0.5;
+        let halfH = u.fullResolution.y * 0.5;
+        // Quad vertices for each instance
+        var positions = array<vec2<f32>, 3>(
+          vec2<f32>(-1.0, -3.0),
+          vec2<f32>(-1.0, 1.0),
+          vec2<f32>(3.0, 1.0)
+        );
+        // Offset based on instance
+        let offsetX = select(-1.0, 0.0, ii == 1u || ii == 3u);
+        let offsetY = select(-1.0, 0.0, ii >= 2u);
+        var pos = positions[vi];
+        pos = pos * 0.5; // Scale to half
+        pos.x += offsetX + 0.5;
+        pos.y += offsetY + 0.5;
+        var output: VertexOutput;
+        output.position = vec4<f32>(pos, 0.0, 1.0);
+        // UV: mirror based on quadrant
+        var uv = (positions[vi].xy + 1.0) * 0.5;
+        if (ii == 0u || ii == 2u) { uv.x = 1.0 - uv.x; } // Left: flip X
+        if (ii == 0u || ii == 1u) { uv.y = 1.0 - uv.y; } // Top: flip Y
+        output.texCoord = uv;
+        output.instanceId = ii;
+        return output;
+      }
+    `;
+
+    const INSTANCED_FRAG = `
+      @group(0) @binding(1) var quadTex: texture_2d<f32>;
+      @group(0) @binding(2) var quadSampler: sampler;
+
+      @fragment
+      fn main(@location(0) tc: vec2<f32>, @location(1) @interpolate(flat) ii: u32) -> @location(0) vec4<f32> {
+        var c = textureSample(quadTex, quadSampler, tc);
+        // TL=0: invert RG, TR=1: invert G, BL=2: invert R, BR=3: none
+        if (ii == 0u) { c.r = 1.0 - c.r; c.g = 1.0 - c.g; }
+        else if (ii == 1u) { c.g = 1.0 - c.g; }
+        else if (ii == 2u) { c.r = 1.0 - c.r; }
+        return c;
+      }
+    `;
+
+    // Approach 3: Single-pass full computation (no intermediate texture)
+    const SINGLEPASS_FRAG = `
+      struct Uniforms {
+        fullResolution: vec2<f32>,
+        borderRadius: f32,
+        edgeWidthRatio: f32,
+      }
+      @group(0) @binding(0) var<uniform> u: Uniforms;
+
+      fn fastExp(x: f32) -> f32 {
+        let t = 1.0 + x * 0.03125;
+        let t2 = t * t; let t4 = t2 * t2; let t8 = t4 * t4;
+        let t16 = t8 * t8; let t32 = t16 * t16;
+        return t32;
+      }
+
+      @fragment
+      fn main(@builtin(position) fragCoord: vec4<f32>) -> @location(0) vec4<f32> {
+        let px = fragCoord.x - 0.5;
+        let py = fragCoord.y - 0.5;
+        let fullW = u.fullResolution.x;
+        let fullH = u.fullResolution.y;
+        let halfW = fullW * 0.5;
+        let halfH = fullH * 0.5;
+        let r = min(u.borderRadius, min(halfW, halfH));
+        let innerW = halfW - r;
+        let innerH = halfH - r;
+        let dx = px - halfW;
+        let dy = py - halfH;
+        let absX = abs(dx);
+        let absY = abs(dy);
+        var edgeDist: f32 = 0.0;
+        if (absX <= innerW && absY <= innerH) {
+          edgeDist = min(halfW - absX, halfH - absY);
+        } else if (absX <= innerW) {
+          edgeDist = halfH - absY;
+        } else if (absY <= innerH) {
+          edgeDist = halfW - absX;
+        } else {
+          let cornerX = absX - innerW;
+          let cornerY = absY - innerH;
+          edgeDist = r - sqrt(cornerX * cornerX + cornerY * cornerY);
+        }
+        let edgeWidth = max(halfW, halfH) * u.edgeWidthRatio;
+        let edgeNorm = clamp(edgeDist / edgeWidth, 0.0, 1.0);
+        let intensity = fastExp(-3.0 * edgeNorm);
+        let dispX = intensity * sign(dx) * 0.5 + 0.5;
+        let dispY = intensity * sign(dy) * 0.5 + 0.5;
+        return vec4<f32>(dispX, dispY, 0.5, 1.0);
+      }
+    `;
+
+    // ============================================================
+    // Benchmark Runner
+    // ============================================================
+
+    async function runBenchmark() {
+      if (!navigator.gpu) {
+        log('WebGPU not supported!');
+        return;
+      }
+
+      const adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
+      if (!adapter) { log('No adapter'); return; }
+
+      const device = await adapter.requestDevice();
+      const format = navigator.gpu.getPreferredCanvasFormat();
+
+      const sizes = [
+        { w: 128, h: 128, label: '128x128' },
+        { w: 256, h: 256, label: '256x256' },
+        { w: 512, h: 512, label: '512x512' },
+        { w: 1024, h: 1024, label: '1024x1024' },
+      ];
+
+      const iterations = 100;
+
+      log('WebGPU Shader Composite Benchmark', true);
+      log(`Iterations per approach: ${iterations}`);
+      log('');
+
+      for (const size of sizes) {
+        log(`Size: ${size.label}`, true);
+
+        const quadW = Math.ceil(size.w / 2);
+        const quadH = Math.ceil(size.h / 2);
+
+        // ========================================
+        // Approach 1: 2-Pass (Current)
+        // ========================================
+        {
+          const quadTex = device.createTexture({
+            size: [quadW, quadH], format: 'rgba8unorm',
+            usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
+          });
+          const outputTex = device.createTexture({
+            size: [size.w, size.h], format: 'rgba8unorm',
+            usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
+          });
+
+          const vertModule = device.createShaderModule({ code: FULLSCREEN_VERT });
+          const quadFragModule = device.createShaderModule({ code: QUADRANT_FRAG });
+          const compFragModule = device.createShaderModule({ code: COMPOSITE_FRAG });
+
+          const quadUniBuffer = device.createBuffer({ size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+          const compUniBuffer = device.createBuffer({ size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+          const sampler = device.createSampler({ magFilter: 'nearest', minFilter: 'nearest' });
+
+          const quadPipeline = device.createRenderPipeline({
+            layout: 'auto',
+            vertex: { module: vertModule, entryPoint: 'main' },
+            fragment: { module: quadFragModule, entryPoint: 'main', targets: [{ format: 'rgba8unorm' }] },
+          });
+
+          const compPipeline = device.createRenderPipeline({
+            layout: 'auto',
+            vertex: { module: vertModule, entryPoint: 'main' },
+            fragment: { module: compFragModule, entryPoint: 'main', targets: [{ format: 'rgba8unorm' }] },
+          });
+
+          const quadBindGroup = device.createBindGroup({
+            layout: quadPipeline.getBindGroupLayout(0),
+            entries: [{ binding: 0, resource: { buffer: quadUniBuffer } }],
+          });
+
+          const compBindGroup = device.createBindGroup({
+            layout: compPipeline.getBindGroupLayout(0),
+            entries: [
+              { binding: 0, resource: { buffer: compUniBuffer } },
+              { binding: 1, resource: quadTex.createView() },
+              { binding: 2, resource: sampler },
+            ],
+          });
+
+          device.queue.writeBuffer(quadUniBuffer, 0, new Float32Array([quadW, quadH, size.w, size.h, 24, 0.5, 0, 0]));
+          device.queue.writeBuffer(compUniBuffer, 0, new Float32Array([size.w, size.h, quadW, quadH]));
+
+          // Warmup
+          for (let i = 0; i < 10; i++) {
+            const enc = device.createCommandEncoder();
+            enc.beginRenderPass({ colorAttachments: [{ view: quadTex.createView(), loadOp: 'clear', storeOp: 'store', clearValue: { r: 0.5, g: 0.5, b: 0.5, a: 1 } }] }).end();
+            enc.beginRenderPass({ colorAttachments: [{ view: outputTex.createView(), loadOp: 'clear', storeOp: 'store', clearValue: { r: 0.5, g: 0.5, b: 0.5, a: 1 } }] }).end();
+            device.queue.submit([enc.finish()]);
+          }
+          await device.queue.onSubmittedWorkDone();
+
+          // Benchmark
+          const start = performance.now();
+          for (let i = 0; i < iterations; i++) {
+            const enc = device.createCommandEncoder();
+            const p1 = enc.beginRenderPass({ colorAttachments: [{ view: quadTex.createView(), loadOp: 'clear', storeOp: 'store', clearValue: { r: 0.5, g: 0.5, b: 0.5, a: 1 } }] });
+            p1.setPipeline(quadPipeline);
+            p1.setBindGroup(0, quadBindGroup);
+            p1.draw(3);
+            p1.end();
+            const p2 = enc.beginRenderPass({ colorAttachments: [{ view: outputTex.createView(), loadOp: 'clear', storeOp: 'store', clearValue: { r: 0.5, g: 0.5, b: 0.5, a: 1 } }] });
+            p2.setPipeline(compPipeline);
+            p2.setBindGroup(0, compBindGroup);
+            p2.draw(3);
+            p2.end();
+            device.queue.submit([enc.finish()]);
+          }
+          await device.queue.onSubmittedWorkDone();
+          const elapsed = performance.now() - start;
+
+          log(`  2-Pass (Current): ${(elapsed / iterations).toFixed(3)} ms/frame, ${(iterations / elapsed * 1000).toFixed(0)} FPS`);
+
+          quadTex.destroy();
+          outputTex.destroy();
+        }
+
+        // ========================================
+        // Approach 2: Single-Pass Full
+        // ========================================
+        {
+          const outputTex = device.createTexture({
+            size: [size.w, size.h], format: 'rgba8unorm',
+            usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
+          });
+
+          const vertModule = device.createShaderModule({ code: FULLSCREEN_VERT });
+          const fragModule = device.createShaderModule({ code: SINGLEPASS_FRAG });
+
+          const uniBuffer = device.createBuffer({ size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+
+          const pipeline = device.createRenderPipeline({
+            layout: 'auto',
+            vertex: { module: vertModule, entryPoint: 'main' },
+            fragment: { module: fragModule, entryPoint: 'main', targets: [{ format: 'rgba8unorm' }] },
+          });
+
+          const bindGroup = device.createBindGroup({
+            layout: pipeline.getBindGroupLayout(0),
+            entries: [{ binding: 0, resource: { buffer: uniBuffer } }],
+          });
+
+          device.queue.writeBuffer(uniBuffer, 0, new Float32Array([size.w, size.h, 24, 0.5]));
+
+          // Warmup
+          for (let i = 0; i < 10; i++) {
+            const enc = device.createCommandEncoder();
+            enc.beginRenderPass({ colorAttachments: [{ view: outputTex.createView(), loadOp: 'clear', storeOp: 'store', clearValue: { r: 0.5, g: 0.5, b: 0.5, a: 1 } }] }).end();
+            device.queue.submit([enc.finish()]);
+          }
+          await device.queue.onSubmittedWorkDone();
+
+          // Benchmark
+          const start = performance.now();
+          for (let i = 0; i < iterations; i++) {
+            const enc = device.createCommandEncoder();
+            const pass = enc.beginRenderPass({ colorAttachments: [{ view: outputTex.createView(), loadOp: 'clear', storeOp: 'store', clearValue: { r: 0.5, g: 0.5, b: 0.5, a: 1 } }] });
+            pass.setPipeline(pipeline);
+            pass.setBindGroup(0, bindGroup);
+            pass.draw(3);
+            pass.end();
+            device.queue.submit([enc.finish()]);
+          }
+          await device.queue.onSubmittedWorkDone();
+          const elapsed = performance.now() - start;
+
+          log(`  Single-Pass Full: ${(elapsed / iterations).toFixed(3)} ms/frame, ${(iterations / elapsed * 1000).toFixed(0)} FPS`);
+
+          outputTex.destroy();
+        }
+
+        log('');
+      }
+
+      log('Benchmark complete!', true);
+
+      // Summary
+      log('');
+      log('Analysis:', true);
+      log('- 2-Pass: Computes 1/4 pixels + composite shader reads texture');
+      log('- Single-Pass: Computes all pixels directly, no intermediate texture');
+      log('');
+      log('Trade-offs:');
+      log('- 2-Pass: Less compute (1/4 pixels), but extra texture read + 2 render passes');
+      log('- Single-Pass: More compute (4x pixels), but simpler pipeline, no texture overhead');
+      log('');
+      log('At small sizes: 2-Pass overhead dominates');
+      log('At large sizes: Single-Pass compute dominates');
+    }
+
+    runBenchmark();
+  </script>
+</body>
+</html>

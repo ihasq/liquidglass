@@ -1,5 +1,5 @@
 {
-  "entries": ["generated/wasm-simd/index.ts"],
+  "entries": ["src/shaders/wasm/index.ts"],
   "targets": {
     "debug": {
       "outFile": "build/debug.wasm",

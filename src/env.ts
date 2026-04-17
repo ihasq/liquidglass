@@ -188,18 +188,242 @@ function createDebugLogController(): DebugLogController {
  * lgc_dev.version
  * ```
  */
-export const lgc_dev: LiquidGlassDevAPI | undefined = __DEV__
+export const lgc_dev: LiquidGlassDevAPIWithProfiler | undefined = __DEV__
   ? {
       debug: {
         log: createDebugLogController(),
       },
+      profiler: createPerformanceProfiler(),
       version: __VERSION__,
     }
   : undefined;
 
 // Expose to global scope in development
 if (__DEV__) {
-  (globalThis as { lgc_dev?: LiquidGlassDevAPI }).lgc_dev = lgc_dev;
+  (globalThis as { lgc_dev?: LiquidGlassDevAPIWithProfiler }).lgc_dev = lgc_dev;
+}
+
+// =============================================================================
+// PERFORMANCE PROFILING SYSTEM (DEV ONLY)
+// =============================================================================
+
+/**
+ * Rendering step names for performance profiling
+ */
+export type RenderStep =
+  | 'getBounds'
+  | 'getStyle'
+  | 'prediction'
+  | 'displacementMap'
+  | 'specularMap'
+  | 'svgUpdate'
+  | 'morph';
+
+/**
+ * Single frame timing data
+ */
+export interface FrameTiming {
+  frameId: number;
+  timestamp: number;
+  totalMs: number;
+  steps: Record<RenderStep, number>;
+}
+
+/**
+ * Performance profiler controller interface
+ */
+export interface PerformanceProfiler {
+  /** Enable profiling */
+  enable(): void;
+  /** Disable profiling */
+  disable(): void;
+  /** Check if profiling is enabled */
+  isEnabled(): boolean;
+  /** Get recent frame timings (last N frames) */
+  getFrames(count?: number): FrameTiming[];
+  /** Get average step durations across recent frames */
+  getAverages(frameCount?: number): Record<RenderStep, number>;
+  /** Clear all recorded data */
+  clear(): void;
+  /** Subscribe to frame updates */
+  subscribe(callback: (frame: FrameTiming) => void): () => void;
+}
+
+// Internal profiler state
+const _profilerState = {
+  enabled: false,
+  frameId: 0,
+  currentFrame: null as { startTime: number; steps: Partial<Record<RenderStep, number>> } | null,
+  frames: [] as FrameTiming[],
+  maxFrames: 120,  // Keep last 120 frames (~2 seconds at 60fps)
+  subscribers: new Set<(frame: FrameTiming) => void>(),
+};
+
+/**
+ * Start a new frame measurement
+ * @internal
+ */
+export function _profilerStartFrame(): void {
+  if (!__DEV__ || !_profilerState.enabled) return;
+  _profilerState.currentFrame = {
+    startTime: performance.now(),
+    steps: {},
+  };
+}
+
+/**
+ * Mark the start of a render step
+ * @internal
+ */
+export function _profilerMarkStep(step: RenderStep): void {
+  if (!__DEV__ || !_profilerState.enabled || !_profilerState.currentFrame) return;
+  performance.mark(`lgc-${step}-start`);
+}
+
+/**
+ * Mark the end of a render step and record duration
+ * @internal
+ */
+export function _profilerEndStep(step: RenderStep): void {
+  if (!__DEV__ || !_profilerState.enabled || !_profilerState.currentFrame) return;
+
+  const endMark = `lgc-${step}-end`;
+  const startMark = `lgc-${step}-start`;
+
+  performance.mark(endMark);
+
+  try {
+    const measure = performance.measure(`lgc-${step}`, startMark, endMark);
+    _profilerState.currentFrame.steps[step] = measure.duration;
+  } catch {
+    // Marks may not exist if step was skipped
+  }
+
+  // Clean up marks
+  performance.clearMarks(startMark);
+  performance.clearMarks(endMark);
+  performance.clearMeasures(`lgc-${step}`);
+}
+
+/**
+ * End the current frame measurement
+ * @internal
+ */
+export function _profilerEndFrame(): void {
+  if (!__DEV__ || !_profilerState.enabled || !_profilerState.currentFrame) return;
+
+  const frame = _profilerState.currentFrame;
+  const totalMs = performance.now() - frame.startTime;
+
+  // Fill in missing steps with 0
+  const steps: Record<RenderStep, number> = {
+    getBounds: frame.steps.getBounds ?? 0,
+    getStyle: frame.steps.getStyle ?? 0,
+    prediction: frame.steps.prediction ?? 0,
+    displacementMap: frame.steps.displacementMap ?? 0,
+    specularMap: frame.steps.specularMap ?? 0,
+    svgUpdate: frame.steps.svgUpdate ?? 0,
+    morph: frame.steps.morph ?? 0,
+  };
+
+  const timing: FrameTiming = {
+    frameId: _profilerState.frameId++,
+    timestamp: Date.now(),
+    totalMs,
+    steps,
+  };
+
+  _profilerState.frames.push(timing);
+
+  // Keep only last maxFrames
+  while (_profilerState.frames.length > _profilerState.maxFrames) {
+    _profilerState.frames.shift();
+  }
+
+  // Notify subscribers
+  for (const cb of _profilerState.subscribers) {
+    try {
+      cb(timing);
+    } catch (e) {
+      console.error('[LiquidGlass] Profiler subscriber error:', e);
+    }
+  }
+
+  _profilerState.currentFrame = null;
+}
+
+/**
+ * Create the performance profiler controller
+ */
+function createPerformanceProfiler(): PerformanceProfiler {
+  return {
+    enable() {
+      _profilerState.enabled = true;
+      console.log('[LiquidGlass] Performance profiler ENABLED');
+    },
+    disable() {
+      _profilerState.enabled = false;
+      console.log('[LiquidGlass] Performance profiler DISABLED');
+    },
+    isEnabled() {
+      return _profilerState.enabled;
+    },
+    getFrames(count = 60) {
+      return _profilerState.frames.slice(-count);
+    },
+    getAverages(frameCount = 60) {
+      const frames = _profilerState.frames.slice(-frameCount);
+      if (frames.length === 0) {
+        return {
+          getBounds: 0,
+          getStyle: 0,
+          prediction: 0,
+          displacementMap: 0,
+          specularMap: 0,
+          svgUpdate: 0,
+          morph: 0,
+        };
+      }
+
+      const sums: Record<RenderStep, number> = {
+        getBounds: 0,
+        getStyle: 0,
+        prediction: 0,
+        displacementMap: 0,
+        specularMap: 0,
+        svgUpdate: 0,
+        morph: 0,
+      };
+
+      for (const frame of frames) {
+        for (const step of Object.keys(sums) as RenderStep[]) {
+          sums[step] += frame.steps[step];
+        }
+      }
+
+      for (const step of Object.keys(sums) as RenderStep[]) {
+        sums[step] /= frames.length;
+      }
+
+      return sums;
+    },
+    clear() {
+      _profilerState.frames = [];
+      _profilerState.frameId = 0;
+      console.log('[LiquidGlass] Profiler data cleared');
+    },
+    subscribe(callback) {
+      _profilerState.subscribers.add(callback);
+      return () => {
+        _profilerState.subscribers.delete(callback);
+      };
+    },
+  };
+}
+
+// Add profiler to dev API
+export interface LiquidGlassDevAPIWithProfiler extends LiquidGlassDevAPI {
+  profiler: PerformanceProfiler;
 }
 
 // Type augmentation for global scope
@@ -209,5 +433,5 @@ declare global {
   // eslint-disable-next-line no-var
   var __LIQUIDGLASS_VERSION__: string | undefined;
   // eslint-disable-next-line no-var
-  var lgc_dev: LiquidGlassDevAPI | undefined;
+  var lgc_dev: LiquidGlassDevAPIWithProfiler | undefined;
 }

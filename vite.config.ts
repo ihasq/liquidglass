@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite';
 import dts from 'vite-plugin-dts';
 import glsl from 'vite-plugin-glsl';
+import preact from '@preact/preset-vite';
 import { resolve } from 'path';
 import { readFileSync } from 'fs';
 
@@ -12,6 +13,7 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [
+      preact(),
       glsl({
         minify: !isDev,
         include: [
@@ -48,7 +50,8 @@ export default defineConfig(({ mode }) => {
       minify: true,
     },
     server: {
-      port: 8788
+      port: 8788,
+      open: '/demo/parameter-lab/'
     }
   };
 });

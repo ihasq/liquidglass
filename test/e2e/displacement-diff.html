@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Displacement Map Vector Diff</title>
+  <style>
+    body { margin: 0; padding: 20px; background: #1a1a2e; color: #eee; font-family: monospace; }
+    .row { display: flex; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+    .cell { text-align: center; }
+    .cell canvas { border: 1px solid #444; display: block; margin-bottom: 4px; }
+    .cell label { font-size: 11px; }
+    h3 { margin: 15px 0 10px 0; border-bottom: 1px solid #444; padding-bottom: 5px; }
+    #log { white-space: pre-wrap; font-size: 11px; background: #000; padding: 10px; border-radius: 4px; max-height: 300px; overflow-y: auto; margin-top: 20px; }
+    .stats { font-size: 10px; color: #aaa; }
+    .error { color: #f66; }
+    .ok { color: #6f6; }
+  </style>
+</head>
+<body>
+  <h2>Displacement Map Vector Diff Analysis</h2>
+  <p style="font-size:12px; color:#888;">Compares WebGPU, WebGL2, and WASM-SIMD displacement maps. Diff shows vector magnitude (not 1-bit).</p>
+
+  <h3>Source Maps (256x256, radius=24, edge=0.5)</h3>
+  <div class="row" id="sources"></div>
+
+  <h3>Vector Diff (Reference: WebGPU)</h3>
+  <div class="row" id="diffs"></div>
+
+  <h3>Diff Statistics</h3>
+  <div id="stats"></div>
+
+  <div id="log"></div>
+
+<script type="module">
+import { generateWebGPUDisplacementMap } from '/src/core/displacement/webgpu-generator.ts';
+import { generateWebGL2DisplacementMap } from '/src/core/displacement/webgl2-generator.ts';
+import { generateWasmDisplacementMap, preloadWasm } from '/src/core/displacement/wasm-generator.ts';
+
+const log = (msg, isError = false) => {
+  const el = document.getElementById('log');
+  const line = document.createElement('div');
+  line.textContent = msg;
+  if (isError) line.className = 'error';
+  el.appendChild(line);
+  el.scrollTop = el.scrollHeight;
+  console.log(msg);
+};
+
+const WIDTH = 256;
+const HEIGHT = 256;
+const RADIUS = 24;
+const EDGE = 0.5;
+
+// Extract pixel data from canvas
+function getPixelData(canvas) {
+  const ctx = canvas.getContext('2d');
+  return ctx.getImageData(0, 0, canvas.width, canvas.height);
+}
+
+// Compute vector diff between two displacement maps
+// Returns: { diffCanvas, maxDiff, avgDiff, diffPixels, samples }
+function computeVectorDiff(refData, testData, label) {
+  const w = refData.width;
+  const h = refData.height;
+  const ref = refData.data;
+  const test = testData.data;
+
+  const diffCanvas = document.createElement('canvas');
+  diffCanvas.width = w;
+  diffCanvas.height = h;
+  const ctx = diffCanvas.getContext('2d');
+  const diffData = ctx.createImageData(w, h);
+  const diff = diffData.data;
+
+  let maxDiff = 0;
+  let totalDiff = 0;
+  let diffPixelCount = 0;
+  const samples = [];
+
+  for (let i = 0; i < ref.length; i += 4) {
+    // Decode displacement vectors (128 = center, range 0-255)
+    const refX = (ref[i] - 128) / 127;     // -1 to 1
+    const refY = (ref[i + 1] - 128) / 127;
+    const testX = (test[i] - 128) / 127;
+    const testY = (test[i + 1] - 128) / 127;
+
+    // Compute vector difference
+    const dx = testX - refX;
+    const dy = testY - refY;
+    const magnitude = Math.sqrt(dx * dx + dy * dy);
+
+    // Track statistics
+    if (magnitude > 0.001) {
+      diffPixelCount++;
+      totalDiff += magnitude;
+      if (magnitude > maxDiff) maxDiff = magnitude;
+
+      // Sample some error locations
+      if (samples.length < 10 && magnitude > 0.05) {
+        const px = (i / 4) % w;
+        const py = Math.floor((i / 4) / w);
+        samples.push({ x: px, y: py, dx, dy, mag: magnitude, refR: ref[i], refG: ref[i+1], testR: test[i], testG: test[i+1] });
+      }
+    }
+
+    // Visualize diff as color
+    // R = positive X diff (test is more right than ref)
+    // G = positive Y diff (test is more down than ref)
+    // B = negative diff (inverted)
+    // Magnitude shown as brightness
+
+    // Scale for visibility (max theoretical diff is 2.0)
+    const scale = 127;
+
+    // Encode signed diff: 128 + diff * scale
+    // This way 128 = no diff, >128 = positive, <128 = negative
+    diff[i] = Math.max(0, Math.min(255, Math.round(128 + dx * scale)));
+    diff[i + 1] = Math.max(0, Math.min(255, Math.round(128 + dy * scale)));
+    diff[i + 2] = Math.round(magnitude * 255); // Blue = magnitude
+    diff[i + 3] = 255;
+  }
+
+  ctx.putImageData(diffData, 0, 0);
+
+  const avgDiff = diffPixelCount > 0 ? totalDiff / diffPixelCount : 0;
+
+  return {
+    diffCanvas,
+    maxDiff,
+    avgDiff,
+    diffPixels: diffPixelCount,
+    totalPixels: (ref.length / 4),
+    samples
+  };
+}
+
+// Create a visual cell with canvas and label
+function createCell(canvas, label, stats = '') {
+  const cell = document.createElement('div');
+  cell.className = 'cell';
+  cell.appendChild(canvas);
+  const labelEl = document.createElement('label');
+  labelEl.textContent = label;
+  cell.appendChild(labelEl);
+  if (stats) {
+    const statsEl = document.createElement('div');
+    statsEl.className = 'stats';
+    statsEl.textContent = stats;
+    cell.appendChild(statsEl);
+  }
+  return cell;
+}
+
+async function runAnalysis() {
+  log('=== Displacement Map Vector Diff Analysis ===');
+  log(`Size: ${WIDTH}x${HEIGHT}, Radius: ${RADIUS}, Edge: ${EDGE}`);
+  log('');
+
+  const sourcesEl = document.getElementById('sources');
+  const diffsEl = document.getElementById('diffs');
+  const statsEl = document.getElementById('stats');
+
+  const options = { width: WIDTH, height: HEIGHT, borderRadius: RADIUS, edgeWidthRatio: EDGE };
+
+  // Generate maps
+  const maps = {};
+
+  // WebGPU (reference)
+  log('Generating WebGPU map...');
+  try {
+    const gpu = await generateWebGPUDisplacementMap(options);
+    if (gpu) {
+      maps.gpu = gpu.canvas;
+      log('  WebGPU: OK');
+    } else {
+      log('  WebGPU: Not available', true);
+    }
+  } catch (e) {
+    log(`  WebGPU: Error - ${e.message}`, true);
+  }
+
+  // WebGL2
+  log('Generating WebGL2 map...');
+  try {
+    const gl2 = await generateWebGL2DisplacementMap(options);
+    if (gl2) {
+      maps.gl2 = gl2.canvas;
+      log('  WebGL2: OK');
+    } else {
+      log('  WebGL2: Not available', true);
+    }
+  } catch (e) {
+    log(`  WebGL2: Error - ${e.message}`, true);
+  }
+
+  // WASM-SIMD
+  log('Generating WASM-SIMD map...');
+  try {
+    await preloadWasm();
+    const wasm = await generateWasmDisplacementMap(options);
+    if (wasm) {
+      maps.wasm = wasm.canvas;
+      log('  WASM-SIMD: OK');
+    } else {
+      log('  WASM-SIMD: Not available', true);
+    }
+  } catch (e) {
+    log(`  WASM-SIMD: Error - ${e.message}`, true);
+  }
+
+  log('');
+
+  // Display source maps
+  for (const [name, canvas] of Object.entries(maps)) {
+    sourcesEl.appendChild(createCell(canvas, name.toUpperCase()));
+  }
+
+  // Use GPU as reference if available, otherwise WASM
+  const refName = maps.gpu ? 'gpu' : (maps.wasm ? 'wasm' : null);
+  if (!refName) {
+    log('No reference map available!', true);
+    return;
+  }
+
+  const refCanvas = maps[refName];
+  const refData = getPixelData(refCanvas);
+
+  log(`Reference: ${refName.toUpperCase()}`);
+  log('');
+
+  // Compute diffs
+  const results = {};
+  for (const [name, canvas] of Object.entries(maps)) {
+    if (name === refName) continue;
+
+    log(`Computing diff: ${refName.toUpperCase()} vs ${name.toUpperCase()}...`);
+    const testData = getPixelData(canvas);
+    const result = computeVectorDiff(refData, testData, name);
+    results[name] = result;
+
+    // Display diff canvas
+    const diffLabel = `${name.toUpperCase()} diff`;
+    const pct = ((result.diffPixels / result.totalPixels) * 100).toFixed(2);
+    const stats = `Max: ${result.maxDiff.toFixed(4)}, Avg: ${result.avgDiff.toFixed(4)}, Diff pixels: ${result.diffPixels} (${pct}%)`;
+    diffsEl.appendChild(createCell(result.diffCanvas, diffLabel, stats));
+
+    log(`  Max diff: ${result.maxDiff.toFixed(6)}`);
+    log(`  Avg diff: ${result.avgDiff.toFixed(6)}`);
+    log(`  Diff pixels: ${result.diffPixels} / ${result.totalPixels} (${pct}%)`);
+
+    if (result.samples.length > 0) {
+      log(`  Sample errors:`);
+      for (const s of result.samples.slice(0, 5)) {
+        log(`    (${s.x}, ${s.y}): ref=(${s.refR},${s.refG}) test=(${s.testR},${s.testG}) dx=${s.dx.toFixed(4)} dy=${s.dy.toFixed(4)} mag=${s.mag.toFixed(4)}`);
+      }
+    }
+    log('');
+  }
+
+  // Summary statistics
+  let summaryHtml = '<pre>';
+  summaryHtml += `Reference: ${refName.toUpperCase()}\n\n`;
+
+  for (const [name, result] of Object.entries(results)) {
+    const status = result.maxDiff < 0.01 ? '<span class="ok">PASS</span>' : '<span class="error">FAIL</span>';
+    summaryHtml += `${name.toUpperCase()}: ${status}\n`;
+    summaryHtml += `  Max vector diff: ${result.maxDiff.toFixed(6)}\n`;
+    summaryHtml += `  Avg vector diff: ${result.avgDiff.toFixed(6)}\n`;
+    summaryHtml += `  Diff pixels: ${result.diffPixels} / ${result.totalPixels}\n\n`;
+  }
+  summaryHtml += '</pre>';
+  statsEl.innerHTML = summaryHtml;
+
+  log('=== Analysis Complete ===');
+
+  // Store results globally for CDP access
+  window.__diffResults = results;
+  window.__maps = maps;
+  window.__analysisComplete = true;
+}
+
+// Run on load
+runAnalysis().catch(e => log(`Fatal error: ${e.message}`, true));
+</script>
+</body>
+</html>
