@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CSS Property Engine Demo</title>
+  <style>
+    :root {
+      --demo-color: red;
+      --demo-size: 100;
+    }
+
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      padding: 2rem;
+      background: #1a1a2e;
+      color: #eee;
+    }
+
+    h1 {
+      margin-bottom: 1rem;
+    }
+
+    .controls {
+      margin-bottom: 2rem;
+      padding: 1rem;
+      background: #16213e;
+      border-radius: 8px;
+    }
+
+    .controls label {
+      display: block;
+      margin-bottom: 0.5rem;
+    }
+
+    .controls input[type="range"] {
+      width: 200px;
+    }
+
+    .controls input[type="color"] {
+      width: 60px;
+      height: 30px;
+      border: none;
+      cursor: pointer;
+    }
+
+    .demo-container {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1rem;
+    }
+
+    .demo-box {
+      width: 150px;
+      height: 150px;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.9rem;
+      transition: transform 0.2s;
+    }
+
+    .demo-box:hover {
+      transform: scale(1.05);
+    }
+
+    /* CSS properties defined in stylesheet */
+    .box-1 {
+      --demo-color: #e94560;
+      --demo-size: 80;
+    }
+
+    .box-2 {
+      --demo-color: #0f3460;
+      --demo-size: 120;
+    }
+
+    .box-3 {
+      --demo-color: #533483;
+      --demo-size: 100;
+    }
+
+    /* Dynamic class */
+    .highlighted {
+      --demo-color: #f1c40f;
+      --demo-size: 140;
+    }
+
+    .log-container {
+      margin-top: 2rem;
+      padding: 1rem;
+      background: #0f0f23;
+      border-radius: 8px;
+      font-family: monospace;
+      font-size: 0.85rem;
+      max-height: 300px;
+      overflow-y: auto;
+    }
+
+    .log-entry {
+      padding: 0.25rem 0;
+      border-bottom: 1px solid #222;
+    }
+
+    .log-entry:last-child {
+      border-bottom: none;
+    }
+
+    .log-property {
+      color: #61dafb;
+    }
+
+    .log-value {
+      color: #98c379;
+    }
+
+    .log-element {
+      color: #c678dd;
+    }
+  </style>
+</head>
+<body>
+  <h1>CSS Property Engine Demo</h1>
+
+  <div class="controls">
+    <h3>Dynamic Controls</h3>
+    <label>
+      Box 1 Color:
+      <input type="color" id="color1" value="#e94560">
+    </label>
+    <label>
+      Box 1 Size:
+      <input type="range" id="size1" min="50" max="150" value="80">
+      <span id="size1Value">80</span>
+    </label>
+    <button id="toggleHighlight">Toggle Highlight on Box 2</button>
+    <button id="addBox">Add New Box</button>
+  </div>
+
+  <div class="demo-container" id="container">
+    <div class="demo-box box-1" id="box1">Box 1</div>
+    <div class="demo-box box-2" id="box2">Box 2</div>
+    <div class="demo-box box-3" id="box3">Box 3</div>
+  </div>
+
+  <div class="log-container" id="log">
+    <div style="color: #666;">Property change log...</div>
+  </div>
+
+  <script type="module">
+    import { defineProperties } from '../src/engines/css-property-engine.ts';
+
+    const logContainer = document.getElementById('log');
+    let logCount = 0;
+
+    function log(property, element, value) {
+      logCount++;
+      const entry = document.createElement('div');
+      entry.className = 'log-entry';
+      entry.innerHTML = `
+        <span style="color:#666">[${logCount}]</span>
+        <span class="log-property">--${property}</span> on
+        <span class="log-element">#${element.id || element.className}</span> =
+        <span class="log-value">${value}</span>
+      `;
+      logContainer.insertBefore(entry, logContainer.firstChild);
+
+      // Keep only last 50 entries
+      while (logContainer.children.length > 50) {
+        logContainer.removeChild(logContainer.lastChild);
+      }
+    }
+
+    // Define properties with full @property configuration
+    const engine = defineProperties({
+      "demo-color": {
+        syntax: "<color>",
+        inherits: false,
+        initialValue: "transparent",
+        callback(element, value) {
+          // Apply the color as background
+          element.style.backgroundColor = value;
+          log('demo-color', element, value);
+        }
+      },
+
+      "demo-size": {
+        syntax: "<number>",
+        inherits: true,
+        initialValue: "100",
+        callback(element, value) {
+          // Apply size as a transform scale
+          const size = parseFloat(value);
+          const scale = size / 100;
+          element.style.transform = `scale(${scale})`;
+          log('demo-size', element, value);
+        }
+      }
+    });
+
+    // Expose for debugging
+    window.__cssPropertyEngine = engine;
+
+    // Dynamic controls
+    const color1 = document.getElementById('color1');
+    const size1 = document.getElementById('size1');
+    const size1Value = document.getElementById('size1Value');
+    const box1 = document.getElementById('box1');
+    const box2 = document.getElementById('box2');
+
+    color1.addEventListener('input', (e) => {
+      box1.style.setProperty('--demo-color', e.target.value);
+    });
+
+    size1.addEventListener('input', (e) => {
+      box1.style.setProperty('--demo-size', e.target.value);
+      size1Value.textContent = e.target.value;
+    });
+
+    document.getElementById('toggleHighlight').addEventListener('click', () => {
+      box2.classList.toggle('highlighted');
+    });
+
+    let boxCounter = 3;
+    document.getElementById('addBox').addEventListener('click', () => {
+      boxCounter++;
+      const newBox = document.createElement('div');
+      newBox.className = 'demo-box';
+      newBox.id = `box${boxCounter}`;
+      newBox.textContent = `Box ${boxCounter}`;
+
+      // Random color and size
+      const hue = Math.random() * 360;
+      const size = 70 + Math.random() * 60;
+      newBox.style.setProperty('--demo-color', `hsl(${hue}, 70%, 50%)`);
+      newBox.style.setProperty('--demo-size', String(Math.round(size)));
+
+      document.getElementById('container').appendChild(newBox);
+    });
+  </script>
+</body>
+</html>

@@ -17,15 +17,11 @@
  * ```
  */
 
-import { preloadWasm } from './core/filter';
-import { CSSPropertiesDriver } from './drivers/css-properties';
+import { initCSSPropertiesV2 as initCSSProperties } from './drivers/css-properties';
 
 // Auto-initialize on import
 (async () => {
-  // Preload WASM
-  await preloadWasm();
-
-  // Initialize CSS Properties driver
-  const cssDriver = new CSSPropertiesDriver();
-  await cssDriver.init();
+  await initCSSProperties();
+  // Dispatch ready event for consumers that need to wait for initialization
+  window.dispatchEvent(new CustomEvent('liquidglass:ready'));
 })();

@@ -35,7 +35,34 @@ export type {
 } from './core/filter';
 
 // === CSS Properties Driver ===
-export { CSSPropertiesDriver, getCSSDriver, initCSSDriver } from './drivers/css-properties';
+export {
+  initCSSPropertiesV2 as initCSSProperties,
+  initLiquidGlassCSS,
+  getEngineV2 as getCSSEngine,
+  getManagerV2 as getCSSManager,
+  destroyCSSPropertiesV2 as destroyCSSProperties,
+  // Legacy aliases for backward compatibility
+  initCSSPropertiesV2,
+  getEngineV2,
+  getManagerV2,
+  destroyCSSPropertiesV2,
+} from './drivers/css-properties';
+
+// === CSS Property Engine (Generic) ===
+export {
+  defineProperties,
+  createEngine,
+  getEngine,
+  destroyEngine,
+  CSSPropertyEngine,
+} from './engines/css-property-engine';
+export type {
+  PropertyCallback,
+  PropertyDefinition,
+  PropertyDefinitions,
+  PropertySyntax,
+  EngineOptions,
+} from './engines/css-property-engine';
 
 // Core math exports
 export type { ProfileType } from './core/math/profiles';
