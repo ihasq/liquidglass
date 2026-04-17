@@ -3,51 +3,37 @@
  *
  * Bridges CSS Custom Properties (--liquidglass-*) with the FilterManager.
  * Uses the generic CSS Property Engine for property observation and callbacks.
+ *
+ * Parameter definitions are derived from the centralized schema.
  */
 
 import { defineProperties, createEngine, CSSPropertyEngine } from '../engines/css-property-engine';
-import { FilterManager, preloadWasm, DEFAULT_PARAMS, VALID_RENDERERS } from '../core/filter';
-import type { LiquidGlassParams, DisplacementRenderer } from '../core/filter';
+import { FilterManager, preloadWasm } from '../core/filter';
+import {
+  PARAMETERS,
+  PARAMETER_NAMES,
+  DEFAULT_PARAMS,
+  VALID_RENDERERS,
+  getAllCSSPropertyNames,
+  getTransformFunction,
+  type ParameterName,
+  type NumericParameterName,
+  type LiquidGlassParams,
+  type DisplacementRenderer,
+} from '../schema/parameters';
+import type { PropertyDefinition, PropertyCallback } from '../engines/css-property-engine';
 
 // ============================================================================
-// Property Definitions
+// CSS Property Names (derived from schema)
 // ============================================================================
 
-const PROPERTY_NAMES = {
-  refraction: 'liquidglass-refraction',
-  thickness: 'liquidglass-thickness',
-  gloss: 'liquidglass-gloss',
-  softness: 'liquidglass-softness',
-  saturation: 'liquidglass-saturation',
-  dispersion: 'liquidglass-dispersion',
-  displacementResolution: 'liquidglass-displacement-resolution',
-  displacementMinResolution: 'liquidglass-displacement-min-resolution',
-  displacementSmoothing: 'liquidglass-displacement-smoothing',
-  enableOptimization: 'liquidglass-enable-optimization',
-  refreshInterval: 'liquidglass-refresh-interval',
-  displacementRenderer: 'liquidglass-displacement-renderer',
-} as const;
+const PROPERTY_NAMES = getAllCSSPropertyNames();
 
 // ============================================================================
 // Element State Management
 // ============================================================================
 
-interface ElementParams {
-  refraction?: number;
-  thickness?: number;
-  gloss?: number;
-  softness?: number;
-  saturation?: number;
-  dispersion?: number;
-  displacementResolution?: number;
-  displacementMinResolution?: number;
-  displacementSmoothing?: number;
-  enableOptimization?: number;
-  refreshInterval?: number;
-  displacementRenderer?: DisplacementRenderer;
-}
-
-type NumericParamKey = Exclude<keyof ElementParams, 'displacementRenderer'>;
+type ElementParams = Partial<LiquidGlassParams>;
 
 const elementParams = new WeakMap<HTMLElement, ElementParams>();
 const attachedElements = new WeakSet<HTMLElement>();
@@ -62,20 +48,13 @@ function getOrCreateParams(element: HTMLElement): ElementParams {
 }
 
 function buildFullParams(partial: ElementParams): LiquidGlassParams {
-  return {
-    refraction: partial.refraction ?? DEFAULT_PARAMS.refraction,
-    thickness: partial.thickness ?? DEFAULT_PARAMS.thickness,
-    gloss: partial.gloss ?? DEFAULT_PARAMS.gloss,
-    softness: partial.softness ?? DEFAULT_PARAMS.softness,
-    saturation: partial.saturation ?? DEFAULT_PARAMS.saturation,
-    dispersion: partial.dispersion ?? DEFAULT_PARAMS.dispersion,
-    displacementResolution: partial.displacementResolution ?? DEFAULT_PARAMS.displacementResolution,
-    displacementMinResolution: partial.displacementMinResolution ?? DEFAULT_PARAMS.displacementMinResolution,
-    displacementSmoothing: partial.displacementSmoothing ?? DEFAULT_PARAMS.displacementSmoothing,
-    enableOptimization: partial.enableOptimization ?? DEFAULT_PARAMS.enableOptimization,
-    refreshInterval: partial.refreshInterval ?? DEFAULT_PARAMS.refreshInterval,
-    displacementRenderer: partial.displacementRenderer ?? DEFAULT_PARAMS.displacementRenderer,
-  };
+  const result = { ...DEFAULT_PARAMS };
+  for (const key of PARAMETER_NAMES) {
+    if (partial[key] !== undefined) {
+      (result as Record<string, unknown>)[key] = partial[key];
+    }
+  }
+  return result;
 }
 
 function hasAnyProperty(params: ElementParams): boolean {
@@ -117,15 +96,14 @@ function syncElement(element: HTMLElement): void {
 }
 
 // ============================================================================
-// Property Handlers
+// Property Handlers (derived from schema)
 // ============================================================================
 
-import type { PropertyDefinition, PropertyCallback } from '../engines/css-property-engine';
-
 function createNumberCallback(
-  paramKey: NumericParamKey,
-  transform?: (value: number) => number
+  paramKey: NumericParameterName
 ): PropertyCallback {
+  const transform = getTransformFunction(paramKey);
+
   return (element: HTMLElement, value: string) => {
     const params = getOrCreateParams(element);
     const numValue = parseFloat(value);
@@ -137,16 +115,15 @@ function createNumberCallback(
   };
 }
 
-function createNumberProperty(
-  paramKey: NumericParamKey,
-  defaultValue: number,
-  transform?: (value: number) => number
-): PropertyDefinition {
+function createNumberProperty(paramKey: NumericParameterName): PropertyDefinition {
+  const def = PARAMETERS[paramKey];
+  if (def.type !== 'number') throw new Error(`${paramKey} is not a number parameter`);
+
   return {
-    syntax: '<number>',
-    inherits: true,
-    initialValue: String(defaultValue),
-    callback: createNumberCallback(paramKey, transform),
+    syntax: def.syntax,
+    inherits: def.inherits,
+    initialValue: String(def.default),
+    callback: createNumberCallback(paramKey),
   };
 }
 
@@ -159,6 +136,32 @@ const rendererCallback: PropertyCallback = (element, value) => {
     syncElement(element);
   }
 };
+
+// ============================================================================
+// Build Property Definitions from Schema
+// ============================================================================
+
+function buildPropertyDefinitions(): Record<string, PropertyDefinition> {
+  const definitions: Record<string, PropertyDefinition> = {};
+
+  for (const name of PARAMETER_NAMES) {
+    const def = PARAMETERS[name];
+    const cssProperty = def.cssProperty;
+
+    if (def.type === 'number') {
+      definitions[cssProperty] = createNumberProperty(name as NumericParameterName);
+    } else if (def.type === 'enum') {
+      definitions[cssProperty] = {
+        syntax: def.syntax,
+        inherits: def.inherits,
+        initialValue: def.default,
+        callback: rendererCallback,
+      };
+    }
+  }
+
+  return definitions;
+}
 
 // ============================================================================
 // Driver Initialization
@@ -180,27 +183,7 @@ export async function initCSSPropertiesV2(): Promise<CSSPropertyEngine> {
 
   // Create engine with property definitions
   _engine = createEngine({ sentinel: '__UNSET__' });
-
-  _engine.define({
-    [PROPERTY_NAMES.refraction]: createNumberProperty('refraction', DEFAULT_PARAMS.refraction),
-    [PROPERTY_NAMES.thickness]: createNumberProperty('thickness', DEFAULT_PARAMS.thickness),
-    [PROPERTY_NAMES.gloss]: createNumberProperty('gloss', DEFAULT_PARAMS.gloss),
-    [PROPERTY_NAMES.softness]: createNumberProperty('softness', DEFAULT_PARAMS.softness),
-    [PROPERTY_NAMES.saturation]: createNumberProperty('saturation', DEFAULT_PARAMS.saturation),
-    [PROPERTY_NAMES.dispersion]: createNumberProperty('dispersion', DEFAULT_PARAMS.dispersion),
-    [PROPERTY_NAMES.displacementResolution]: createNumberProperty('displacementResolution', DEFAULT_PARAMS.displacementResolution),
-    [PROPERTY_NAMES.displacementMinResolution]: createNumberProperty('displacementMinResolution', DEFAULT_PARAMS.displacementMinResolution),
-    [PROPERTY_NAMES.displacementSmoothing]: createNumberProperty('displacementSmoothing', DEFAULT_PARAMS.displacementSmoothing),
-    [PROPERTY_NAMES.enableOptimization]: createNumberProperty('enableOptimization', DEFAULT_PARAMS.enableOptimization, v => v === 0 ? 0 : 1),
-    [PROPERTY_NAMES.refreshInterval]: createNumberProperty('refreshInterval', DEFAULT_PARAMS.refreshInterval, v => Math.max(1, Math.round(v))),
-    [PROPERTY_NAMES.displacementRenderer]: {
-      syntax: 'wasm-simd | gl2 | gpu',
-      inherits: true,
-      initialValue: DEFAULT_PARAMS.displacementRenderer,
-      callback: rendererCallback,
-    },
-  });
-
+  _engine.define(buildPropertyDefinitions());
   _engine.start();
   _initialized = true;
 
@@ -240,7 +223,7 @@ export function destroyCSSPropertiesV2(): void {
  *
  * Usage:
  * ```ts
- * import { initLiquidGlassCSS } from './drivers/css-properties';
+ * import { initLiquidGlassCSS } from './driver';
  * initLiquidGlassCSS();
  * ```
  *
@@ -253,24 +236,5 @@ export function destroyCSSPropertiesV2(): void {
  */
 export async function initLiquidGlassCSS(): Promise<void> {
   await preloadWasm();
-
-  defineProperties({
-    [PROPERTY_NAMES.refraction]: createNumberProperty('refraction', DEFAULT_PARAMS.refraction),
-    [PROPERTY_NAMES.thickness]: createNumberProperty('thickness', DEFAULT_PARAMS.thickness),
-    [PROPERTY_NAMES.gloss]: createNumberProperty('gloss', DEFAULT_PARAMS.gloss),
-    [PROPERTY_NAMES.softness]: createNumberProperty('softness', DEFAULT_PARAMS.softness),
-    [PROPERTY_NAMES.saturation]: createNumberProperty('saturation', DEFAULT_PARAMS.saturation),
-    [PROPERTY_NAMES.dispersion]: createNumberProperty('dispersion', DEFAULT_PARAMS.dispersion),
-    [PROPERTY_NAMES.displacementResolution]: createNumberProperty('displacementResolution', DEFAULT_PARAMS.displacementResolution),
-    [PROPERTY_NAMES.displacementMinResolution]: createNumberProperty('displacementMinResolution', DEFAULT_PARAMS.displacementMinResolution),
-    [PROPERTY_NAMES.displacementSmoothing]: createNumberProperty('displacementSmoothing', DEFAULT_PARAMS.displacementSmoothing),
-    [PROPERTY_NAMES.enableOptimization]: createNumberProperty('enableOptimization', DEFAULT_PARAMS.enableOptimization, v => v === 0 ? 0 : 1),
-    [PROPERTY_NAMES.refreshInterval]: createNumberProperty('refreshInterval', DEFAULT_PARAMS.refreshInterval, v => Math.max(1, Math.round(v))),
-    [PROPERTY_NAMES.displacementRenderer]: {
-      syntax: 'wasm-simd | gl2 | gpu',
-      inherits: true,
-      initialValue: DEFAULT_PARAMS.displacementRenderer,
-      callback: rendererCallback,
-    },
-  });
+  defineProperties(buildPropertyDefinitions());
 }

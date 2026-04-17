@@ -1,66 +1,16 @@
 /**
  * Core types for Liquid Glass filter management
+ *
+ * Types and defaults are derived from the centralized schema.
  */
 
-/**
- * Displacement map renderer backend
- * - 'wasm-simd': WebAssembly with SIMD (default, CPU-based)
- * - 'gl2': WebGL2 (GPU-accelerated)
- * - 'gpu': WebGPU (modern GPU compute)
- */
-export type DisplacementRenderer = 'wasm-simd' | 'gl2' | 'gpu';
-
-/**
- * Public parameters for liquid glass effect (0-100 scale)
- */
-export interface LiquidGlassParams {
-  refraction: number;      // Distortion intensity (0-100, default 50)
-  thickness: number;       // Edge steepness (0-100, default 50)
-  gloss: number;           // Specular highlight intensity (0-100, default 50)
-  softness: number;        // Background blur (0-100, default 10)
-  saturation: number;      // Color saturation boost (0-100, default 45)
-  dispersion: number;      // Edge dispersion blur (0-100, default 30)
-  displacementResolution: number;  // Displacement map resolution (0-100, default 45)
-                           // Lower values reduce CPU load but require GPU smoothing
-  displacementMinResolution: number; // Minimum resolution during resize (0-100, default 20)
-                           // Used for progressive rendering: low-res preview during resize,
-                           // then high-res when idle (like raytracer preview)
-  displacementSmoothing: number;   // Displacement map smoothing blur (0-100, default 30)
-                           // Direct control of feGaussianBlur stdDeviation (0-100 → 0-5px)
-  enableOptimization: number;      // Enable rendering optimizations (0 or 1, default 1)
-                           // 0 = disabled, any non-zero value = enabled
-                           // Controls: size prediction, adaptive throttling, morph transitions
-  refreshInterval: number; // Frame skip interval during continuous resize (1+, default 1)
-                           // 1 = every frame, 2 = every 2nd frame, etc.
-                           // Non-rendered frames use filter stretching instead of map regeneration
-  displacementRenderer: DisplacementRenderer;  // Displacement map generation backend
-                           // 'wasm-simd' (default): WebAssembly with SIMD, CPU-based
-                           // 'gl2': WebGL2, GPU-accelerated
-                           // 'gpu': WebGPU, modern GPU compute
-}
-
-/**
- * Default parameter values
- */
-export const DEFAULT_PARAMS: LiquidGlassParams = {
-  refraction: 50,
-  thickness: 50,
-  gloss: 50,
-  softness: 10,
-  saturation: 45,
-  dispersion: 30,
-  displacementResolution: 40,   // Balanced CPU/GPU load
-  displacementMinResolution: 10, // Low-res preview during resize (progressive rendering)
-  displacementSmoothing: 0,     // No smoothing by default (0-100 → 0-5px stdDeviation)
-  enableOptimization: 1,        // Optimization enabled by default
-  refreshInterval: 12,          // Render every 12th frame (aggressive throttling)
-  displacementRenderer: 'wasm-simd',  // WASM SIMD backend by default
-};
-
-/**
- * Valid displacement renderer values
- */
-export const VALID_RENDERERS: readonly DisplacementRenderer[] = ['wasm-simd', 'gl2', 'gpu'] as const;
+// Re-export parameter types from schema
+export {
+  type DisplacementRenderer,
+  type LiquidGlassParams,
+  DEFAULT_PARAMS,
+  VALID_RENDERERS,
+} from '../../schema/parameters';
 
 /**
  * Sample for tracking size history (predictive rendering)
@@ -144,7 +94,7 @@ export interface FilterState {
   borderRadius: number;
 
   // Cached parameters (for fast-update detection)
-  params: LiquidGlassParams;
+  params: import('../../schema/parameters').LiquidGlassParams;
 
   // Timing
   lastEncodeTime: number;

@@ -64,6 +64,24 @@ export type {
   EngineOptions,
 } from './engines/css-property-engine';
 
+// === Parameter Schema ===
+export {
+  PARAMETERS,
+  PARAMETER_NAMES,
+  DEFAULT_PARAMS as SCHEMA_DEFAULTS,
+  getCSSPropertyName,
+  getAllCSSPropertyNames,
+  getParameterByCSSProperty,
+  validateNumericParam,
+  validateEnumParam,
+} from './schema/parameters';
+export type {
+  ParameterName,
+  ParameterDef,
+  NumericParameterDef,
+  EnumParameterDef,
+} from './schema/parameters';
+
 // Core math exports
 export type { ProfileType } from './core/math/profiles';
 export { getProfile } from './core/math/profiles';
