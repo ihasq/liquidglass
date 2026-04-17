@@ -860,7 +860,7 @@
           <span class="control-label">Width</span>
           <span class="control-value" id="width-val">320</span>
         </div>
-        <input type="range" id="width" min="100" max="600" value="320">
+        <input type="range" id="width" min="100" max="4096" value="320">
       </div>
 
       <div class="control">
@@ -868,7 +868,7 @@
           <span class="control-label">Height</span>
           <span class="control-value" id="height-val">200</span>
         </div>
-        <input type="range" id="height" min="80" max="400" value="200">
+        <input type="range" id="height" min="80" max="4096" value="200">
       </div>
     </section>
 
@@ -1567,6 +1567,14 @@
         const label = element.querySelector('.element-label');
         if (label) {
           label.textContent = `${Math.round(newW)}×${Math.round(newH)} @ ${Math.round(parseFloat(element.dataset.r) || 0)}°`;
+        }
+
+        // Update sliders if this is the selected element (bidirectional binding)
+        if (element === selectedElement) {
+          controls.width.value = newW;
+          controls.height.value = newH;
+          document.getElementById('width-val').textContent = Math.round(newW);
+          document.getElementById('height-val').textContent = Math.round(newH);
         }
 
         // Trigger progressive rendering visualization when in displacement mode
