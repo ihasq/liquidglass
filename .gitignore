@@ -28,6 +28,7 @@ dev/
 
 # Analysis scripts output
 scripts/*.json
+resize-profile.json
 
 # Screenshots and test outputs
 *.png
