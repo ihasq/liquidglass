@@ -46,7 +46,7 @@ export {
   getEngineV2,
   getManagerV2,
   destroyCSSPropertiesV2,
-} from './drivers/css-properties';
+} from './driver';
 
 // === CSS Property Engine (Generic) ===
 export {

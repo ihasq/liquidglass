@@ -5,9 +5,9 @@
  * Uses the generic CSS Property Engine for property observation and callbacks.
  */
 
-import { defineProperties, createEngine, CSSPropertyEngine } from '../../engines/css-property-engine';
-import { FilterManager, preloadWasm, DEFAULT_PARAMS, VALID_RENDERERS } from '../../core/filter';
-import type { LiquidGlassParams, DisplacementRenderer } from '../../core/filter';
+import { defineProperties, createEngine, CSSPropertyEngine } from '../engines/css-property-engine';
+import { FilterManager, preloadWasm, DEFAULT_PARAMS, VALID_RENDERERS } from '../core/filter';
+import type { LiquidGlassParams, DisplacementRenderer } from '../core/filter';
 
 // ============================================================================
 // Property Definitions
@@ -120,7 +120,7 @@ function syncElement(element: HTMLElement): void {
 // Property Handlers
 // ============================================================================
 
-import type { PropertyDefinition, PropertyCallback } from '../../engines/css-property-engine';
+import type { PropertyDefinition, PropertyCallback } from '../engines/css-property-engine';
 
 function createNumberCallback(
   paramKey: NumericParamKey,

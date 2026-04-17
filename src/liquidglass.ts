@@ -17,7 +17,7 @@
  * ```
  */
 
-import { initCSSPropertiesV2 as initCSSProperties } from './drivers/css-properties';
+import { initCSSPropertiesV2 as initCSSProperties } from './driver';
 
 // Auto-initialize on import
 (async () => {
