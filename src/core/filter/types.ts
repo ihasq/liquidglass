@@ -49,11 +49,11 @@ export const DEFAULT_PARAMS: LiquidGlassParams = {
   softness: 10,
   saturation: 45,
   dispersion: 30,
-  displacementResolution: 45,   // Balanced CPU/GPU load
-  displacementMinResolution: 20, // Low-res preview during resize (progressive rendering)
-  displacementSmoothing: 30,    // Moderate smoothing (0-100 → 0-5px stdDeviation)
+  displacementResolution: 40,   // Balanced CPU/GPU load
+  displacementMinResolution: 10, // Low-res preview during resize (progressive rendering)
+  displacementSmoothing: 0,     // No smoothing by default (0-100 → 0-5px stdDeviation)
   enableOptimization: 1,        // Optimization enabled by default
-  refreshInterval: 1,           // Render every frame by default (no frame skipping)
+  refreshInterval: 12,          // Render every 12th frame (aggressive throttling)
   displacementRenderer: 'wasm-simd',  // WASM SIMD backend by default
 };
 

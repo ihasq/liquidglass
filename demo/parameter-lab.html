@@ -290,11 +290,11 @@
       --liquidglass-gloss: 50;
       --liquidglass-saturation: 45;
       --liquidglass-dispersion: 30;
-      --liquidglass-displacement-resolution: 45;
-      --liquidglass-displacement-min-resolution: 20;
-      --liquidglass-displacement-smoothing: 30;
+      --liquidglass-displacement-resolution: 40;
+      --liquidglass-displacement-min-resolution: 10;
+      --liquidglass-displacement-smoothing: 0;
       --liquidglass-enable-optimization: 1;
-      --liquidglass-refresh-interval: 1;
+      --liquidglass-refresh-interval: 12;
       --liquidglass-displacement-renderer: wasm-simd;
       display: flex;
       flex-direction: column;
@@ -783,28 +783,28 @@
       <div class="control">
         <div class="control-header">
           <span class="control-label">Displacement Resolution</span>
-          <span class="control-value" id="displacement-resolution-val">45</span>
+          <span class="control-value" id="displacement-resolution-val">40</span>
         </div>
         <div class="control-desc">Displacement map resolution (CPU→GPU tradeoff). Lower = less CPU, more GPU smoothing</div>
-        <input type="range" id="displacement-resolution" min="10" max="100" value="45">
+        <input type="range" id="displacement-resolution" min="10" max="100" value="40">
       </div>
 
       <div class="control">
         <div class="control-header">
           <span class="control-label">Displacement Min Resolution</span>
-          <span class="control-value" id="displacement-min-resolution-val">20</span>
+          <span class="control-value" id="displacement-min-resolution-val">10</span>
         </div>
         <div class="control-desc">Low-res preview during resize (progressive rendering). Lower = faster preview</div>
-        <input type="range" id="displacement-min-resolution" min="5" max="100" value="20">
+        <input type="range" id="displacement-min-resolution" min="5" max="100" value="10">
       </div>
 
       <div class="control">
         <div class="control-header">
           <span class="control-label">Displacement Smoothing</span>
-          <span class="control-value" id="displacement-smoothing-val">30</span>
+          <span class="control-value" id="displacement-smoothing-val">0</span>
         </div>
         <div class="control-desc">Manual blur stdDeviation (0-100 → 0-5px). Overrides auto-smoothing when > 0</div>
-        <input type="range" id="displacement-smoothing" min="0" max="100" value="30">
+        <input type="range" id="displacement-smoothing" min="0" max="100" value="0">
       </div>
 
       <div class="control">
@@ -822,10 +822,10 @@
       <div class="control">
         <div class="control-header">
           <span class="control-label">Refresh Interval</span>
-          <span class="control-value" id="refresh-interval-val">1</span>
+          <span class="control-value" id="refresh-interval-val">12</span>
         </div>
         <div class="control-desc">Frame skip rate during resize (1=every frame, 2-10=skip frames). Higher = better perf, choppier animation</div>
-        <input type="range" id="refresh-interval" min="1" max="10" value="1">
+        <input type="range" id="refresh-interval" min="1" max="30" value="12">
       </div>
 
       <div class="control">
@@ -1049,11 +1049,11 @@
   --liquidglass-softness: 10;
   --liquidglass-saturation: 45;
   --liquidglass-dispersion: 30;
-  --liquidglass-displacement-resolution: 45;
-  --liquidglass-displacement-min-resolution: 20;
-  --liquidglass-displacement-smoothing: 30;
+  --liquidglass-displacement-resolution: 40;
+  --liquidglass-displacement-min-resolution: 10;
+  --liquidglass-displacement-smoothing: 0;
   --liquidglass-enable-optimization: 1;
-  --liquidglass-refresh-interval: 1;
+  --liquidglass-refresh-interval: 12;
   --liquidglass-displacement-renderer: wasm-simd;
   border-radius: 24px;
 }</code>
@@ -1166,7 +1166,7 @@
 
     // Presets
     const presets = {
-      default: { refraction: 50, thickness: 50, gloss: 50, softness: 10, saturation: 45, dispersion: 30, displacementResolution: 45, displacementMinResolution: 20, displacementSmoothing: 30, enableOptimization: 1, refreshInterval: 1, displacementRenderer: 'wasm-simd', radius: 24 },
+      default: { refraction: 50, thickness: 50, gloss: 50, softness: 10, saturation: 45, dispersion: 30, displacementResolution: 40, displacementMinResolution: 10, displacementSmoothing: 0, enableOptimization: 1, refreshInterval: 12, displacementRenderer: 'wasm-simd', radius: 24 },
       subtle: { refraction: 30, thickness: 40, gloss: 30, softness: 5, saturation: 30, dispersion: 20, displacementResolution: 100, displacementMinResolution: 20, displacementSmoothing: 0, enableOptimization: 1, refreshInterval: 1, displacementRenderer: 'wasm-simd', radius: 16 },
       bold: { refraction: 80, thickness: 70, gloss: 70, softness: 15, saturation: 60, dispersion: 50, displacementResolution: 100, displacementMinResolution: 20, displacementSmoothing: 0, enableOptimization: 1, refreshInterval: 1, displacementRenderer: 'wasm-simd', radius: 32 },
       frosted: { refraction: 40, thickness: 50, gloss: 40, softness: 50, saturation: 20, dispersion: 60, displacementResolution: 50, displacementMinResolution: 15, displacementSmoothing: 20, enableOptimization: 1, refreshInterval: 1, displacementRenderer: 'wasm-simd', radius: 20 },
