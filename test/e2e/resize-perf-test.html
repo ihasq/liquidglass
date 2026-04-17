@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Liquid Glass Resize Performance Test</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      min-height: 100vh;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: system-ui, sans-serif;
+    }
+    #test-element {
+      background: rgba(255,255,255,0.1);
+      border-radius: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-size: 14px;
+      /* Initial size - will be changed via JS */
+      width: 200px;
+      height: 150px;
+    }
+    #status {
+      position: fixed;
+      top: 10px;
+      left: 10px;
+      background: rgba(0,0,0,0.8);
+      color: white;
+      padding: 10px;
+      border-radius: 8px;
+      font-size: 12px;
+      font-family: monospace;
+      white-space: pre;
+    }
+  </style>
+</head>
+<body>
+  <liquid-glass id="test-element" refraction="60" thickness="50" gloss="40" dispersion="30"
+                displacement-resolution="45" displacement-min-resolution="20">
+    Resize Target
+  </liquid-glass>
+  <div id="status">Waiting for test...</div>
+
+  <script type="module">
+    import '../src/liquidglass.ts';
+
+    // Expose test API to window for Puppeteer
+    window.testAPI = {
+      element: null,
+      logs: [],
+      frameTimestamps: [],
+
+      init() {
+        this.element = document.getElementById('test-element');
+        this.logs = [];
+        this.frameTimestamps = [];
+      },
+
+      // Enable instant preview mode (dev only)
+      enableInstantPreview() {
+        if (typeof lgc_dev !== 'undefined') {
+          lgc_dev.debug.mode.instantPreview.enable();
+          lgc_dev.debug.log.throttle.enable();
+          lgc_dev.debug.log.progressive.enable();
+          return true;
+        }
+        return false;
+      },
+
+      // Disable instant preview mode
+      disableInstantPreview() {
+        if (typeof lgc_dev !== 'undefined') {
+          lgc_dev.debug.mode.instantPreview.disable();
+          lgc_dev.debug.log.disableAll();
+          return true;
+        }
+        return false;
+      },
+
+      // Get debug mode status
+      getDebugStatus() {
+        if (typeof lgc_dev !== 'undefined') {
+          return {
+            instantPreview: lgc_dev.debug.mode.instantPreview.isEnabled(),
+            logStatus: lgc_dev.debug.log.status()
+          };
+        }
+        return null;
+      },
+
+      // Perform resize sequence (direct style manipulation)
+      async runResizeSequence(steps, delayMs) {
+        const el = this.element;
+        const startTime = performance.now();
+        this.frameTimestamps = [];
+
+        for (let i = 0; i < steps.length; i++) {
+          const step = steps[i];
+          const frameStart = performance.now();
+
+          // Direct style manipulation
+          el.style.width = step.width + 'px';
+          el.style.height = step.height + 'px';
+
+          // Record frame timing
+          this.frameTimestamps.push({
+            index: i,
+            relativeTime: frameStart - startTime,
+            width: step.width,
+            height: step.height
+          });
+
+          // Wait for specified delay (simulates animation frame timing)
+          if (delayMs > 0) {
+            await new Promise(r => setTimeout(r, delayMs));
+          }
+        }
+
+        return {
+          totalTime: performance.now() - startTime,
+          frameCount: steps.length,
+          frameTimestamps: this.frameTimestamps
+        };
+      },
+
+      // Generate linear resize steps
+      generateResizeSteps(startW, startH, endW, endH, frameCount) {
+        const steps = [];
+        for (let i = 0; i < frameCount; i++) {
+          const t = i / (frameCount - 1);
+          steps.push({
+            width: Math.round(startW + (endW - startW) * t),
+            height: Math.round(startH + (endH - startH) * t)
+          });
+        }
+        return steps;
+      },
+
+      // Update status display
+      updateStatus(text) {
+        document.getElementById('status').textContent = text;
+      },
+
+      // Capture console logs (for debug output)
+      startLogCapture() {
+        this.logs = [];
+        const originalLog = console.log;
+        console.log = (...args) => {
+          const msg = args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ');
+          if (msg.includes('[LiquidGlass]')) {
+            this.logs.push({ time: performance.now(), msg });
+          }
+          originalLog.apply(console, args);
+        };
+      },
+
+      // Get captured logs
+      getLogs() {
+        return this.logs;
+      }
+    };
+
+    // Initialize
+    window.testAPI.init();
+    window.testAPI.updateStatus('Test API ready');
+  </script>
+</body>
+</html>

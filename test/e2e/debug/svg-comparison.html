@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>SVG Displacement Map Comparison</title>
+  <style>
+    body { font-family: system-ui; padding: 20px; background: #222; color: #fff; }
+    .comparison { display: flex; gap: 20px; margin: 20px 0; }
+    .comparison img { border: 1px solid #444; }
+    h2 { margin-top: 40px; }
+    .label { font-size: 12px; color: #888; margin-top: 5px; }
+  </style>
+</head>
+<body>
+  <h1>SVG Displacement Map Generator - Comparison</h1>
+
+  <h2>Kube.io Searchbox vs Generated</h2>
+  <div class="comparison">
+    <div>
+      <img src="../reference/kube-assets/displacement-map-searchbox.png" width="420" height="56">
+      <div class="label">Kube.io Reference</div>
+    </div>
+    <div>
+      <img src="generated-searchbox.png" width="420" height="56">
+      <div class="label">Generated SVG</div>
+    </div>
+  </div>
+
+  <h2>Parameter Variations</h2>
+  
+  <div class="comparison">
+    <div>
+      <img src="svg-var-default.svg" width="200" height="100">
+      <div class="label">default: bezel=25, sat=0.65, power=2</div>
+    </div>
+  </div>
+  
+  <div class="comparison">
+    <div>
+      <img src="svg-var-wide-bezel.svg" width="200" height="100">
+      <div class="label">wide-bezel: bezel=40, sat=0.65, power=2</div>
+    </div>
+  </div>
+  
+  <div class="comparison">
+    <div>
+      <img src="svg-var-high-sat.svg" width="200" height="100">
+      <div class="label">high-sat: bezel=25, sat=1, power=2</div>
+    </div>
+  </div>
+  
+  <div class="comparison">
+    <div>
+      <img src="svg-var-cubic.svg" width="200" height="100">
+      <div class="label">cubic: bezel=25, sat=0.65, power=3</div>
+    </div>
+  </div>
+  
+  <div class="comparison">
+    <div>
+      <img src="svg-var-pill.svg" width="200" height="80">
+      <div class="label">pill: bezel=25, sat=0.65, power=2</div>
+    </div>
+  </div>
+  
+  <div class="comparison">
+    <div>
+      <img src="svg-var-square.svg" width="100" height="100">
+      <div class="label">square: bezel=20, sat=0.65, power=2</div>
+    </div>
+  </div>
+  
+
+</body>
+</html>

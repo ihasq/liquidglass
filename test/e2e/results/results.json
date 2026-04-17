@@ -1,0 +1,22 @@
+[
+  {
+    "name": "panel-squircle",
+    "status": "created",
+    "diffPercent": 0
+  },
+  {
+    "name": "panel-circle",
+    "status": "created",
+    "diffPercent": 0
+  },
+  {
+    "name": "panel-lip",
+    "status": "created",
+    "diffPercent": 0
+  },
+  {
+    "name": "full-page",
+    "status": "created",
+    "diffPercent": 0
+  }
+]

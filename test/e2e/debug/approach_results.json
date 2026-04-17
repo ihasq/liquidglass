@@ -1,0 +1,82 @@
+[
+  {
+    "name": "Pixel Perfect (baseline)",
+    "matchRate": 100,
+    "diffPixels": 0,
+    "genTime": 19.79432900000029,
+    "svgSize": 1163506,
+    "passed": true
+  },
+  {
+    "name": "Edge Separation (linear + rect)",
+    "matchRate": 99.81,
+    "diffPixels": 38,
+    "genTime": 2.0147610000000213,
+    "svgSize": 82575,
+    "passed": true
+  },
+  {
+    "name": "Quadrant Reuse",
+    "matchRate": 80.08,
+    "diffPixels": 3984,
+    "genTime": 2.4767870000000585,
+    "svgSize": 80707,
+    "passed": false
+  },
+  {
+    "name": "2D LUT with <use> transform",
+    "matchRate": 76.625,
+    "diffPixels": 4675,
+    "genTime": 0.4849810000000616,
+    "svgSize": 23239,
+    "passed": false
+  },
+  {
+    "name": "Quadtree Adaptive (depth 5)",
+    "matchRate": 76.28,
+    "diffPixels": 4744,
+    "genTime": 0.38099499999998443,
+    "svgSize": 134,
+    "passed": false
+  },
+  {
+    "name": "Coarse + Fine Correction",
+    "matchRate": 75.265,
+    "diffPixels": 4947,
+    "genTime": 5.566537000000153,
+    "svgSize": 67812,
+    "passed": false
+  },
+  {
+    "name": "Piecewise Linear (10 stops)",
+    "matchRate": 73.275,
+    "diffPixels": 5345,
+    "genTime": 2.812488999999914,
+    "svgSize": 81927,
+    "passed": false
+  },
+  {
+    "name": "Concentric Arcs (20 arcs)",
+    "matchRate": 72.965,
+    "diffPixels": 5407,
+    "genTime": 0.7514800000001287,
+    "svgSize": 8035,
+    "passed": false
+  },
+  {
+    "name": "Sector + Arc Hybrid (24x15)",
+    "matchRate": 72.83500000000001,
+    "diffPixels": 5433,
+    "genTime": 3.179537999999866,
+    "svgSize": 46055,
+    "passed": false
+  },
+  {
+    "name": "Angle Quantization (32 sectors)",
+    "matchRate": 71.905,
+    "diffPixels": 5619,
+    "genTime": 1.0934429999999793,
+    "svgSize": 67815,
+    "passed": false
+  }
+]

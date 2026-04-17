@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>WASM vs WebGL2 Test</title>
+</head>
+<body>
+    <script type="module">
+        import { generateWasmDisplacementMap, preloadWasm, isWasmReady } from '/src/core/displacement/wasm-generator.ts';
+        import { generateWebGL2DisplacementMap, preloadWebGL2, isWebGL2Ready } from '/src/core/displacement/webgl2-generator.ts';
+
+        async function runTest(width, height, borderRadius, edgeWidthRatio) {
+            console.log(`Testing ${width}x${height}...`);
+            
+            const wasmResult = await generateWasmDisplacementMap({ width, height, borderRadius, edgeWidthRatio });
+            console.log(`WASM result: ${wasmResult ? 'OK' : 'NULL'}`);
+            
+            const webglResult = await generateWebGL2DisplacementMap({ width, height, borderRadius, edgeWidthRatio });
+            console.log(`WebGL2 result: ${webglResult ? 'OK' : 'NULL'}`);
+
+            if (!wasmResult || !webglResult) {
+                return { error: true, wasmOk: !!wasmResult, webglOk: !!webglResult };
+            }
+
+            const wasmCtx = wasmResult.canvas.getContext('2d');
+            const webglCtx = webglResult.canvas.getContext('2d');
+            const wasmData = wasmCtx.getImageData(0, 0, width, height).data;
+            const webglData = webglCtx.getImageData(0, 0, width, height).data;
+
+            let match = 0, total = width * height, maxDiff = 0, firstDiff = null;
+            for (let i = 0; i < wasmData.length; i += 4) {
+                const diff = Math.max(
+                    Math.abs(wasmData[i] - webglData[i]),
+                    Math.abs(wasmData[i+1] - webglData[i+1]),
+                    Math.abs(wasmData[i+2] - webglData[i+2])
+                );
+                if (diff === 0) match++;
+                else {
+                    maxDiff = Math.max(maxDiff, diff);
+                    if (!firstDiff) {
+                        const px = (i/4) % width, py = Math.floor((i/4) / width);
+                        firstDiff = { x: px, y: py, wasm: Array.from(wasmData.slice(i, i+4)), webgl: Array.from(webglData.slice(i, i+4)) };
+                    }
+                }
+            }
+            return { match, total, maxDiff, firstDiff, wasmTime: wasmResult.generationTime, webglTime: webglResult.generationTime };
+        }
+
+        async function main() {
+            console.log('Preloading backends...');
+            
+            const [wasmOk, webglOk] = await Promise.all([
+                preloadWasm().catch(e => { console.error('WASM preload error:', e); return false; }),
+                preloadWebGL2().catch(e => { console.error('WebGL2 preload error:', e); return false; })
+            ]);
+            
+            console.log(`WASM ready: ${wasmOk}, WebGL2 ready: ${webglOk}`);
+            
+            if (!wasmOk || !webglOk) {
+                window.__testResults = [{ size: 'PRELOAD', error: true, wasmOk, webglOk }];
+                return;
+            }
+
+            const tests = [
+                [100, 100, 20, 0.5],
+                [200, 150, 30, 0.5],
+                [300, 300, 50, 0.3],
+            ];
+
+            const results = [];
+            for (const [w, h, r, e] of tests) {
+                const result = await runTest(w, h, r, e);
+                results.push({ size: `${w}x${h}`, ...result });
+            }
+            window.__testResults = results;
+            console.log('Tests completed:', JSON.stringify(results, null, 2));
+        }
+        main().catch(e => console.error('Main error:', e));
+    </script>
+</body>
+</html>
