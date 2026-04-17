@@ -547,10 +547,30 @@ export class FilterManager {
     state.borderRadius = initialRadius;
 
     // Create per-element MutationObserver for style/class changes (borderRadius)
-    state.styleObserver = new MutationObserver(() => {
-      // Style/class changed - mark for borderRadius recalculation
-      state.pendingStyleChange = true;
-      this._scheduleRender(element);
+    state.styleObserver = new MutationObserver((mutations) => {
+      // Only mark for borderRadius recalculation if change might affect it
+      for (const mutation of mutations) {
+        if (mutation.attributeName === 'class') {
+          // Class change might affect borderRadius via CSS rules
+          state.pendingStyleChange = true;
+          this._scheduleRender(element);
+          return;
+        }
+        if (mutation.attributeName === 'style') {
+          // Only check if border-radius is in the inline style
+          // This avoids expensive recalc for unrelated style changes
+          const styleAttr = element.getAttribute('style') || '';
+          if (styleAttr.includes('border-radius') || styleAttr.includes('border-top-left-radius')) {
+            state.pendingStyleChange = true;
+            this._scheduleRender(element);
+            return;
+          }
+          // Style changed but not borderRadius - still need to re-render for other potential changes
+          // but skip expensive getComputedStyle for borderRadius
+          this._scheduleRender(element);
+          return;
+        }
+      }
     });
     state.styleObserver.observe(element, {
       attributes: true,
@@ -1067,30 +1087,61 @@ export class FilterManager {
     const smoothingBlur = calculateSmoothingBlur(params.displacementSmoothing, resolutionScale);
 
     if (canFastUpdate) {
-      // Fast path: only size changed - update displacement/specular maps and morph
+      // Fast path: only size changed - update displacement/specular maps
       const refs = state.refs!;
-      const currentNewHref = refs.dispImageNew.getAttribute('href');
 
-      updateDisplacementMaps(
-        refs,
-        currentNewHref,
-        dispResult.dataUrl,
-        baseWidth,
-        baseHeight,
-        smoothingBlur
-      );
+      // During active resize (isLowRes), skip morph and show new map immediately
+      // This prevents rapid start/cancel cycles that waste CPU
+      if (isLowRes) {
+        // Direct update without morph transition
+        updateDisplacementMaps(
+          refs,
+          null,  // Don't copy old href
+          dispResult.dataUrl,
+          baseWidth,
+          baseHeight,
+          smoothingBlur
+        );
+        updateSpecularMap(refs, specMap.dataUrl, baseWidth, baseHeight);
 
-      updateSpecularMap(refs, specMap.dataUrl, baseWidth, baseHeight);
+        // Cancel any running morph and show new map immediately
+        if (state.morphAnimationId !== null) {
+          cancelAnimationFrame(state.morphAnimationId);
+          state.morphAnimationId = null;
+        }
+        updateMorphWeights(refs, 0, 1);
+        state.morphProgress = 1;
 
-      if (__DEV__) {
-        logMorph('Starting MORPH transition', {
-          fromSize: { w: state.currentWidth, h: state.currentHeight },
-          toSize: { w: baseWidth, h: baseHeight },
-          duration: `${this._options.morphDuration}ms`,
-        });
+        if (__DEV__) {
+          logMorph('MORPH SKIPPED (active resize)', {
+            reason: 'isLowRes=true, direct map swap',
+            newSize: { w: baseWidth, h: baseHeight },
+          });
+        }
+      } else {
+        // High-res render: use morph transition for smooth visual
+        const currentNewHref = refs.dispImageNew.getAttribute('href');
+
+        updateDisplacementMaps(
+          refs,
+          currentNewHref,
+          dispResult.dataUrl,
+          baseWidth,
+          baseHeight,
+          smoothingBlur
+        );
+        updateSpecularMap(refs, specMap.dataUrl, baseWidth, baseHeight);
+
+        if (__DEV__) {
+          logMorph('Starting MORPH transition', {
+            fromSize: { w: state.currentWidth, h: state.currentHeight },
+            toSize: { w: baseWidth, h: baseHeight },
+            duration: `${this._options.morphDuration}ms`,
+          });
+        }
+
+        this._startMorphTransition(state);
       }
-
-      this._startMorphTransition(state);
     } else if (canParamUpdate) {
       // Medium path: params changed - update params and maps (no morph)
       const refs = state.refs!;
