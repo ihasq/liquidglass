@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite';
 import dts from 'vite-plugin-dts';
+import glsl from 'vite-plugin-glsl';
 import { resolve } from 'path';
 import { readFileSync } from 'fs';
 
@@ -11,6 +12,15 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [
+      glsl({
+        minify: !isDev,
+        include: [
+          '**/*.glsl',
+          '**/*.vert',
+          '**/*.frag',
+          '**/*.wgsl',
+        ],
+      }),
       dts({ include: ['src'] })
     ],
     define: {

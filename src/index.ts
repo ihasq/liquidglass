@@ -1,16 +1,7 @@
 /**
  * Liquid Glass - Physics-based glass refraction effect
  *
- * Two ways to use:
- *
- * 1. Web Component:
- * ```html
- * <liquid-glass refraction="80" style="border-radius: 20px;">
- *   Content
- * </liquid-glass>
- * ```
- *
- * 2. CSS Custom Properties:
+ * CSS Custom Properties:
  * ```css
  * .glass-panel {
  *   --liquidglass-refraction: 80;
@@ -43,15 +34,8 @@ export type {
   DisplacementRenderer,
 } from './core/filter';
 
-// === Web Component Driver ===
-export { LiquidGlassElement, registerLiquidGlassElement } from './drivers/web-component';
-
 // === CSS Properties Driver ===
 export { CSSPropertiesDriver, getCSSDriver, initCSSDriver } from './drivers/css-properties';
-
-// === Legacy API (backward compatibility) ===
-export { LiquidGlass } from './liquid-glass';
-export type { LiquidGlassOptions } from './liquid-glass';
 
 // Core math exports
 export type { ProfileType } from './core/math/profiles';

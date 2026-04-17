@@ -35,9 +35,11 @@
     "puppeteer": "^22.0.0",
     "serve-handler": "^6.1.7",
     "sharp": "^0.34.5",
+    "strip-comments": "^2.0.1",
     "typescript": "^5.4.0",
     "vite": "^5.2.0",
     "vite-plugin-dts": "^3.8.0",
+    "vite-plugin-glsl": "^1.6.0",
     "z3-solver": "^4.16.0"
   },
   "keywords": [

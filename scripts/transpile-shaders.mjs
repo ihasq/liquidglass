@@ -3,38 +3,72 @@
  * Shader Transpilation Script
  *
  * Converts GLSL ES 3.00 shaders to WGSL using naga-wasi-cli.
+ * WGSL output is minified using strip-comments for production builds.
  *
  * Source: src/shaders/gl2/*.vert, *.frag
- * Output: src/shaders/wgsl/*.vert.wgsl, *.frag.wgsl
+ * Output: src/shaders/gpu/*.vert.wgsl, *.frag.wgsl
  *
  * GLSL ES 300 → naga compatibility:
  * - naga doesn't parse "#version 300 es" directly
  * - We preprocess GLSL to remove ES-specific constructs
  * - The preprocessed version is a superset compatible with both WebGL2 and naga
  *
- * This script also generates TypeScript modules that export
- * shader source code as string constants for both WebGL2 and WebGPU.
+ * Shader files are imported directly via vite-plugin-glsl, which handles
+ * GLSL minification at build time. WGSL is minified by this script.
  */
 
 import { execSync } from 'node:child_process';
 import { readFileSync, writeFileSync, readdirSync, existsSync, mkdirSync, unlinkSync } from 'node:fs';
 import { join, basename, extname, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { tmpdir } from 'node:os';
+import strip from 'strip-comments';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');
 
 const GL2_DIR = join(ROOT, 'src/shaders/gl2');
-const WGSL_DIR = join(ROOT, 'src/shaders/wgsl');
-const GEN_DIR = join(ROOT, 'src/shaders/generated');
+const GPU_DIR = join(ROOT, 'src/shaders/gpu');
 
-// Ensure output directories exist
-[WGSL_DIR, GEN_DIR].forEach(dir => {
-  if (!existsSync(dir)) {
-    mkdirSync(dir, { recursive: true });
-  }
-});
+// Check if minification is enabled (default: true for production)
+const MINIFY = process.env.WGSL_MINIFY !== '0';
+
+// Ensure output directory exists
+if (!existsSync(GPU_DIR)) {
+  mkdirSync(GPU_DIR, { recursive: true });
+}
+
+/**
+ * Minify WGSL source code
+ *
+ * Uses strip-comments to remove // and /* comments,
+ * then compresses whitespace while preserving WGSL syntax.
+ */
+function minifyWgsl(wgslSource) {
+  // Remove C-style comments (// and /* */)
+  let minified = strip(wgslSource);
+
+  // Compress multiple whitespace/newlines to single space
+  // But preserve newlines after semicolons and braces for readability
+  minified = minified
+    // Remove leading/trailing whitespace on each line
+    .split('\n')
+    .map(line => line.trim())
+    .filter(line => line.length > 0)
+    .join('\n')
+    // Compress multiple spaces to single space
+    .replace(/[ \t]+/g, ' ')
+    // Remove spaces around operators and punctuation
+    .replace(/\s*([{}();,=<>+\-*\/&|!:\[\]])\s*/g, '$1')
+    // Restore necessary spaces (after keywords, before identifiers)
+    .replace(/\b(fn|let|var|const|if|else|for|while|return|struct|uniform|storage|read|write|read_write)\b/g, ' $1 ')
+    .replace(/(@\w+)/g, ' $1')
+    // Clean up extra spaces
+    .replace(/\s+/g, ' ')
+    .replace(/\s*\n\s*/g, '\n')
+    .trim();
+
+  return minified;
+}
 
 /**
  * Preprocess GLSL ES 300 to naga-compatible GLSL 450
@@ -169,7 +203,18 @@ function transpileShader(inputPath, outputPath, shaderType) {
       }
     );
 
-    console.log(`  [OK] ${basename(inputPath)} -> ${basename(outputPath)}`);
+    // Minify WGSL output if enabled
+    if (MINIFY) {
+      const wgslContent = readFileSync(outputPath, 'utf-8');
+      const originalSize = wgslContent.length;
+      const minifiedContent = minifyWgsl(wgslContent);
+      writeFileSync(outputPath, minifiedContent);
+      const minifiedSize = minifiedContent.length;
+      const reduction = ((1 - minifiedSize / originalSize) * 100).toFixed(1);
+      console.log(`  [OK] ${basename(inputPath)} -> ${basename(outputPath)} (minified: -${reduction}%)`);
+    } else {
+      console.log(`  [OK] ${basename(inputPath)} -> ${basename(outputPath)}`);
+    }
     return true;
   } catch (error) {
     console.error(`  [FAIL] ${basename(inputPath)}: ${error.message}`);
@@ -189,90 +234,11 @@ function transpileShader(inputPath, outputPath, shaderType) {
   }
 }
 
-/**
- * Escape string for JavaScript template literal
- */
-function escapeForTemplate(str) {
-  return str
-    .replace(/\\/g, '\\\\')
-    .replace(/`/g, '\\`')
-    .replace(/\$\{/g, '\\${');
-}
-
-/**
- * Generate TypeScript module exporting shader sources
- */
-function generateShaderModule() {
-  const shaders = {};
-
-  // Read all GLSL shaders
-  const glslFiles = readdirSync(GL2_DIR).filter(f => f.endsWith('.vert') || f.endsWith('.frag'));
-
-  for (const file of glslFiles) {
-    const name = basename(file, extname(file));
-    const type = extname(file).slice(1); // 'vert' or 'frag'
-    const key = `${name}_${type}`;
-
-    const glslPath = join(GL2_DIR, file);
-    const wgslPath = join(WGSL_DIR, `${file}.wgsl`);
-
-    const glslSource = readFileSync(glslPath, 'utf-8');
-    const wgslSource = existsSync(wgslPath) ? readFileSync(wgslPath, 'utf-8') : null;
-
-    shaders[key] = {
-      name,
-      type,
-      glsl: glslSource,
-      wgsl: wgslSource,
-    };
-  }
-
-  // Generate TypeScript module
-  let tsContent = `/**
- * Auto-generated shader sources
- * DO NOT EDIT - Generated by scripts/transpile-shaders.mjs
- *
- * Source of truth: src/shaders/gl2/*.vert, *.frag
- * WGSL generated by: naga-wasi-cli
- */
-
-`;
-
-  // Export GLSL shaders
-  tsContent += `// ============================================================================\n`;
-  tsContent += `// GLSL ES 3.00 Shaders (WebGL2)\n`;
-  tsContent += `// ============================================================================\n\n`;
-
-  for (const [key, shader] of Object.entries(shaders)) {
-    const constName = `GLSL_${shader.name.toUpperCase()}_${shader.type.toUpperCase()}`;
-    tsContent += `export const ${constName} = /* glsl */ \`${escapeForTemplate(shader.glsl)}\`;\n\n`;
-  }
-
-  // Export WGSL shaders
-  tsContent += `// ============================================================================\n`;
-  tsContent += `// WGSL Shaders (WebGPU)\n`;
-  tsContent += `// ============================================================================\n\n`;
-
-  for (const [key, shader] of Object.entries(shaders)) {
-    const constName = `WGSL_${shader.name.toUpperCase()}_${shader.type.toUpperCase()}`;
-    if (shader.wgsl) {
-      tsContent += `export const ${constName} = /* wgsl */ \`${escapeForTemplate(shader.wgsl)}\`;\n\n`;
-    } else {
-      tsContent += `// ${constName} - transpilation failed, using fallback\n`;
-      tsContent += `export const ${constName}: string | null = null;\n\n`;
-    }
-  }
-
-  // Write TypeScript module
-  const outputPath = join(GEN_DIR, 'shaders.ts');
-  writeFileSync(outputPath, tsContent);
-  console.log(`Generated: ${outputPath}`);
-}
-
 // Main execution
 console.log('Transpiling GLSL -> WGSL...');
 console.log(`Source: ${GL2_DIR}`);
-console.log(`Output: ${WGSL_DIR}`);
+console.log(`Output: ${GPU_DIR}`);
+console.log(`Minify: ${MINIFY ? 'enabled' : 'disabled'}`);
 console.log('');
 
 const glslFiles = readdirSync(GL2_DIR).filter(f => f.endsWith('.vert') || f.endsWith('.frag'));
@@ -280,7 +246,7 @@ const glslFiles = readdirSync(GL2_DIR).filter(f => f.endsWith('.vert') || f.ends
 let success = true;
 for (const file of glslFiles) {
   const inputPath = join(GL2_DIR, file);
-  const outputPath = join(WGSL_DIR, `${file}.wgsl`);
+  const outputPath = join(GPU_DIR, `${file}.wgsl`);
   const shaderType = extname(file).slice(1);
 
   if (!transpileShader(inputPath, outputPath, shaderType)) {
@@ -289,12 +255,8 @@ for (const file of glslFiles) {
 }
 
 console.log('');
-console.log('Generating TypeScript module...');
-generateShaderModule();
-
-console.log('');
 if (success) {
-  console.log('Shader transpilation completed successfully.');
+  console.log(`Shader transpilation completed successfully.${MINIFY ? ' (WGSL minified)' : ''}`);
 } else {
   console.log('Shader transpilation completed with errors.');
   process.exit(1);
