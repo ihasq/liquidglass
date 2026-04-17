@@ -30,7 +30,7 @@ export interface LiquidGlassParams {
   enableOptimization: number;      // Enable rendering optimizations (0 or 1, default 1)
                            // 0 = disabled, any non-zero value = enabled
                            // Controls: size prediction, adaptive throttling, morph transitions
-  refreshRate: number;     // Frame skip rate during continuous resize (1-10, default 1)
+  refreshInterval: number; // Frame skip interval during continuous resize (1-10, default 1)
                            // 1 = every frame, 2 = every 2nd frame, etc.
                            // Non-rendered frames use filter stretching instead of map regeneration
   displacementRenderer: DisplacementRenderer;  // Displacement map generation backend
@@ -53,7 +53,7 @@ export const DEFAULT_PARAMS: LiquidGlassParams = {
   displacementMinResolution: 20, // Low-res preview during resize (progressive rendering)
   displacementSmoothing: 30,    // Moderate smoothing (0-100 → 0-5px stdDeviation)
   enableOptimization: 1,        // Optimization enabled by default
-  refreshRate: 1,               // Render every frame by default (no frame skipping)
+  refreshInterval: 1,           // Render every frame by default (no frame skipping)
   displacementRenderer: 'wasm-simd',  // WASM SIMD backend by default
 };
 
@@ -164,7 +164,7 @@ export interface FilterState {
   pendingStyleChange: boolean;     // True when style changed, radius needs recalculation
   styleObserver: MutationObserver | null;  // Per-element observer for style/class changes
 
-  // Frame skip state (refreshRate-based throttling)
+  // Frame skip state (refreshInterval-based throttling)
   frameCounter: number;            // Counts frames since last full render
   lastResizeTime: number;          // Timestamp of last resize event
   pendingStretchTimeout: ReturnType<typeof setTimeout> | null;  // Timeout for final render after resize stops

@@ -719,7 +719,7 @@ export class FilterManager {
       // Style change tracking
       pendingStyleChange: false,
       styleObserver: null,
-      // Frame skip state (refreshRate-based throttling)
+      // Frame skip state (refreshInterval-based throttling)
       frameCounter: 0,
       lastResizeTime: 0,
       pendingStretchTimeout: null,
@@ -745,7 +745,7 @@ export class FilterManager {
       state.deferredRenderTimeout = null;
     }
 
-    // Use refreshRate frame skipping with progressive rendering
+    // Use refreshInterval frame skipping with progressive rendering
     // enableOptimization controls prediction, morph transitions, and adaptive interval in _render
     this._renderWithRefreshRate(element, state);
   }
@@ -837,17 +837,17 @@ export class FilterManager {
   }
 
   /**
-   * Render with refreshRate-based frame skipping
+   * Render with refreshInterval-based frame skipping
    *
    * Implements frame skip logic:
-   * - refreshRate=1: every frame renders
-   * - refreshRate=2: frames 1,3,5,... render, 2,4,6,... stretch
-   * - refreshRate=3: frames 1,4,7,... render, others stretch
+   * - refreshInterval=1: every frame renders
+   * - refreshInterval=2: frames 1,3,5,... render, 2,4,6,... stretch
+   * - refreshInterval=3: frames 1,4,7,... render, others stretch
    *
    * When resize stops, a final render is forced to ensure accuracy.
    */
   private _renderWithRefreshRate(element: HTMLElement, state: FilterState): void {
-    const refreshRate = Math.max(1, Math.min(10, Math.round(state.params.refreshRate)));
+    const refreshInterval = Math.max(1, Math.min(10, Math.round(state.params.refreshInterval)));
 
     // Cancel pending stretch timeout (resize is still active)
     if (state.pendingStretchTimeout) {
@@ -861,13 +861,13 @@ export class FilterManager {
 
     // Determine if this frame should do a full render
     // Frame 1 always renders, then every Nth frame after that
-    const shouldRender = state.frameCounter % refreshRate === 1 || refreshRate === 1;
+    const shouldRender = state.frameCounter % refreshInterval === 1 || refreshInterval === 1;
 
     if (shouldRender) {
       if (__DEV__) {
         logThrottle('RefreshRate - rendering frame', {
           frameCounter: state.frameCounter,
-          refreshRate,
+          refreshInterval,
           action: 'full render',
         });
       }
@@ -877,7 +877,7 @@ export class FilterManager {
       if (__DEV__) {
         logThrottle('RefreshRate - stretching filter', {
           frameCounter: state.frameCounter,
-          refreshRate,
+          refreshInterval,
           action: 'stretch only',
         });
       }
@@ -890,12 +890,12 @@ export class FilterManager {
       state.pendingStretchTimeout = null;
 
       // If last action was a stretch, force a final render for accuracy
-      const lastWasStretch = state.frameCounter % refreshRate !== 1 && refreshRate !== 1;
+      const lastWasStretch = state.frameCounter % refreshInterval !== 1 && refreshInterval !== 1;
       if (lastWasStretch) {
         if (__DEV__) {
           logThrottle('RefreshRate - forced final render', {
             frameCounter: state.frameCounter,
-            refreshRate,
+            refreshInterval,
             reason: 'resize stopped after stretch',
           });
         }
@@ -1363,7 +1363,7 @@ export class FilterManager {
       a.displacementMinResolution === b.displacementMinResolution &&
       a.displacementSmoothing === b.displacementSmoothing &&
       this._normalizeOptimization(a.enableOptimization) === this._normalizeOptimization(b.enableOptimization) &&
-      a.refreshRate === b.refreshRate &&
+      a.refreshInterval === b.refreshInterval &&
       a.displacementRenderer === b.displacementRenderer
     );
   }

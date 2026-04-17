@@ -1,505 +1,276 @@
 /**
- * CSS Custom Properties Driver for Liquid Glass
+ * CSS Properties Driver - Built on CSS Property Engine
  *
- * Enables liquid glass effect via CSS custom properties:
- *
- * ```css
- * .my-element {
- *   --liquidglass-refraction: 80;
- *   --liquidglass-thickness: 50;
- * }
- * ```
- *
- * The driver automatically detects elements with these properties
- * and applies the liquid glass effect.
+ * Bridges CSS Custom Properties (--liquidglass-*) with the FilterManager.
+ * Uses the generic CSS Property Engine for property observation and callbacks.
  */
 
-import { FilterManager, preloadWasm, DEFAULT_PARAMS, type LiquidGlassParams, type DisplacementRenderer, VALID_RENDERERS } from '../../core/filter';
+import { defineProperties, createEngine, CSSPropertyEngine } from '../../engines/css-property-engine';
+import { FilterManager, preloadWasm, DEFAULT_PARAMS, VALID_RENDERERS } from '../../core/filter';
+import type { LiquidGlassParams, DisplacementRenderer } from '../../core/filter';
 
-// Property names
-const PROP_PREFIX = '--liquidglass-';
-const PROPS = {
-  refraction: `${PROP_PREFIX}refraction`,
-  thickness: `${PROP_PREFIX}thickness`,
-  gloss: `${PROP_PREFIX}gloss`,
-  softness: `${PROP_PREFIX}softness`,
-  saturation: `${PROP_PREFIX}saturation`,
-  dispersion: `${PROP_PREFIX}dispersion`,
-  displacementResolution: `${PROP_PREFIX}displacement-resolution`,
-  displacementMinResolution: `${PROP_PREFIX}displacement-min-resolution`,
-  displacementSmoothing: `${PROP_PREFIX}displacement-smoothing`,
-  enableOptimization: `${PROP_PREFIX}enable-optimization`,
-  refreshRate: `${PROP_PREFIX}refresh-rate`,
-  displacementRenderer: `${PROP_PREFIX}displacement-renderer`,
+// ============================================================================
+// Property Definitions
+// ============================================================================
+
+const PROPERTY_NAMES = {
+  refraction: 'liquidglass-refraction',
+  thickness: 'liquidglass-thickness',
+  gloss: 'liquidglass-gloss',
+  softness: 'liquidglass-softness',
+  saturation: 'liquidglass-saturation',
+  dispersion: 'liquidglass-dispersion',
+  displacementResolution: 'liquidglass-displacement-resolution',
+  displacementMinResolution: 'liquidglass-displacement-min-resolution',
+  displacementSmoothing: 'liquidglass-displacement-smoothing',
+  enableOptimization: 'liquidglass-enable-optimization',
+  refreshInterval: 'liquidglass-refresh-interval',
+  displacementRenderer: 'liquidglass-displacement-renderer',
 } as const;
 
-// Sentinel value to detect "not set" (uses CSS @property initial-value)
-const SENTINEL = -9999;
+// ============================================================================
+// Element State Management
+// ============================================================================
 
-/**
- * Scan all stylesheets for rules containing --liquidglass-* properties
- * Returns selectors that can be used with querySelectorAll
- */
-function scanCSSRulesForLiquidGlass(): string[] {
-  const selectors: string[] = [];
+interface ElementParams {
+  refraction?: number;
+  thickness?: number;
+  gloss?: number;
+  softness?: number;
+  saturation?: number;
+  dispersion?: number;
+  displacementResolution?: number;
+  displacementMinResolution?: number;
+  displacementSmoothing?: number;
+  enableOptimization?: number;
+  refreshInterval?: number;
+  displacementRenderer?: DisplacementRenderer;
+}
 
-  for (const sheet of document.styleSheets) {
-    try {
-      const rules = sheet.cssRules || (sheet as CSSStyleSheet).rules;
-      if (!rules) continue;
+type NumericParamKey = Exclude<keyof ElementParams, 'displacementRenderer'>;
 
-      scanRules(rules, selectors);
-    } catch (e) {
-      // Cross-origin stylesheets will throw SecurityError - skip them
-    }
+const elementParams = new WeakMap<HTMLElement, ElementParams>();
+const attachedElements = new WeakSet<HTMLElement>();
+
+function getOrCreateParams(element: HTMLElement): ElementParams {
+  let params = elementParams.get(element);
+  if (!params) {
+    params = {};
+    elementParams.set(element, params);
   }
-
-  return selectors;
+  return params;
 }
 
-/**
- * Recursively scan CSS rules (handles @media, @supports, etc.)
- */
-function scanRules(rules: CSSRuleList, selectors: string[]): void {
-  for (const rule of rules) {
-    // Handle grouped rules (@media, @supports, @layer, etc.)
-    if (rule instanceof CSSGroupingRule) {
-      scanRules(rule.cssRules, selectors);
-    }
-    // Handle regular style rules
-    else if (rule instanceof CSSStyleRule) {
-      if (hasLiquidGlassProperties(rule.style)) {
-        // Filter out dynamic pseudo-classes that can't be queried
-        const selector = rule.selectorText;
-        if (!hasDynamicPseudoClass(selector)) {
-          selectors.push(selector);
-        }
-      }
-    }
-  }
-}
-
-/**
- * Check if a style declaration has any --liquidglass-* properties
- */
-function hasLiquidGlassProperties(style: CSSStyleDeclaration): boolean {
-  for (let i = 0; i < style.length; i++) {
-    if (style[i].startsWith(PROP_PREFIX)) {
-      return true;
-    }
-  }
-  return false;
-}
-
-/**
- * Check if a selector contains dynamic pseudo-classes that can't be queried
- */
-function hasDynamicPseudoClass(selector: string): boolean {
-  return /:(hover|focus|active|focus-within|focus-visible|target)/.test(selector);
-}
-
-/**
- * Inject @property rules for CSS custom properties
- */
-function injectPropertyRules(): void {
-  // Check if already injected
-  if (document.querySelector('style[data-liquid-glass-props]')) return;
-
-  const style = document.createElement('style');
-  style.setAttribute('data-liquid-glass-props', '');
-  style.textContent = `
-@property ${PROPS.refraction} {
-  syntax: '<number>';
-  inherits: true;
-  initial-value: ${SENTINEL};
-}
-
-@property ${PROPS.thickness} {
-  syntax: '<number>';
-  inherits: true;
-  initial-value: ${SENTINEL};
-}
-
-@property ${PROPS.gloss} {
-  syntax: '<number>';
-  inherits: true;
-  initial-value: ${SENTINEL};
-}
-
-@property ${PROPS.softness} {
-  syntax: '<number>';
-  inherits: true;
-  initial-value: ${SENTINEL};
-}
-
-@property ${PROPS.saturation} {
-  syntax: '<number>';
-  inherits: true;
-  initial-value: ${SENTINEL};
-}
-
-@property ${PROPS.dispersion} {
-  syntax: '<number>';
-  inherits: true;
-  initial-value: ${SENTINEL};
-}
-
-@property ${PROPS.displacementResolution} {
-  syntax: '<number>';
-  inherits: true;
-  initial-value: ${SENTINEL};
-}
-
-@property ${PROPS.displacementMinResolution} {
-  syntax: '<number>';
-  inherits: true;
-  initial-value: ${SENTINEL};
-}
-
-@property ${PROPS.displacementSmoothing} {
-  syntax: '<number>';
-  inherits: true;
-  initial-value: ${SENTINEL};
-}
-
-@property ${PROPS.enableOptimization} {
-  syntax: '<number>';
-  inherits: true;
-  initial-value: ${SENTINEL};
-}
-
-@property ${PROPS.refreshRate} {
-  syntax: '<number>';
-  inherits: true;
-  initial-value: ${SENTINEL};
-}
-
-@property ${PROPS.displacementRenderer} {
-  syntax: 'wasm-simd | gl2 | gpu';
-  inherits: true;
-  initial-value: wasm-simd;
-}
-`;
-
-  document.head.appendChild(style);
-}
-
-/**
- * Normalize enableOptimization value: 0 stays 0, any non-zero becomes 1
- */
-function normalizeOptimization(value: number): number {
-  return value === 0 ? 0 : 1;
-}
-
-/**
- * Read liquid glass params from element's computed style
- * Returns null if no liquid glass properties are set
- */
-/**
- * Parse and validate displacement renderer value
- */
-function parseRenderer(value: string): DisplacementRenderer | null {
-  const trimmed = value.trim().toLowerCase();
-  if (VALID_RENDERERS.includes(trimmed as DisplacementRenderer)) {
-    return trimmed as DisplacementRenderer;
-  }
-  return null;
-}
-
-function readParams(element: HTMLElement): LiquidGlassParams | null {
-  const style = getComputedStyle(element);
-
-  const refraction = parseFloat(style.getPropertyValue(PROPS.refraction));
-  const thickness = parseFloat(style.getPropertyValue(PROPS.thickness));
-  const gloss = parseFloat(style.getPropertyValue(PROPS.gloss));
-  const softness = parseFloat(style.getPropertyValue(PROPS.softness));
-  const saturation = parseFloat(style.getPropertyValue(PROPS.saturation));
-  const dispersion = parseFloat(style.getPropertyValue(PROPS.dispersion));
-  const displacementResolution = parseFloat(style.getPropertyValue(PROPS.displacementResolution));
-  const displacementMinResolution = parseFloat(style.getPropertyValue(PROPS.displacementMinResolution));
-  const displacementSmoothing = parseFloat(style.getPropertyValue(PROPS.displacementSmoothing));
-  const enableOptimization = parseFloat(style.getPropertyValue(PROPS.enableOptimization));
-  const refreshRate = parseFloat(style.getPropertyValue(PROPS.refreshRate));
-  const displacementRendererRaw = style.getPropertyValue(PROPS.displacementRenderer);
-
-  // Check if any property is set (not sentinel)
-  const hasRefraction = refraction !== SENTINEL && !isNaN(refraction);
-  const hasThickness = thickness !== SENTINEL && !isNaN(thickness);
-  const hasGloss = gloss !== SENTINEL && !isNaN(gloss);
-  const hasSoftness = softness !== SENTINEL && !isNaN(softness);
-  const hasSaturation = saturation !== SENTINEL && !isNaN(saturation);
-  const hasDispersion = dispersion !== SENTINEL && !isNaN(dispersion);
-  const hasDmapResolution = displacementResolution !== SENTINEL && !isNaN(displacementResolution);
-  const hasDmapMinResolution = displacementMinResolution !== SENTINEL && !isNaN(displacementMinResolution);
-  const hasDmapSmoothing = displacementSmoothing !== SENTINEL && !isNaN(displacementSmoothing);
-  const hasEnableOptimization = enableOptimization !== SENTINEL && !isNaN(enableOptimization);
-  const hasRefreshRate = refreshRate !== SENTINEL && !isNaN(refreshRate);
-  const parsedRenderer = parseRenderer(displacementRendererRaw);
-  const hasRenderer = parsedRenderer !== null;
-
-  // If no property is set, return null
-  if (!hasRefraction && !hasThickness && !hasGloss && !hasSoftness && !hasSaturation && !hasDispersion && !hasDmapResolution && !hasDmapMinResolution && !hasDmapSmoothing && !hasEnableOptimization && !hasRefreshRate && !hasRenderer) {
-    return null;
-  }
-
-  // Return params with defaults for unset values
-  // enableOptimization: normalize to 0 or 1 (0 stays 0, any non-zero becomes 1)
-  // refreshRate: clamp to 1-10 range
+function buildFullParams(partial: ElementParams): LiquidGlassParams {
   return {
-    refraction: hasRefraction ? refraction : DEFAULT_PARAMS.refraction,
-    thickness: hasThickness ? thickness : DEFAULT_PARAMS.thickness,
-    gloss: hasGloss ? gloss : DEFAULT_PARAMS.gloss,
-    softness: hasSoftness ? softness : DEFAULT_PARAMS.softness,
-    saturation: hasSaturation ? saturation : DEFAULT_PARAMS.saturation,
-    dispersion: hasDispersion ? dispersion : DEFAULT_PARAMS.dispersion,
-    displacementResolution: hasDmapResolution ? displacementResolution : DEFAULT_PARAMS.displacementResolution,
-    displacementMinResolution: hasDmapMinResolution ? displacementMinResolution : DEFAULT_PARAMS.displacementMinResolution,
-    displacementSmoothing: hasDmapSmoothing ? displacementSmoothing : DEFAULT_PARAMS.displacementSmoothing,
-    enableOptimization: hasEnableOptimization ? normalizeOptimization(enableOptimization) : DEFAULT_PARAMS.enableOptimization,
-    refreshRate: hasRefreshRate ? Math.max(1, Math.min(10, Math.round(refreshRate))) : DEFAULT_PARAMS.refreshRate,
-    displacementRenderer: parsedRenderer ?? DEFAULT_PARAMS.displacementRenderer,
+    refraction: partial.refraction ?? DEFAULT_PARAMS.refraction,
+    thickness: partial.thickness ?? DEFAULT_PARAMS.thickness,
+    gloss: partial.gloss ?? DEFAULT_PARAMS.gloss,
+    softness: partial.softness ?? DEFAULT_PARAMS.softness,
+    saturation: partial.saturation ?? DEFAULT_PARAMS.saturation,
+    dispersion: partial.dispersion ?? DEFAULT_PARAMS.dispersion,
+    displacementResolution: partial.displacementResolution ?? DEFAULT_PARAMS.displacementResolution,
+    displacementMinResolution: partial.displacementMinResolution ?? DEFAULT_PARAMS.displacementMinResolution,
+    displacementSmoothing: partial.displacementSmoothing ?? DEFAULT_PARAMS.displacementSmoothing,
+    enableOptimization: partial.enableOptimization ?? DEFAULT_PARAMS.enableOptimization,
+    refreshInterval: partial.refreshInterval ?? DEFAULT_PARAMS.refreshInterval,
+    displacementRenderer: partial.displacementRenderer ?? DEFAULT_PARAMS.displacementRenderer,
   };
 }
 
-/**
- * CSS Properties Driver
- */
-export class CSSPropertiesDriver {
-  private _manager: FilterManager;
-  private _observer: MutationObserver;
-  private _resizeObserver: ResizeObserver;
-  private _trackedElements = new Set<HTMLElement>();
-  private _checkTimeout: ReturnType<typeof setTimeout> | null = null;
-  private _initialized = false;
+function hasAnyProperty(params: ElementParams): boolean {
+  return Object.keys(params).length > 0;
+}
 
-  constructor(manager?: FilterManager) {
-    this._manager = manager ?? new FilterManager();
+// ============================================================================
+// Filter Manager Integration
+// ============================================================================
 
-    // Observe DOM mutations (new elements, attribute changes, stylesheets)
-    this._observer = new MutationObserver((mutations) => {
-      // Check if any stylesheet was added/modified
-      let hasStylesheetChange = false;
-      for (const mutation of mutations) {
-        if (mutation.type === 'childList') {
-          for (const node of mutation.addedNodes) {
-            if (node instanceof HTMLStyleElement || node instanceof HTMLLinkElement) {
-              hasStylesheetChange = true;
-              break;
-            }
-          }
-        }
-        if (hasStylesheetChange) break;
-      }
+let _manager: FilterManager | null = null;
 
-      // Stylesheet changes need immediate rescan
-      if (hasStylesheetChange) {
-        // Small delay to let stylesheet load
-        setTimeout(() => this._scanDocument(), 50);
-      } else {
-        this._scheduleCheck();
-      }
-    });
-
-    // Observe resize for style recalculation triggers
-    this._resizeObserver = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        this._checkElement(entry.target as HTMLElement);
-      }
-    });
+function getManager(): FilterManager {
+  if (!_manager) {
+    _manager = new FilterManager();
   }
+  return _manager;
+}
 
-  /**
-   * Initialize the driver
-   * Call this once to start observing the DOM
-   */
-  async init(): Promise<void> {
-    if (this._initialized) return;
-    this._initialized = true;
+function syncElement(element: HTMLElement): void {
+  const params = elementParams.get(element);
+  const manager = getManager();
 
-    // Preload WASM
-    await preloadWasm();
+  if (params && hasAnyProperty(params)) {
+    const fullParams = buildFullParams(params);
 
-    // Inject @property rules
-    injectPropertyRules();
-
-    // Initial scan
-    this._scanDocument();
-
-    // Start observing body for element changes
-    this._observer.observe(document.body, {
-      childList: true,
-      subtree: true,
-      attributes: true,
-      attributeFilter: ['style', 'class'],
-    });
-
-    // Also observe head for stylesheet changes
-    this._observer.observe(document.head, {
-      childList: true,
-      subtree: true,
-    });
-  }
-
-  /**
-   * Stop observing and clean up
-   */
-  destroy(): void {
-    this._observer.disconnect();
-    this._resizeObserver.disconnect();
-
-    for (const el of this._trackedElements) {
-      this._manager.detach(el);
+    if (attachedElements.has(element)) {
+      manager.update(element, fullParams);
+    } else {
+      manager.attach(element, fullParams);
+      attachedElements.add(element);
     }
-    this._trackedElements.clear();
-
-    if (this._checkTimeout) {
-      clearTimeout(this._checkTimeout);
-      this._checkTimeout = null;
+  } else {
+    if (attachedElements.has(element)) {
+      manager.detach(element);
+      attachedElements.delete(element);
     }
-
-    this._initialized = false;
-  }
-
-  /**
-   * Force re-scan of all elements
-   */
-  rescan(): void {
-    this._scanDocument();
-  }
-
-  /**
-   * Get the underlying FilterManager
-   */
-  get manager(): FilterManager {
-    return this._manager;
-  }
-
-  private _scheduleCheck(): void {
-    if (this._checkTimeout) return;
-    this._checkTimeout = setTimeout(() => {
-      this._checkTimeout = null;
-      this._scanDocument();
-    }, 16); // ~1 frame
-  }
-
-  private _scanDocument(): void {
-    // Scan CSS rules for selectors with --liquidglass-* properties
-    const selectors = scanCSSRulesForLiquidGlass();
-    const candidateElements = new Set<HTMLElement>();
-
-    // Query elements matching CSS rule selectors
-    for (const selector of selectors) {
-      try {
-        const elements = document.querySelectorAll(selector);
-        for (const el of elements) {
-          if (el instanceof HTMLElement) {
-            candidateElements.add(el);
-          }
-        }
-      } catch (e) {
-        // Invalid selector - skip
-      }
-    }
-
-    // Also check elements with inline style (for style.setProperty cases)
-    const inlineElements = document.querySelectorAll('[style]');
-    for (const el of inlineElements) {
-      if (el instanceof HTMLElement && el.style.cssText.includes(PROP_PREFIX)) {
-        candidateElements.add(el);
-      }
-    }
-
-    // Check all candidate elements
-    for (const el of candidateElements) {
-      this._checkElement(el);
-    }
-
-    // Check if any tracked elements have been removed or lost their properties
-    for (const el of this._trackedElements) {
-      if (!document.body.contains(el)) {
-        this._manager.detach(el);
-        this._trackedElements.delete(el);
-        this._resizeObserver.unobserve(el);
-      } else {
-        const params = readParams(el);
-        if (!params) {
-          // Properties removed
-          this._manager.detach(el);
-          this._trackedElements.delete(el);
-          this._resizeObserver.unobserve(el);
-        }
-      }
-    }
-  }
-
-  private _checkElement(element: HTMLElement): void {
-    const params = readParams(element);
-
-    if (params) {
-      if (this._trackedElements.has(element)) {
-        // Check if params actually changed before triggering update
-        const currentParams = this._manager.getParams(element);
-        if (currentParams && this._paramsEqual(currentParams, params)) {
-          return; // No change - skip update to avoid unnecessary renders
-        }
-        // Update existing
-        this._manager.update(element, params);
-      } else {
-        // New element with liquid glass properties
-        this._manager.attach(element, params);
-        this._trackedElements.add(element);
-        this._resizeObserver.observe(element);
-      }
-    } else if (this._trackedElements.has(element)) {
-      // Element lost its properties
-      this._manager.detach(element);
-      this._trackedElements.delete(element);
-      this._resizeObserver.unobserve(element);
-    }
-  }
-
-  /**
-   * Compare two LiquidGlassParams objects for equality
-   * Used to avoid unnecessary updates when params haven't changed
-   */
-  private _paramsEqual(a: LiquidGlassParams, b: LiquidGlassParams): boolean {
-    return (
-      a.refraction === b.refraction &&
-      a.thickness === b.thickness &&
-      a.gloss === b.gloss &&
-      a.softness === b.softness &&
-      a.saturation === b.saturation &&
-      a.dispersion === b.dispersion &&
-      a.displacementResolution === b.displacementResolution &&
-      a.displacementMinResolution === b.displacementMinResolution &&
-      a.displacementSmoothing === b.displacementSmoothing &&
-      a.enableOptimization === b.enableOptimization &&
-      a.displacementRenderer === b.displacementRenderer
-    );
   }
 }
 
-// Singleton instance for auto-initialization
-let _instance: CSSPropertiesDriver | null = null;
+// ============================================================================
+// Property Handlers
+// ============================================================================
 
-/**
- * Get or create the singleton driver instance
- */
-export function getCSSDriver(): CSSPropertiesDriver {
-  if (!_instance) {
-    _instance = new CSSPropertiesDriver();
+import type { PropertyDefinition, PropertyCallback } from '../../engines/css-property-engine';
+
+function createNumberCallback(
+  paramKey: NumericParamKey,
+  transform?: (value: number) => number
+): PropertyCallback {
+  return (element: HTMLElement, value: string) => {
+    const params = getOrCreateParams(element);
+    const numValue = parseFloat(value);
+
+    if (!isNaN(numValue)) {
+      (params as Record<string, number>)[paramKey] = transform ? transform(numValue) : numValue;
+      syncElement(element);
+    }
+  };
+}
+
+function createNumberProperty(
+  paramKey: NumericParamKey,
+  defaultValue: number,
+  transform?: (value: number) => number
+): PropertyDefinition {
+  return {
+    syntax: '<number>',
+    inherits: true,
+    initialValue: String(defaultValue),
+    callback: createNumberCallback(paramKey, transform),
+  };
+}
+
+const rendererCallback: PropertyCallback = (element, value) => {
+  const params = getOrCreateParams(element);
+  const trimmed = value.trim().toLowerCase();
+
+  if (VALID_RENDERERS.includes(trimmed as DisplacementRenderer)) {
+    params.displacementRenderer = trimmed as DisplacementRenderer;
+    syncElement(element);
   }
-  return _instance;
+};
+
+// ============================================================================
+// Driver Initialization
+// ============================================================================
+
+let _engine: CSSPropertyEngine | null = null;
+let _initialized = false;
+
+/**
+ * Initialize the CSS Properties Driver v2
+ */
+export async function initCSSPropertiesV2(): Promise<CSSPropertyEngine> {
+  if (_initialized && _engine) {
+    return _engine;
+  }
+
+  // Preload WASM
+  await preloadWasm();
+
+  // Create engine with property definitions
+  _engine = createEngine({ sentinel: '__UNSET__' });
+
+  _engine.define({
+    [PROPERTY_NAMES.refraction]: createNumberProperty('refraction', DEFAULT_PARAMS.refraction),
+    [PROPERTY_NAMES.thickness]: createNumberProperty('thickness', DEFAULT_PARAMS.thickness),
+    [PROPERTY_NAMES.gloss]: createNumberProperty('gloss', DEFAULT_PARAMS.gloss),
+    [PROPERTY_NAMES.softness]: createNumberProperty('softness', DEFAULT_PARAMS.softness),
+    [PROPERTY_NAMES.saturation]: createNumberProperty('saturation', DEFAULT_PARAMS.saturation),
+    [PROPERTY_NAMES.dispersion]: createNumberProperty('dispersion', DEFAULT_PARAMS.dispersion),
+    [PROPERTY_NAMES.displacementResolution]: createNumberProperty('displacementResolution', DEFAULT_PARAMS.displacementResolution),
+    [PROPERTY_NAMES.displacementMinResolution]: createNumberProperty('displacementMinResolution', DEFAULT_PARAMS.displacementMinResolution),
+    [PROPERTY_NAMES.displacementSmoothing]: createNumberProperty('displacementSmoothing', DEFAULT_PARAMS.displacementSmoothing),
+    [PROPERTY_NAMES.enableOptimization]: createNumberProperty('enableOptimization', DEFAULT_PARAMS.enableOptimization, v => v === 0 ? 0 : 1),
+    [PROPERTY_NAMES.refreshInterval]: createNumberProperty('refreshInterval', DEFAULT_PARAMS.refreshInterval, v => Math.max(1, Math.min(10, Math.round(v)))),
+    [PROPERTY_NAMES.displacementRenderer]: {
+      syntax: 'wasm-simd | gl2 | gpu',
+      inherits: true,
+      initialValue: DEFAULT_PARAMS.displacementRenderer,
+      callback: rendererCallback,
+    },
+  });
+
+  _engine.start();
+  _initialized = true;
+
+  return _engine;
 }
 
 /**
- * Initialize CSS Properties driver (auto-start)
- * Import this module to enable --liquidglass-* properties
+ * Get the underlying engine
  */
-export async function initCSSDriver(): Promise<CSSPropertiesDriver> {
-  const driver = getCSSDriver();
-  await driver.init();
-  return driver;
+export function getEngineV2(): CSSPropertyEngine | null {
+  return _engine;
 }
 
-// Note: Auto-initialization is done in liquidglass.ts entry point
+/**
+ * Get the underlying FilterManager
+ */
+export function getManagerV2(): FilterManager {
+  return getManager();
+}
+
+/**
+ * Destroy the driver and clean up
+ */
+export function destroyCSSPropertiesV2(): void {
+  _engine?.stop();
+  _engine = null;
+  _manager = null;
+  _initialized = false;
+}
+
+// ============================================================================
+// Simple API using default engine
+// ============================================================================
+
+/**
+ * Quick initialization using defineProperties
+ *
+ * Usage:
+ * ```ts
+ * import { initLiquidGlassCSS } from './drivers/css-properties';
+ * initLiquidGlassCSS();
+ * ```
+ *
+ * Then use CSS:
+ * ```css
+ * .my-element {
+ *   --liquidglass-refraction: 80;
+ * }
+ * ```
+ */
+export async function initLiquidGlassCSS(): Promise<void> {
+  await preloadWasm();
+
+  defineProperties({
+    [PROPERTY_NAMES.refraction]: createNumberProperty('refraction', DEFAULT_PARAMS.refraction),
+    [PROPERTY_NAMES.thickness]: createNumberProperty('thickness', DEFAULT_PARAMS.thickness),
+    [PROPERTY_NAMES.gloss]: createNumberProperty('gloss', DEFAULT_PARAMS.gloss),
+    [PROPERTY_NAMES.softness]: createNumberProperty('softness', DEFAULT_PARAMS.softness),
+    [PROPERTY_NAMES.saturation]: createNumberProperty('saturation', DEFAULT_PARAMS.saturation),
+    [PROPERTY_NAMES.dispersion]: createNumberProperty('dispersion', DEFAULT_PARAMS.dispersion),
+    [PROPERTY_NAMES.displacementResolution]: createNumberProperty('displacementResolution', DEFAULT_PARAMS.displacementResolution),
+    [PROPERTY_NAMES.displacementMinResolution]: createNumberProperty('displacementMinResolution', DEFAULT_PARAMS.displacementMinResolution),
+    [PROPERTY_NAMES.displacementSmoothing]: createNumberProperty('displacementSmoothing', DEFAULT_PARAMS.displacementSmoothing),
+    [PROPERTY_NAMES.enableOptimization]: createNumberProperty('enableOptimization', DEFAULT_PARAMS.enableOptimization, v => v === 0 ? 0 : 1),
+    [PROPERTY_NAMES.refreshInterval]: createNumberProperty('refreshInterval', DEFAULT_PARAMS.refreshInterval, v => Math.max(1, Math.min(10, Math.round(v)))),
+    [PROPERTY_NAMES.displacementRenderer]: {
+      syntax: 'wasm-simd | gl2 | gpu',
+      inherits: true,
+      initialValue: DEFAULT_PARAMS.displacementRenderer,
+      callback: rendererCallback,
+    },
+  });
+}
