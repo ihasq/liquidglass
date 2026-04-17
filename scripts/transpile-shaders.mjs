@@ -1,262 +1,411 @@
 #!/usr/bin/env node
 /**
- * Shader Transpilation Script
+ * Shader Transpilation Script (WGSL -> GLSL)
  *
- * Converts GLSL ES 3.00 shaders to WGSL using naga-wasi-cli.
- * WGSL output is minified using strip-comments for production builds.
+ * Converts WGSL shaders to GLSL ES 3.00 using naga-wasi-cli.
+ * WGSL is the source of truth; GLSL is generated for WebGL2 compatibility.
  *
- * Source: src/shaders/gl2/*.vert, *.frag
- * Output: src/shaders/gpu/*.vert.wgsl, *.frag.wgsl
+ * Uses wgsl_reflect for proper AST-based parsing instead of regex.
  *
- * GLSL ES 300 → naga compatibility:
- * - naga doesn't parse "#version 300 es" directly
- * - We preprocess GLSL to remove ES-specific constructs
- * - The preprocessed version is a superset compatible with both WebGL2 and naga
+ * Source: src/shaders/*.wgsl
+ * Output: generated/gl2/*.vert, *.frag
  *
- * Shader files are imported directly via vite-plugin-glsl, which handles
- * GLSL minification at build time. WGSL is minified by this script.
+ * WGSL -> GLSL conversion notes:
+ * - naga outputs GLSL 450 by default
+ * - We post-process to convert to GLSL ES 300 for WebGL2
+ * - Uniform blocks are converted to individual uniforms (extracted via wgsl_reflect)
+ * - Texture/sampler pairs are converted to combined sampler2D
+ *
+ * IMPORTANT: Y-axis convention differs between WebGL2 and WebGPU!
+ * - WebGPU/WGSL: Y=0 at top (Vulkan/D3D convention)
+ * - WebGL2/GLSL: Y=0 at bottom (OpenGL convention)
+ *
+ * Y-axis dependent code must be marked with `// @webgl2-y-flip` comment in WGSL.
  */
 
 import { execSync } from 'node:child_process';
 import { readFileSync, writeFileSync, readdirSync, existsSync, mkdirSync, unlinkSync } from 'node:fs';
-import { join, basename, extname, dirname } from 'node:path';
+import { join, basename, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import strip from 'strip-comments';
+import { WgslReflect } from 'wgsl_reflect';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');
 
-const GL2_DIR = join(ROOT, 'src/shaders/gl2');
-const GPU_DIR = join(ROOT, 'src/shaders/gpu');
-
-// Check if minification is enabled (default: true for production)
-const MINIFY = process.env.WGSL_MINIFY !== '0';
+const WGSL_DIR = join(ROOT, 'src/shaders');
+const GL2_DIR = join(ROOT, 'generated/gl2');
 
 // Ensure output directory exists
-if (!existsSync(GPU_DIR)) {
-  mkdirSync(GPU_DIR, { recursive: true });
+if (!existsSync(GL2_DIR)) {
+  mkdirSync(GL2_DIR, { recursive: true });
 }
 
 /**
- * Minify WGSL source code
- *
- * Uses strip-comments to remove // and /* comments,
- * then compresses whitespace while preserving WGSL syntax.
+ * Map WGSL type names to GLSL type names
+ * Comprehensive mapping covering all WGSL uniform-compatible types
  */
-function minifyWgsl(wgslSource) {
-  // Remove C-style comments (// and /* */)
-  let minified = strip(wgslSource);
+function wgslTypeToGlsl(typeName) {
+  const typeMap = {
+    // Scalars
+    'f32': 'float',
+    'f16': 'float',  // f16 not supported in GLSL ES 300, fallback to float
+    'i32': 'int',
+    'u32': 'uint',
+    'bool': 'bool',
 
-  // Compress multiple whitespace/newlines to single space
-  // But preserve newlines after semicolons and braces for readability
-  minified = minified
-    // Remove leading/trailing whitespace on each line
-    .split('\n')
-    .map(line => line.trim())
-    .filter(line => line.length > 0)
-    .join('\n')
-    // Compress multiple spaces to single space
-    .replace(/[ \t]+/g, ' ')
-    // Remove spaces around operators and punctuation
-    .replace(/\s*([{}();,=<>+\-*\/&|!:\[\]])\s*/g, '$1')
-    // Restore necessary spaces (after keywords, before identifiers)
-    .replace(/\b(fn|let|var|const|if|else|for|while|return|struct|uniform|storage|read|write|read_write)\b/g, ' $1 ')
-    .replace(/(@\w+)/g, ' $1')
-    // Clean up extra spaces
-    .replace(/\s+/g, ' ')
-    .replace(/\s*\n\s*/g, '\n')
-    .trim();
+    // Vectors (template syntax)
+    'vec2<f32>': 'vec2',
+    'vec3<f32>': 'vec3',
+    'vec4<f32>': 'vec4',
+    'vec2<f16>': 'vec2',  // f16 fallback
+    'vec3<f16>': 'vec3',
+    'vec4<f16>': 'vec4',
+    'vec2<i32>': 'ivec2',
+    'vec3<i32>': 'ivec3',
+    'vec4<i32>': 'ivec4',
+    'vec2<u32>': 'uvec2',
+    'vec3<u32>': 'uvec3',
+    'vec4<u32>': 'uvec4',
+    'vec2<bool>': 'bvec2',
+    'vec3<bool>': 'bvec3',
+    'vec4<bool>': 'bvec4',
 
-  return minified;
+    // Vectors (short syntax)
+    'vec2f': 'vec2',
+    'vec3f': 'vec3',
+    'vec4f': 'vec4',
+    'vec2h': 'vec2',  // f16 fallback
+    'vec3h': 'vec3',
+    'vec4h': 'vec4',
+    'vec2i': 'ivec2',
+    'vec3i': 'ivec3',
+    'vec4i': 'ivec4',
+    'vec2u': 'uvec2',
+    'vec3u': 'uvec3',
+    'vec4u': 'uvec4',
+
+    // Square matrices (template syntax)
+    'mat2x2<f32>': 'mat2',
+    'mat3x3<f32>': 'mat3',
+    'mat4x4<f32>': 'mat4',
+
+    // Non-square matrices (template syntax)
+    'mat2x3<f32>': 'mat2x3',
+    'mat2x4<f32>': 'mat2x4',
+    'mat3x2<f32>': 'mat3x2',
+    'mat3x4<f32>': 'mat3x4',
+    'mat4x2<f32>': 'mat4x2',
+    'mat4x3<f32>': 'mat4x3',
+
+    // Matrices (short syntax)
+    'mat2x2f': 'mat2',
+    'mat3x3f': 'mat3',
+    'mat4x4f': 'mat4',
+    'mat2x3f': 'mat2x3',
+    'mat2x4f': 'mat2x4',
+    'mat3x2f': 'mat3x2',
+    'mat3x4f': 'mat3x4',
+    'mat4x2f': 'mat4x2',
+    'mat4x3f': 'mat4x3',
+  };
+
+  // Handle array types: array<T, N> -> T[N]
+  const arrayMatch = typeName.match(/^array<(.+),\s*(\d+)>$/);
+  if (arrayMatch) {
+    const elementType = wgslTypeToGlsl(arrayMatch[1]);
+    const count = arrayMatch[2];
+    return `${elementType}[${count}]`;
+  }
+
+  return typeMap[typeName] || typeName;
 }
 
 /**
- * Preprocess GLSL ES 300 to naga-compatible GLSL 450
- *
- * Transforms:
- * - #version 300 es → #version 450
- * - precision highp float; → (removed)
- * - gl_VertexID → gl_VertexIndex (Vulkan-style)
- * - uniform variables → uniform block with layout(binding=X)
- * - sampler2D uniforms → combined with layout(binding=X)
- * - layout qualifier for fragment output
- *
- * This allows the same GLSL logic to work in both WebGL2 (ES 300)
- * and WebGPU (via naga transpilation to WGSL).
+ * Extract shader metadata using wgsl_reflect
  */
-function preprocessGlslForNaga(glslSource, shaderType) {
+function extractShaderMetadata(wgslSource) {
+  const reflect = new WgslReflect(wgslSource);
+
+  // Extract uniform buffer members
+  const uniforms = [];
+  for (const uniform of reflect.uniforms) {
+    if (uniform.type.isStruct && uniform.type.members) {
+      for (const member of uniform.type.members) {
+        uniforms.push({
+          name: member.name,
+          type: wgslTypeToGlsl(member.type.name),
+          group: uniform.group,
+          binding: uniform.binding,
+        });
+      }
+    }
+  }
+
+  // Extract textures with their bindings
+  const textures = reflect.textures.map(tex => ({
+    name: tex.name,
+    group: tex.group,
+    binding: tex.binding,
+    type: tex.type.name,
+  }));
+
+  // Extract samplers with their bindings
+  const samplers = reflect.samplers.map(samp => ({
+    name: samp.name,
+    group: samp.group,
+    binding: samp.binding,
+  }));
+
+  // Detect Y-axis dependent code via comments
+  const hasYFlipCode = wgslSource.includes('@webgl2-y-flip');
+
+  return { uniforms, textures, samplers, hasYFlipCode };
+}
+
+/**
+ * Generate GLSL uniform declarations from parsed metadata
+ * Note: Texture/sampler declarations are handled separately via naga replacement
+ */
+function generateUniformDeclarations(metadata) {
+  const lines = [];
+
+  // Generate individual uniform declarations (from uniform buffers only)
+  for (const uniform of metadata.uniforms) {
+    lines.push(`uniform ${uniform.type} ${uniform.name};`);
+  }
+
+  return lines.join('\n');
+}
+
+/**
+ * Build naga name mapping for textures/samplers
+ * naga generates names like _group_0_binding_1_fs for group=0, binding=1 fragment shader
+ */
+function buildNagaNameMap(metadata, shaderStage) {
+  const map = {};
+  const stageSuffix = shaderStage === 'frag' ? 'fs' : 'vs';
+
+  for (const texture of metadata.textures) {
+    const nagaName = `_group_${texture.group}_binding_${texture.binding}_${stageSuffix}`;
+    let uniformName = texture.name;
+    if (!uniformName.startsWith('u_')) {
+      uniformName = 'u_' + uniformName.charAt(0).toLowerCase() + uniformName.slice(1);
+    }
+    map[nagaName] = uniformName;
+  }
+
+  return map;
+}
+
+/**
+ * Post-process naga GLSL 450 output to GLSL ES 300
+ * Uses parsed metadata instead of hardcoded values
+ */
+function postprocessGlslForWebGL2(glslSource, shaderType, metadata) {
   let processed = glslSource;
 
-  // Replace version directive
-  processed = processed.replace(/#version\s+300\s+es\b/g, '#version 450');
+  // Replace version directive (naga outputs 310 es or 450, we need 300 es for WebGL2)
+  processed = processed.replace(/#version\s+(450|310\s+es)\b/g, '#version 300 es');
 
-  // Remove precision qualifiers (not needed in GLSL 450)
-  processed = processed.replace(/precision\s+(highp|mediump|lowp)\s+(float|int|sampler2D|samplerCube);?\s*/g, '');
+  // Remove naga's precision qualifiers (we'll add our own)
+  processed = processed.replace(/precision\s+highp\s+(float|int)\s*;\s*\n/g, '');
 
-  // Convert gl_VertexID to gl_VertexIndex (Vulkan/naga style)
-  processed = processed.replace(/\bgl_VertexID\b/g, 'gl_VertexIndex');
-
-  // Add layout qualifier for fragment shader output if not present
+  // Add precision qualifier for fragment shaders (after version directive)
   if (shaderType === 'frag') {
-    // Convert "out vec4 fragColor;" to "layout(location = 0) out vec4 fragColor;"
     processed = processed.replace(
-      /(?<!layout\s*\([^)]*\)\s*)out\s+vec4\s+fragColor\s*;/g,
-      'layout(location = 0) out vec4 fragColor;'
+      /(#version\s+300\s+es\s*\n)/,
+      '$1precision highp float;\n'
     );
   }
 
-  // Extract and convert uniforms to uniform block + sampler bindings
-  // This is the key transformation for naga compatibility
-  const uniformPattern = /uniform\s+(\w+)\s+(\w+)\s*;/g;
-  const uniforms = [];
-  const samplers = [];
-  let bindingIndex = 0;
+  // Remove layout(location = 0) from output declarations
+  processed = processed.replace(/layout\s*\(\s*location\s*=\s*0\s*\)\s*out/g, 'out');
 
-  let match;
-  while ((match = uniformPattern.exec(processed)) !== null) {
-    const [fullMatch, type, name] = match;
-    if (type === 'sampler2D' || type === 'samplerCube' || type === 'sampler3D') {
-      // Map combined sampler type to separate texture type
-      const textureType = type === 'sampler2D' ? 'texture2D' :
-                          type === 'samplerCube' ? 'textureCube' : 'texture3D';
-      samplers.push({ combinedType: type, textureType, name });
-    } else {
-      uniforms.push({ type, name });
-    }
+  // Remove struct definitions that are only used for uniform blocks
+  processed = processed.replace(
+    /struct\s+Uniforms\s*\{[^}]+\}\s*;?\s*\n?/g,
+    ''
+  );
+
+  // Remove the uniform block declarations
+  processed = processed.replace(
+    /uniform\s+\w+_block_\d+\w*\s*\{\s*\w+\s+_group_\d+_binding_\d+_\w+\s*;\s*\}\s*;?\s*\n?/g,
+    ''
+  );
+
+  // Convert naga's _group_X_binding_Y_fs.member access to just member
+  processed = processed.replace(/_group_\d+_binding_\d+_\w+\.(\w+)/g, '$1');
+
+  // Build texture name mapping and apply replacements
+  const nameMap = buildNagaNameMap(metadata, shaderType);
+  for (const [nagaName, uniformName] of Object.entries(nameMap)) {
+    // Replace sampler2D declaration
+    const declRegex = new RegExp(`uniform\\s+highp\\s+sampler2D\\s+${nagaName}\\s*;`, 'g');
+    processed = processed.replace(declRegex, `uniform sampler2D ${uniformName};`);
+
+    // Replace texture sampling calls
+    const sampleRegex = new RegExp(`texture\\s*\\(\\s*${nagaName}\\s*,`, 'g');
+    processed = processed.replace(sampleRegex, `texture(${uniformName},`);
   }
 
-  // If we have uniforms (non-samplers), create a uniform block
-  if (uniforms.length > 0) {
-    // Remove all non-sampler uniform declarations
-    for (const u of uniforms) {
-      const regex = new RegExp(`uniform\\s+${u.type}\\s+${u.name}\\s*;[^\\n]*\\n?`, 'g');
-      processed = processed.replace(regex, '');
-    }
+  // Convert naga's output variable to standard fragColor
+  processed = processed.replace(/out\s+vec4\s+_fs2p_location0\s*;/g, 'out vec4 fragColor;');
+  processed = processed.replace(/_fs2p_location0/g, 'fragColor');
 
-    // Create uniform block after #version directive
-    const uniformBlockMembers = uniforms.map(u => `    ${u.type} ${u.name};`).join('\n');
-    const uniformBlock = `
-layout(set = 0, binding = ${bindingIndex}) uniform Uniforms {
-${uniformBlockMembers}
-};
-`;
-
-    // Insert after #version line
-    processed = processed.replace(/(#version\s+450\s*\n)/, `$1${uniformBlock}`);
-    bindingIndex++;
-  }
-
-  // Convert sampler uniforms to separate texture + sampler (naga/Vulkan style)
-  // Combined sampler2D → texture2D + sampler (used as sampler2D(tex, samp))
-  for (const s of samplers) {
-    const textureBinding = bindingIndex++;
-    const samplerBinding = bindingIndex++;
-    const samplerName = `${s.name}_sampler`;
-
-    // Replace uniform declaration with separate texture and sampler
-    const regex = new RegExp(`uniform\\s+${s.combinedType}\\s+${s.name}\\s*;[^\\n]*\\n?`, 'g');
+  // Insert uniform declarations (from parsed metadata)
+  const uniformDecls = generateUniformDeclarations(metadata);
+  if (uniformDecls && shaderType === 'frag') {
+    // Insert after precision directive
     processed = processed.replace(
-      regex,
-      `layout(set = 0, binding = ${textureBinding}) uniform ${s.textureType} ${s.name};\n` +
-      `layout(set = 0, binding = ${samplerBinding}) uniform sampler ${samplerName};\n`
-    );
-
-    // Replace texture() calls that use this sampler
-    // texture(samplerName, coord) → texture(sampler2D(samplerName, samplerName_sampler), coord)
-    const textureCallRegex = new RegExp(`\\btexture\\s*\\(\\s*${s.name}\\s*,`, 'g');
-    processed = processed.replace(
-      textureCallRegex,
-      `texture(${s.combinedType}(${s.name}, ${samplerName}),`
+      /(precision\s+highp\s+float\s*;\s*\n)/,
+      `$1\n${uniformDecls}\n\n`
     );
   }
 
-  return processed;
+  // =========================================================================
+  // Y-AXIS COORDINATE SYSTEM FIX
+  // =========================================================================
+  // WebGPU: Y=0 at top, so `py >= centerY` means bottom half
+  // WebGL2: Y=0 at bottom, so `py < centerY` means bottom half
+  //
+  // This transformation is applied when @webgl2-y-flip markers are detected
+  // =========================================================================
+
+  if (metadata.hasYFlipCode) {
+    // Fix isBottom: `py >= centerY` (WebGPU) -> `py < centerY` (WebGL2)
+    processed = processed.replace(
+      /bool\s+isBottom\s*=\s*\(?py\s*>=\s*centerY\)?/g,
+      'bool isBottom = py < centerY'
+    );
+
+    // Swap qy calculations:
+    // Pattern A: qy = (py - centerY) -> qy = (centerY - 1.0 - py)
+    // Pattern B: qy = (centerY - 1.0 - py) -> qy = (py - centerY)
+    processed = processed.replace(
+      /qy\s*=\s*\(?\s*py\s*-\s*centerY\s*\)?\s*;/g,
+      'qy = __PLACEHOLDER_A__;'
+    );
+    processed = processed.replace(
+      /qy\s*=\s*\(?\s*\(?\s*centerY\s*-\s*1\.0\s*\)?\s*-\s*py\s*\)?\s*;/g,
+      'qy = __PLACEHOLDER_B__;'
+    );
+    processed = processed.replace(/__PLACEHOLDER_A__/g, '(centerY - 1.0 - py)');
+    processed = processed.replace(/__PLACEHOLDER_B__/g, '(py - centerY)');
+  }
+
+  // Clean up extra whitespace
+  processed = processed.replace(/\n\s*\n\s*\n/g, '\n\n');
+
+  return processed.trim() + '\n';
 }
 
 /**
- * Transpile GLSL to WGSL using naga-wasi-cli
- *
- * IMPORTANT: naga-wasi-cli requires relative paths due to WASI preopens.
- * We write temp files to the project root to ensure they are accessible.
+ * Transpile WGSL to GLSL using naga-wasi-cli
  */
-function transpileShader(inputPath, outputPath, shaderType) {
-  // Read and preprocess GLSL
-  const originalGlsl = readFileSync(inputPath, 'utf-8');
-  const preprocessedGlsl = preprocessGlslForNaga(originalGlsl, shaderType);
+function transpileShader(inputPath, outputPath, shaderType, shaderName) {
+  // Read WGSL source
+  const wgslSource = readFileSync(inputPath, 'utf-8');
+
+  // Parse with wgsl_reflect
+  let metadata;
+  try {
+    metadata = extractShaderMetadata(wgslSource);
+  } catch (parseError) {
+    console.error(`  [FAIL] ${basename(inputPath)}: WGSL parse error: ${parseError.message}`);
+    return false;
+  }
 
   // Use relative paths from project root (required for WASI filesystem access)
-  // Include shader type in filename for naga auto-detection (e.g., _tmp_quadrant.frag.glsl)
-  const tempFilename = `_tmp_${basename(inputPath, extname(inputPath))}.${shaderType}.glsl`;
-  const tempPath = join(ROOT, tempFilename);
-
-  // Output path must also be relative to ROOT for WASI
-  const relativeOutputPath = outputPath.replace(ROOT + '/', '');
+  const relativeInputPath = inputPath.replace(ROOT + '/', '');
+  const tempOutputName = `_tmp_${shaderName}.${shaderType}`;
+  const tempOutputPath = join(ROOT, tempOutputName);
 
   try {
-    writeFileSync(tempPath, preprocessedGlsl);
-
+    // Run naga to convert WGSL -> GLSL
     execSync(
-      `npx naga-wasi-cli "${tempFilename}" "${relativeOutputPath}" --input-kind glsl`,
+      `npx naga-wasi-cli "${relativeInputPath}" "${tempOutputName}"`,
       {
         cwd: ROOT,
         stdio: ['pipe', 'pipe', 'pipe']
       }
     );
 
-    // Minify WGSL output if enabled
-    if (MINIFY) {
-      const wgslContent = readFileSync(outputPath, 'utf-8');
-      const originalSize = wgslContent.length;
-      const minifiedContent = minifyWgsl(wgslContent);
-      writeFileSync(outputPath, minifiedContent);
-      const minifiedSize = minifiedContent.length;
-      const reduction = ((1 - minifiedSize / originalSize) * 100).toFixed(1);
-      console.log(`  [OK] ${basename(inputPath)} -> ${basename(outputPath)} (minified: -${reduction}%)`);
-    } else {
-      console.log(`  [OK] ${basename(inputPath)} -> ${basename(outputPath)}`);
-    }
+    // Read the naga output
+    const nagaOutput = readFileSync(tempOutputPath, 'utf-8');
+
+    // Post-process for WebGL2 compatibility using parsed metadata
+    const processedGlsl = postprocessGlslForWebGL2(nagaOutput, shaderType, metadata);
+
+    // Write final output
+    writeFileSync(outputPath, processedGlsl);
+
+    const uniformCount = metadata.uniforms.length;
+    const textureCount = metadata.textures.length;
+    console.log(`  [OK] ${basename(inputPath)} -> ${basename(outputPath)} (${uniformCount} uniforms, ${textureCount} textures)`);
     return true;
   } catch (error) {
     console.error(`  [FAIL] ${basename(inputPath)}: ${error.message}`);
     if (error.stderr) {
       console.error(`         ${error.stderr.toString().trim()}`);
     }
-    // Show preprocessed content for debugging
-    console.error(`         Preprocessed temp file: ${tempFilename}`);
     return false;
   } finally {
     // Clean up temp file
     try {
-      if (existsSync(tempPath)) {
-        unlinkSync(tempPath);
+      if (existsSync(tempOutputPath)) {
+        unlinkSync(tempOutputPath);
       }
     } catch {}
   }
 }
 
+/**
+ * Determine shader type from filename
+ */
+function getShaderInfo(filename) {
+  if (filename.endsWith('.vert.wgsl')) {
+    return {
+      type: 'vert',
+      name: filename.replace('.vert.wgsl', ''),
+      outputExt: '.vert'
+    };
+  } else if (filename.endsWith('.frag.wgsl')) {
+    return {
+      type: 'frag',
+      name: filename.replace('.frag.wgsl', ''),
+      outputExt: '.frag'
+    };
+  }
+  return null;
+}
+
 // Main execution
-console.log('Transpiling GLSL -> WGSL...');
-console.log(`Source: ${GL2_DIR}`);
-console.log(`Output: ${GPU_DIR}`);
-console.log(`Minify: ${MINIFY ? 'enabled' : 'disabled'}`);
+console.log('Transpiling WGSL -> GLSL ES 300 (using wgsl_reflect)...');
+console.log(`Source: ${WGSL_DIR}`);
+console.log(`Output: ${GL2_DIR}`);
 console.log('');
 
-const glslFiles = readdirSync(GL2_DIR).filter(f => f.endsWith('.vert') || f.endsWith('.frag'));
+const wgslFiles = readdirSync(WGSL_DIR).filter(f => f.endsWith('.wgsl'));
 
 let success = true;
-for (const file of glslFiles) {
-  const inputPath = join(GL2_DIR, file);
-  const outputPath = join(GPU_DIR, `${file}.wgsl`);
-  const shaderType = extname(file).slice(1);
+for (const file of wgslFiles) {
+  const shaderInfo = getShaderInfo(file);
+  if (!shaderInfo) {
+    console.warn(`  [SKIP] ${file}: Unknown shader type`);
+    continue;
+  }
 
-  if (!transpileShader(inputPath, outputPath, shaderType)) {
+  const inputPath = join(WGSL_DIR, file);
+  const outputPath = join(GL2_DIR, `${shaderInfo.name}${shaderInfo.outputExt}`);
+
+  if (!transpileShader(inputPath, outputPath, shaderInfo.type, shaderInfo.name)) {
     success = false;
   }
 }
 
 console.log('');
 if (success) {
-  console.log(`Shader transpilation completed successfully.${MINIFY ? ' (WGSL minified)' : ''}`);
+  console.log('Shader transpilation completed successfully.');
 } else {
   console.log('Shader transpilation completed with errors.');
   process.exit(1);

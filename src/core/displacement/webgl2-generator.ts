@@ -29,9 +29,9 @@ import type { CanvasDisplacementOptions, CanvasDisplacementResult } from './canv
 // GLSL Shaders (direct imports - minified at build time by vite-plugin-glsl)
 // ============================================================================
 
-import VERTEX_SHADER_SOURCE from '../../shaders/gl2/fullscreen.vert';
-import QUADRANT_FRAGMENT_SHADER_SOURCE from '../../shaders/gl2/quadrant.frag';
-import COMPOSITE_FRAGMENT_SHADER_SOURCE from '../../shaders/gl2/composite.frag';
+import VERTEX_SHADER_SOURCE from '../../../generated/gl2/fullscreen.vert';
+import QUADRANT_FRAGMENT_SHADER_SOURCE from '../../../generated/gl2/quadrant.frag';
+import COMPOSITE_FRAGMENT_SHADER_SOURCE from '../../../generated/gl2/composite.frag';
 
 // ============================================================================
 // WebGL2 Context Management

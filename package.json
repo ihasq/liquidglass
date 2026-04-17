@@ -15,14 +15,20 @@
   "scripts": {
     "dev": "vite",
     "build": "npm run shaders && tsc && vite build",
-    "shaders": "node scripts/transpile-shaders.mjs",
+    "shaders": "npm run shaders:glsl && npm run shaders:as",
+    "shaders:glsl": "node scripts/transpile-shaders.mjs",
+    "shaders:as": "node scripts/transpile-wgsl-to-as.mjs",
     "preview": "vite preview",
     "test:e2e": "node --experimental-vm-modules test/e2e/run-tests.js",
     "test:e2e:update": "node --experimental-vm-modules test/e2e/run-tests.js --update-snapshots",
     "asbuild": "npm run asbuild:debug && npm run asbuild:release",
-    "asbuild:debug": "asc src/shaders/wasm-simd/index.ts --target debug",
-    "asbuild:release": "asc src/shaders/wasm-simd/index.ts --target release",
+    "asbuild:debug": "asc generated/wasm-simd/index.ts --target debug",
+    "asbuild:release": "asc generated/wasm-simd/index.ts --target release",
     "test": "node --test",
+    "test:smt": "npm run test:smt:glsl && npm run test:smt:as && npm run test:smt:shaders",
+    "test:smt:glsl": "node scripts/verify-transpiler-coverage.mjs",
+    "test:smt:as": "node scripts/verify-transpiler-smt.mjs",
+    "test:smt:shaders": "node scripts/verify-shader-equivalence.mjs",
     "start": "npx serve ."
   },
   "devDependencies": {
@@ -40,6 +46,7 @@
     "vite": "^5.2.0",
     "vite-plugin-dts": "^3.8.0",
     "vite-plugin-glsl": "^1.6.0",
+    "wgsl_reflect": "^1.2.3",
     "z3-solver": "^4.16.0"
   },
   "keywords": [

@@ -4,6 +4,7 @@ node_modules/
 # Build output
 dist/
 build/
+generated/
 
 # Site subproject (redundant with site/.gitignore, but explicit)
 site/node_modules/
