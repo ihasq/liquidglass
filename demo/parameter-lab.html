@@ -295,6 +295,7 @@
       --liquidglass-displacement-smoothing: 30;
       --liquidglass-enable-optimization: 1;
       --liquidglass-refresh-rate: 1;
+      --liquidglass-displacement-renderer: wasm-simd;
       display: flex;
       flex-direction: column;
       align-items: center;
@@ -826,6 +827,19 @@
         <div class="control-desc">Frame skip rate during resize (1=every frame, 2-10=skip frames). Higher = better perf, choppier animation</div>
         <input type="range" id="refresh-rate" min="1" max="10" value="1">
       </div>
+
+      <div class="control">
+        <div class="control-header">
+          <span class="control-label">Displacement Renderer</span>
+          <span class="control-value" id="displacement-renderer-val">wasm-simd</span>
+        </div>
+        <div class="control-desc">Backend for displacement map generation. WebGPU/WebGL2 use GPU, WASM-SIMD uses CPU with SIMD</div>
+        <div class="view-mode-toggle" style="margin-top: 8px;">
+          <button class="view-mode-btn active" id="renderer-wasm-btn" data-renderer="wasm-simd">WASM-SIMD</button>
+          <button class="view-mode-btn" id="renderer-gl2-btn" data-renderer="gl2">WebGL2</button>
+          <button class="view-mode-btn" id="renderer-gpu-btn" data-renderer="gpu">WebGPU</button>
+        </div>
+      </div>
     </section>
 
     <!-- Geometry -->
@@ -1039,6 +1053,8 @@
   --liquidglass-displacement-min-resolution: 20;
   --liquidglass-displacement-smoothing: 30;
   --liquidglass-enable-optimization: 1;
+  --liquidglass-refresh-rate: 1;
+  --liquidglass-displacement-renderer: wasm-simd;
   border-radius: 24px;
 }</code>
     <button class="copy-btn" id="copy-btn">Copy to Clipboard</button>
@@ -1145,14 +1161,17 @@
     // Enable optimization state (separate since it's a toggle, not a range)
     let enableOptimization = 1;
 
+    // Displacement renderer state ('wasm-simd' or 'gl2')
+    let displacementRenderer = 'wasm-simd';
+
     // Presets
     const presets = {
-      default: { refraction: 50, thickness: 50, gloss: 50, softness: 10, saturation: 45, dispersion: 30, displacementResolution: 45, displacementMinResolution: 20, displacementSmoothing: 30, enableOptimization: 1, refreshRate: 1, radius: 24 },
-      subtle: { refraction: 30, thickness: 40, gloss: 30, softness: 5, saturation: 30, dispersion: 20, displacementResolution: 100, displacementMinResolution: 20, displacementSmoothing: 0, enableOptimization: 1, refreshRate: 1, radius: 16 },
-      bold: { refraction: 80, thickness: 70, gloss: 70, softness: 15, saturation: 60, dispersion: 50, displacementResolution: 100, displacementMinResolution: 20, displacementSmoothing: 0, enableOptimization: 1, refreshRate: 1, radius: 32 },
-      frosted: { refraction: 40, thickness: 50, gloss: 40, softness: 50, saturation: 20, dispersion: 60, displacementResolution: 50, displacementMinResolution: 15, displacementSmoothing: 20, enableOptimization: 1, refreshRate: 1, radius: 20 },
-      crystal: { refraction: 70, thickness: 60, gloss: 80, softness: 0, saturation: 70, dispersion: 40, displacementResolution: 100, displacementMinResolution: 25, displacementSmoothing: 0, enableOptimization: 1, refreshRate: 1, radius: 28 },
-      ios: { refraction: 45, thickness: 55, gloss: 55, softness: 20, saturation: 50, dispersion: 35, displacementResolution: 75, displacementMinResolution: 20, displacementSmoothing: 10, enableOptimization: 1, refreshRate: 1, radius: 22 }
+      default: { refraction: 50, thickness: 50, gloss: 50, softness: 10, saturation: 45, dispersion: 30, displacementResolution: 45, displacementMinResolution: 20, displacementSmoothing: 30, enableOptimization: 1, refreshRate: 1, displacementRenderer: 'wasm-simd', radius: 24 },
+      subtle: { refraction: 30, thickness: 40, gloss: 30, softness: 5, saturation: 30, dispersion: 20, displacementResolution: 100, displacementMinResolution: 20, displacementSmoothing: 0, enableOptimization: 1, refreshRate: 1, displacementRenderer: 'wasm-simd', radius: 16 },
+      bold: { refraction: 80, thickness: 70, gloss: 70, softness: 15, saturation: 60, dispersion: 50, displacementResolution: 100, displacementMinResolution: 20, displacementSmoothing: 0, enableOptimization: 1, refreshRate: 1, displacementRenderer: 'wasm-simd', radius: 32 },
+      frosted: { refraction: 40, thickness: 50, gloss: 40, softness: 50, saturation: 20, dispersion: 60, displacementResolution: 50, displacementMinResolution: 15, displacementSmoothing: 20, enableOptimization: 1, refreshRate: 1, displacementRenderer: 'wasm-simd', radius: 20 },
+      crystal: { refraction: 70, thickness: 60, gloss: 80, softness: 0, saturation: 70, dispersion: 40, displacementResolution: 100, displacementMinResolution: 25, displacementSmoothing: 0, enableOptimization: 1, refreshRate: 1, displacementRenderer: 'wasm-simd', radius: 28 },
+      ios: { refraction: 45, thickness: 55, gloss: 55, softness: 20, saturation: 50, dispersion: 35, displacementResolution: 75, displacementMinResolution: 20, displacementSmoothing: 10, enableOptimization: 1, refreshRate: 1, displacementRenderer: 'wasm-simd', radius: 22 }
     };
 
     // View mode state
@@ -1668,7 +1687,8 @@
         displacementMinResolution: controls.displacementMinResolution.value,
         displacementSmoothing: controls.displacementSmoothing.value,
         enableOptimization: enableOptimization,
-        refreshRate: controls.refreshRate.value
+        refreshRate: controls.refreshRate.value,
+        displacementRenderer: displacementRenderer
       };
 
       allGlasses.forEach(glass => {
@@ -1683,6 +1703,7 @@
         glass.style.setProperty('--liquidglass-displacement-smoothing', values.displacementSmoothing);
         glass.style.setProperty('--liquidglass-enable-optimization', values.enableOptimization);
         glass.style.setProperty('--liquidglass-refresh-rate', values.refreshRate);
+        glass.style.setProperty('--liquidglass-displacement-renderer', values.displacementRenderer);
       });
 
       // Update selected element size/radius
@@ -1728,6 +1749,7 @@
       document.getElementById('displacement-smoothing-val').textContent = values.displacementSmoothing;
       document.getElementById('enable-optimization-val').textContent = values.enableOptimization === 1 ? 'ON' : 'OFF';
       document.getElementById('refresh-rate-val').textContent = values.refreshRate;
+      document.getElementById('displacement-renderer-val').textContent = values.displacementRenderer;
       document.getElementById('radius-val').textContent = controls.radius.value;
       document.getElementById('width-val').textContent = controls.width.value;
       document.getElementById('height-val').textContent = controls.height.value;
@@ -1755,6 +1777,7 @@
   --liquidglass-displacement-smoothing: ${values.displacementSmoothing};
   --liquidglass-enable-optimization: ${values.enableOptimization};
   --liquidglass-refresh-rate: ${values.refreshRate};
+  --liquidglass-displacement-renderer: ${values.displacementRenderer};
   border-radius: ${controls.radius.value}px;
 }`;
       codeOutput.textContent = code;
@@ -1846,6 +1869,7 @@
       controls.displacementSmoothing.value = preset.displacementSmoothing;
       controls.refreshRate.value = preset.refreshRate;
       setEnableOptimization(preset.enableOptimization);
+      setDisplacementRenderer(preset.displacementRenderer);
 
       document.querySelectorAll('.preset-btn[data-preset]').forEach(btn => {
         btn.classList.toggle('active', btn.dataset.preset === name);
@@ -1861,6 +1885,19 @@
       // Update toggle button states
       document.getElementById('optimization-off-btn').classList.toggle('active', enableOptimization === 0);
       document.getElementById('optimization-on-btn').classList.toggle('active', enableOptimization === 1);
+
+      updateAllGlasses();
+    }
+
+    function setDisplacementRenderer(value) {
+      // Validate renderer value
+      const validRenderers = ['wasm-simd', 'gl2', 'gpu'];
+      displacementRenderer = validRenderers.includes(value) ? value : 'wasm-simd';
+
+      // Update toggle button states
+      document.getElementById('renderer-wasm-btn').classList.toggle('active', displacementRenderer === 'wasm-simd');
+      document.getElementById('renderer-gl2-btn').classList.toggle('active', displacementRenderer === 'gl2');
+      document.getElementById('renderer-gpu-btn').classList.toggle('active', displacementRenderer === 'gpu');
 
       updateAllGlasses();
     }
@@ -1895,6 +1932,7 @@
       controls.displacementSmoothing.value = 30;
       controls.refreshRate.value = 1;
       setEnableOptimization(1);
+      setDisplacementRenderer('wasm-simd');
       controls.bgSpeed.value = 30;
       controls.bgDirection.value = 135;
       updateBackgroundAnimation();
@@ -1928,6 +1966,11 @@
     // Enable optimization toggle buttons
     document.querySelectorAll('.view-mode-btn[data-opt]').forEach(btn => {
       btn.addEventListener('click', () => setEnableOptimization(parseInt(btn.dataset.opt)));
+    });
+
+    // Displacement renderer toggle buttons
+    document.querySelectorAll('.view-mode-btn[data-renderer]').forEach(btn => {
+      btn.addEventListener('click', () => setDisplacementRenderer(btn.dataset.renderer));
     });
 
     document.getElementById('copy-btn').addEventListener('click', () => {

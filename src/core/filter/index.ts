@@ -7,6 +7,8 @@ export {
   getDefaultManager,
   supportsBackdropSvgFilter,
   preloadWasm,
+  preloadWebGL2,
+  preloadWebGPU,
   DEFAULT_PARAMS,
 } from './filter-manager';
 
@@ -17,7 +19,10 @@ export type {
   FilterState,
   SizeSample,
   PredictedSize,
+  DisplacementRenderer,
 } from './types';
+
+export { VALID_RENDERERS } from './types';
 
 export {
   buildFilterChain,

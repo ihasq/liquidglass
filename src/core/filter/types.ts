@@ -3,6 +3,14 @@
  */
 
 /**
+ * Displacement map renderer backend
+ * - 'wasm-simd': WebAssembly with SIMD (default, CPU-based)
+ * - 'gl2': WebGL2 (GPU-accelerated)
+ * - 'gpu': WebGPU (modern GPU compute)
+ */
+export type DisplacementRenderer = 'wasm-simd' | 'gl2' | 'gpu';
+
+/**
  * Public parameters for liquid glass effect (0-100 scale)
  */
 export interface LiquidGlassParams {
@@ -25,6 +33,10 @@ export interface LiquidGlassParams {
   refreshRate: number;     // Frame skip rate during continuous resize (1-10, default 1)
                            // 1 = every frame, 2 = every 2nd frame, etc.
                            // Non-rendered frames use filter stretching instead of map regeneration
+  displacementRenderer: DisplacementRenderer;  // Displacement map generation backend
+                           // 'wasm-simd' (default): WebAssembly with SIMD, CPU-based
+                           // 'gl2': WebGL2, GPU-accelerated
+                           // 'gpu': WebGPU, modern GPU compute
 }
 
 /**
@@ -42,7 +54,13 @@ export const DEFAULT_PARAMS: LiquidGlassParams = {
   displacementSmoothing: 30,    // Moderate smoothing (0-100 → 0-5px stdDeviation)
   enableOptimization: 1,        // Optimization enabled by default
   refreshRate: 1,               // Render every frame by default (no frame skipping)
+  displacementRenderer: 'wasm-simd',  // WASM SIMD backend by default
 };
+
+/**
+ * Valid displacement renderer values
+ */
+export const VALID_RENDERERS: readonly DisplacementRenderer[] = ['wasm-simd', 'gl2', 'gpu'] as const;
 
 /**
  * Sample for tracking size history (predictive rendering)

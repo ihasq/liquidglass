@@ -231,6 +231,16 @@
 
 import { generateSpecularMap } from '../specular/highlight';
 import { generateWasmDisplacementMap, preloadWasm } from '../displacement/wasm-generator';
+import {
+  generateWebGL2DisplacementMap,
+  preloadWebGL2,
+  isWebGL2Supported,
+} from '../displacement/webgl2-generator';
+import {
+  generateWebGPUDisplacementMap,
+  preloadWebGPU,
+  isWebGPUSupported,
+} from '../displacement/webgpu-generator';
 import { smootherstep } from '../math/interpolation';
 import {
   createFilterDOM,
@@ -319,6 +329,8 @@ function logInterval(message: string, data?: Record<string, unknown>): void {
 // Re-export for convenience
 export { supportsBackdropSvgFilter } from './svg-builder';
 export { preloadWasm } from '../displacement/wasm-generator';
+export { preloadWebGL2 } from '../displacement/webgl2-generator';
+export { preloadWebGPU } from '../displacement/webgpu-generator';
 export type { LiquidGlassParams, FilterManagerOptions, FilterCallbacks } from './types';
 export { DEFAULT_PARAMS } from './types';
 
@@ -1002,15 +1014,18 @@ export class FilterManager {
     state.currentResolutionScale = resolutionScale;
 
     // Generate displacement map at (potentially) reduced resolution
-    const dispResult = await generateWasmDisplacementMap({
+    // Select renderer based on params.displacementRenderer with automatic fallback
+    const dispOptions = {
       width: renderWidth,
       height: renderHeight,
       borderRadius: renderRadius * resolutionScale,
       edgeWidthRatio,
-    });
+    };
+
+    const dispResult = await this._generateDisplacementMap(params.displacementRenderer, dispOptions);
 
     if (!dispResult) {
-      console.warn('Liquid Glass: WASM displacement map generation failed');
+      console.warn('Liquid Glass: Displacement map generation failed (all backends)');
       return;
     }
 
@@ -1297,7 +1312,8 @@ export class FilterManager {
       a.displacementMinResolution === b.displacementMinResolution &&
       a.displacementSmoothing === b.displacementSmoothing &&
       this._normalizeOptimization(a.enableOptimization) === this._normalizeOptimization(b.enableOptimization) &&
-      a.refreshRate === b.refreshRate
+      a.refreshRate === b.refreshRate &&
+      a.displacementRenderer === b.displacementRenderer
     );
   }
 
@@ -1313,6 +1329,79 @@ export class FilterManager {
    */
   private _isOptimizationEnabled(params: LiquidGlassParams): boolean {
     return this._normalizeOptimization(params.enableOptimization) === 1;
+  }
+
+  /**
+   * Generate displacement map using the specified renderer with automatic fallback
+   *
+   * Fallback chain:
+   * - 'gpu' -> 'gl2' -> 'wasm-simd' (if WebGPU fails)
+   * - 'gl2' -> 'wasm-simd' (if WebGL2 fails)
+   * - 'wasm-simd' -> null (WASM is the last resort)
+   */
+  private async _generateDisplacementMap(
+    renderer: LiquidGlassParams['displacementRenderer'],
+    options: {
+      width: number;
+      height: number;
+      borderRadius: number;
+      edgeWidthRatio: number;
+    }
+  ): Promise<{ canvas: HTMLCanvasElement; dataUrl: string; generationTime: number } | null> {
+    // Determine effective renderer with fallback
+    let effectiveRenderer = renderer;
+
+    // Try WebGPU if requested
+    if (effectiveRenderer === 'gpu') {
+      if (isWebGPUSupported()) {
+        const result = await generateWebGPUDisplacementMap(options);
+        if (result) {
+          if (__DEV__) {
+            logProgressive('Displacement map generated with WebGPU', {
+              renderer: 'gpu',
+              generationTime: `${result.generationTime.toFixed(2)}ms`,
+            });
+          }
+          return result;
+        }
+      }
+      // WebGPU failed or not supported - fallback to gl2
+      if (__DEV__) {
+        console.warn('Liquid Glass: WebGPU failed, falling back to gl2');
+      }
+      effectiveRenderer = 'gl2';
+    }
+
+    // Try WebGL2 if requested
+    if (effectiveRenderer === 'gl2') {
+      if (isWebGL2Supported()) {
+        const result = await generateWebGL2DisplacementMap(options);
+        if (result) {
+          if (__DEV__) {
+            logProgressive('Displacement map generated with WebGL2', {
+              renderer: 'gl2',
+              generationTime: `${result.generationTime.toFixed(2)}ms`,
+            });
+          }
+          return result;
+        }
+      }
+      // WebGL2 failed or not supported - fallback to WASM
+      if (__DEV__) {
+        console.warn('Liquid Glass: WebGL2 failed, falling back to wasm-simd');
+      }
+      effectiveRenderer = 'wasm-simd';
+    }
+
+    // WASM-SIMD is the default and final fallback
+    const wasmResult = await generateWasmDisplacementMap(options);
+    if (wasmResult && __DEV__) {
+      logProgressive('Displacement map generated with WASM-SIMD', {
+        renderer: 'wasm-simd',
+        generationTime: `${wasmResult.generationTime.toFixed(2)}ms`,
+      });
+    }
+    return wasmResult;
   }
 }
 

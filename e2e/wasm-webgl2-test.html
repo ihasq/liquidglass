@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>WASM vs WebGL2 Equivalence Test</title>
+</head>
+<body>
+    <script type="module">
+        import { generateWasmDisplacementMap, preloadWasm } from './src/core/displacement/wasm-generator.ts';
+        import { generateWebGL2DisplacementMap, preloadWebGL2 } from './src/core/displacement/webgl2-generator.ts';
+
+        async function runTest(config) {
+            const { width, height, borderRadius, edgeWidthRatio } = config;
+
+            // Generate both maps
+            const [wasmResult, webglResult] = await Promise.all([
+                generateWasmDisplacementMap({ width, height, borderRadius, edgeWidthRatio }),
+                generateWebGL2DisplacementMap({ width, height, borderRadius, edgeWidthRatio }),
+            ]);
+
+            if (!wasmResult || !webglResult) {
+                return { error: 'Generation failed', wasmOk: !!wasmResult, webglOk: !!webglResult };
+            }
+
+            // Get pixel data from both
+            const wasmCanvas = wasmResult.canvas;
+            const webglCanvas = webglResult.canvas;
+
+            const wasmCtx = wasmCanvas.getContext('2d');
+            const webglCtx = webglCanvas.getContext('2d');
+
+            const wasmData = wasmCtx.getImageData(0, 0, width, height).data;
+            const webglData = webglCtx.getImageData(0, 0, width, height).data;
+
+            // Compare pixel by pixel
+            let totalPixels = width * height;
+            let matchingPixels = 0;
+            let maxDiff = 0;
+            let diffSum = 0;
+            let firstDiffPixel = null;
+
+            for (let i = 0; i < wasmData.length; i += 4) {
+                const pixelIdx = i / 4;
+                const rDiff = Math.abs(wasmData[i] - webglData[i]);
+                const gDiff = Math.abs(wasmData[i + 1] - webglData[i + 1]);
+                const bDiff = Math.abs(wasmData[i + 2] - webglData[i + 2]);
+                const aDiff = Math.abs(wasmData[i + 3] - webglData[i + 3]);
+
+                const pixelDiff = Math.max(rDiff, gDiff, bDiff, aDiff);
+                diffSum += rDiff + gDiff + bDiff + aDiff;
+
+                if (pixelDiff === 0) {
+                    matchingPixels++;
+                } else {
+                    if (maxDiff < pixelDiff) {
+                        maxDiff = pixelDiff;
+                    }
+                    if (!firstDiffPixel) {
+                        const px = pixelIdx % width;
+                        const py = Math.floor(pixelIdx / width);
+                        firstDiffPixel = {
+                            x: px, y: py,
+                            wasm: [wasmData[i], wasmData[i+1], wasmData[i+2], wasmData[i+3]],
+                            webgl: [webglData[i], webglData[i+1], webglData[i+2], webglData[i+3]],
+                        };
+                    }
+                }
+            }
+
+            const matchRate = matchingPixels / totalPixels;
+            const avgDiff = diffSum / wasmData.length;
+
+            return {
+                totalPixels,
+                matchingPixels,
+                matchRate,
+                maxDiff,
+                avgDiff,
+                firstDiffPixel,
+                wasmTime: wasmResult.generationTime,
+                webglTime: webglResult.generationTime,
+            };
+        }
+
+        async function main() {
+            // Preload both backends
+            await Promise.all([preloadWasm(), preloadWebGL2()]);
+
+            const testCases = [{"width":100,"height":100,"borderRadius":20,"edgeWidthRatio":0.5,"name":"square-100"},{"width":200,"height":150,"borderRadius":30,"edgeWidthRatio":0.5,"name":"rect-200x150"},{"width":300,"height":300,"borderRadius":50,"edgeWidthRatio":0.3,"name":"large-square"},{"width":150,"height":80,"borderRadius":10,"edgeWidthRatio":0.7,"name":"wide-rect"},{"width":64,"height":64,"borderRadius":0,"edgeWidthRatio":0.5,"name":"no-radius"},{"width":128,"height":128,"borderRadius":64,"edgeWidthRatio":0.5,"name":"full-radius"}];
+            const results = {};
+
+            for (const config of testCases) {
+                results[config.name] = await runTest(config);
+            }
+
+            window.__testResults = results;
+        }
+
+        main();
+    </script>
+</body>
+</html>

@@ -14,7 +14,7 @@
  * and applies the liquid glass effect.
  */
 
-import { FilterManager, preloadWasm, DEFAULT_PARAMS, type LiquidGlassParams } from '../../core/filter';
+import { FilterManager, preloadWasm, DEFAULT_PARAMS, type LiquidGlassParams, type DisplacementRenderer, VALID_RENDERERS } from '../../core/filter';
 
 // Property names
 const PROP_PREFIX = '--liquidglass-';
@@ -30,6 +30,7 @@ const PROPS = {
   displacementSmoothing: `${PROP_PREFIX}displacement-smoothing`,
   enableOptimization: `${PROP_PREFIX}enable-optimization`,
   refreshRate: `${PROP_PREFIX}refresh-rate`,
+  displacementRenderer: `${PROP_PREFIX}displacement-renderer`,
 } as const;
 
 // Sentinel value to detect "not set" (uses CSS @property initial-value)
@@ -172,6 +173,12 @@ function injectPropertyRules(): void {
   inherits: true;
   initial-value: ${SENTINEL};
 }
+
+@property ${PROPS.displacementRenderer} {
+  syntax: 'wasm-simd | gl2 | gpu';
+  inherits: true;
+  initial-value: wasm-simd;
+}
 `;
 
   document.head.appendChild(style);
@@ -188,6 +195,17 @@ function normalizeOptimization(value: number): number {
  * Read liquid glass params from element's computed style
  * Returns null if no liquid glass properties are set
  */
+/**
+ * Parse and validate displacement renderer value
+ */
+function parseRenderer(value: string): DisplacementRenderer | null {
+  const trimmed = value.trim().toLowerCase();
+  if (VALID_RENDERERS.includes(trimmed as DisplacementRenderer)) {
+    return trimmed as DisplacementRenderer;
+  }
+  return null;
+}
+
 function readParams(element: HTMLElement): LiquidGlassParams | null {
   const style = getComputedStyle(element);
 
@@ -202,6 +220,7 @@ function readParams(element: HTMLElement): LiquidGlassParams | null {
   const displacementSmoothing = parseFloat(style.getPropertyValue(PROPS.displacementSmoothing));
   const enableOptimization = parseFloat(style.getPropertyValue(PROPS.enableOptimization));
   const refreshRate = parseFloat(style.getPropertyValue(PROPS.refreshRate));
+  const displacementRendererRaw = style.getPropertyValue(PROPS.displacementRenderer);
 
   // Check if any property is set (not sentinel)
   const hasRefraction = refraction !== SENTINEL && !isNaN(refraction);
@@ -215,9 +234,11 @@ function readParams(element: HTMLElement): LiquidGlassParams | null {
   const hasDmapSmoothing = displacementSmoothing !== SENTINEL && !isNaN(displacementSmoothing);
   const hasEnableOptimization = enableOptimization !== SENTINEL && !isNaN(enableOptimization);
   const hasRefreshRate = refreshRate !== SENTINEL && !isNaN(refreshRate);
+  const parsedRenderer = parseRenderer(displacementRendererRaw);
+  const hasRenderer = parsedRenderer !== null;
 
   // If no property is set, return null
-  if (!hasRefraction && !hasThickness && !hasGloss && !hasSoftness && !hasSaturation && !hasDispersion && !hasDmapResolution && !hasDmapMinResolution && !hasDmapSmoothing && !hasEnableOptimization && !hasRefreshRate) {
+  if (!hasRefraction && !hasThickness && !hasGloss && !hasSoftness && !hasSaturation && !hasDispersion && !hasDmapResolution && !hasDmapMinResolution && !hasDmapSmoothing && !hasEnableOptimization && !hasRefreshRate && !hasRenderer) {
     return null;
   }
 
@@ -236,6 +257,7 @@ function readParams(element: HTMLElement): LiquidGlassParams | null {
     displacementSmoothing: hasDmapSmoothing ? displacementSmoothing : DEFAULT_PARAMS.displacementSmoothing,
     enableOptimization: hasEnableOptimization ? normalizeOptimization(enableOptimization) : DEFAULT_PARAMS.enableOptimization,
     refreshRate: hasRefreshRate ? Math.max(1, Math.min(10, Math.round(refreshRate))) : DEFAULT_PARAMS.refreshRate,
+    displacementRenderer: parsedRenderer ?? DEFAULT_PARAMS.displacementRenderer,
   };
 }
 
@@ -451,7 +473,8 @@ export class CSSPropertiesDriver {
       a.displacementResolution === b.displacementResolution &&
       a.displacementMinResolution === b.displacementMinResolution &&
       a.displacementSmoothing === b.displacementSmoothing &&
-      a.enableOptimization === b.enableOptimization
+      a.enableOptimization === b.enableOptimization &&
+      a.displacementRenderer === b.displacementRenderer
     );
   }
 }

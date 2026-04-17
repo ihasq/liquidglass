@@ -30,13 +30,17 @@ export {
   getDefaultManager,
   supportsBackdropSvgFilter,
   preloadWasm,
+  preloadWebGL2,
+  preloadWebGPU,
   DEFAULT_PARAMS,
+  VALID_RENDERERS,
 } from './core/filter';
 
 export type {
   LiquidGlassParams,
   FilterManagerOptions,
   FilterCallbacks,
+  DisplacementRenderer,
 } from './core/filter';
 
 // === Web Component Driver ===
@@ -61,6 +65,12 @@ export type { DisplacementMapOptions, DisplacementMapResult } from './core/displ
 
 // WASM accelerated displacement (per-element encoding)
 export { generateWasmDisplacementMap, isWasmSimdSupported } from './core/displacement/wasm-generator';
+
+// WebGL2 accelerated displacement
+export { generateWebGL2DisplacementMap, isWebGL2Supported } from './core/displacement/webgl2-generator';
+
+// WebGPU accelerated displacement
+export { generateWebGPUDisplacementMap, isWebGPUSupported } from './core/displacement/webgpu-generator';
 
 // Specular exports
 export { generateSpecularMap, generateDefaultSpecularMap } from './core/specular/highlight';

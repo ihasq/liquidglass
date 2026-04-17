@@ -11,7 +11,7 @@
  * ```
  */
 
-import { FilterManager, preloadWasm, DEFAULT_PARAMS, type LiquidGlassParams } from '../../core/filter';
+import { FilterManager, preloadWasm, DEFAULT_PARAMS, type LiquidGlassParams, type DisplacementRenderer, VALID_RENDERERS } from '../../core/filter';
 
 // Shared FilterManager for all liquid-glass elements
 let _manager: FilterManager | null = null;
@@ -24,7 +24,7 @@ function getManager(): FilterManager {
 }
 
 // Observable attributes
-const ATTRIBUTES = ['refraction', 'thickness', 'gloss', 'softness', 'saturation', 'dispersion', 'displacement-resolution', 'displacement-min-resolution', 'displacement-smoothing', 'enable-optimization', 'refresh-rate', 'disabled'] as const;
+const ATTRIBUTES = ['refraction', 'thickness', 'gloss', 'softness', 'saturation', 'dispersion', 'displacement-resolution', 'displacement-min-resolution', 'displacement-smoothing', 'enable-optimization', 'refresh-rate', 'displacement-renderer', 'disabled'] as const;
 type Attribute = (typeof ATTRIBUTES)[number];
 
 /**
@@ -32,6 +32,18 @@ type Attribute = (typeof ATTRIBUTES)[number];
  */
 function normalizeOptimization(value: number): number {
   return value === 0 ? 0 : 1;
+}
+
+/**
+ * Parse and validate displacement renderer value
+ */
+function parseRenderer(value: string | null): DisplacementRenderer {
+  if (!value) return DEFAULT_PARAMS.displacementRenderer;
+  const trimmed = value.trim().toLowerCase();
+  if (VALID_RENDERERS.includes(trimmed as DisplacementRenderer)) {
+    return trimmed as DisplacementRenderer;
+  }
+  return DEFAULT_PARAMS.displacementRenderer;
 }
 
 /**
@@ -54,6 +66,7 @@ export class LiquidGlassElement extends HTMLElement {
   #displacementSmoothing = DEFAULT_PARAMS.displacementSmoothing;
   #enableOptimization = DEFAULT_PARAMS.enableOptimization;
   #refreshRate = DEFAULT_PARAMS.refreshRate;
+  #displacementRenderer: DisplacementRenderer = DEFAULT_PARAMS.displacementRenderer;
   #disabled = false;
 
   #initialized = false;
@@ -123,6 +136,9 @@ export class LiquidGlassElement extends HTMLElement {
         // Clamp to 1-10 range
         this.#refreshRate = value ? Math.max(1, Math.min(10, Math.round(parseFloat(value)))) : DEFAULT_PARAMS.refreshRate;
         break;
+      case 'displacement-renderer':
+        this.#displacementRenderer = parseRenderer(value);
+        break;
       case 'disabled':
         this.#disabled = value !== null;
         if (this.#initialized) {
@@ -153,6 +169,7 @@ export class LiquidGlassElement extends HTMLElement {
       displacementSmoothing: this.#displacementSmoothing,
       enableOptimization: this.#enableOptimization,
       refreshRate: this.#refreshRate,
+      displacementRenderer: this.#displacementRenderer,
     };
   }
 
@@ -246,6 +263,13 @@ export class LiquidGlassElement extends HTMLElement {
   set refreshRate(v: number) {
     this.#refreshRate = Math.max(1, Math.min(10, Math.round(v)));
     this.setAttribute('refresh-rate', String(this.#refreshRate));
+  }
+
+  /** Displacement map renderer backend ('wasm-simd' | 'gl2' | 'gpu', default 'wasm-simd') */
+  get displacementRenderer(): DisplacementRenderer { return this.#displacementRenderer; }
+  set displacementRenderer(v: DisplacementRenderer) {
+    this.#displacementRenderer = VALID_RENDERERS.includes(v) ? v : DEFAULT_PARAMS.displacementRenderer;
+    this.setAttribute('displacement-renderer', this.#displacementRenderer);
   }
 
   /** Disable the effect */

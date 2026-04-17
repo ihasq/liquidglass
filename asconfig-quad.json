@@ -1,16 +1,16 @@
 {
-  "entries": ["assembly/index.ts"],
+  "entries": ["assembly-quad/index.ts"],
   "targets": {
     "debug": {
-      "outFile": "build/debug.wasm",
-      "textFile": "build/debug.wat",
+      "outFile": "build/debug-quad.wasm",
+      "textFile": "build/debug-quad.wat",
       "sourceMap": true,
       "debug": true,
       "enable": ["simd"]
     },
     "release": {
-      "outFile": "build/release.wasm",
-      "textFile": "build/release.wat",
+      "outFile": "build/release-quad.wasm",
+      "textFile": "build/release-quad.wat",
       "sourceMap": true,
       "optimizeLevel": 3,
       "shrinkLevel": 0,
