@@ -51,12 +51,15 @@ export function createFilterDOM(
   height: number,
   resolutionScale: number = 1
 ): { filter: SVGFilterElement; refs: FilterElementRefs } {
+  // Filter region must accommodate maximum displacement.
+  // With refraction=100, scale=200, max displacement ~100px.
+  // Use 50% margin to handle high refraction values on smaller elements.
   const filter = createSVGElement('filter', {
     id,
-    x: '-10%',
-    y: '-10%',
-    width: '120%',
-    height: '120%',
+    x: '-50%',
+    y: '-50%',
+    width: '200%',
+    height: '200%',
     filterUnits: 'objectBoundingBox',
     primitiveUnits: 'userSpaceOnUse',
     'color-interpolation-filters': 'sRGB',

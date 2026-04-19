@@ -15,10 +15,9 @@ import {
   type EnumParameterDef,
 } from 'liquidglass.css/schema';
 
-// Import profiler types and dev API
+// Import profiler types and production profiler
 import {
-  __DEV__,
-  lgc_dev,
+  profiler,
   type RenderStep,
   type FrameTiming,
 } from 'liquidglass.css/env';
@@ -150,9 +149,9 @@ function PerformanceGraph({ enabled }: { enabled: boolean }) {
   const lastFrameTimeRef = useRef(0);
 
   useEffect(() => {
-    if (!__DEV__ || !lgc_dev || !enabled) return;
-    lgc_dev.profiler.enable();
-    const unsubscribe = lgc_dev.profiler.subscribe((frame) => { pendingRenderRef.current = frame; });
+    if (!enabled) return;
+    profiler.enable();
+    const unsubscribe = profiler.subscribe((frame) => { pendingRenderRef.current = frame; });
 
     let animId: number;
     const tick = (timestamp: number) => {
@@ -177,7 +176,7 @@ function PerformanceGraph({ enabled }: { enabled: boolean }) {
     };
 
     animId = requestAnimationFrame(tick);
-    return () => { cancelAnimationFrame(animId); unsubscribe(); lgc_dev.profiler.disable(); };
+    return () => { cancelAnimationFrame(animId); unsubscribe(); profiler.disable(); };
   }, [enabled]);
 
   useEffect(() => {
@@ -240,7 +239,7 @@ function PerformanceGraph({ enabled }: { enabled: boolean }) {
     container.scrollLeft = totalWidth - containerWidth;
   }, [frames]);
 
-  if (!__DEV__ || !enabled) return null;
+  if (!enabled) return null;
   const renderAvg = averages ? RENDER_STEPS.reduce((sum, s) => sum + averages[s], 0) : 0;
   const frameAvg = frames.length > 0 ? frames.reduce((s, f) => s + f.deltaMs, 0) / frames.length : 0;
   const frameDropRate = frames.length > 0 ? (frameDropCount / frames.length * 100).toFixed(1) : '0.0';
@@ -650,16 +649,14 @@ function ParameterLab() {
               ))}
             </div>
           </div>
-          {__DEV__ && (
-            <div class="stat-row" style={{ marginTop: '8px', borderTop: '1px solid var(--border)', paddingTop: '8px' }}>
-              <span class="stat-label">Profiler:</span>
-              <button class={`profiler-toggle ${profilerEnabled ? 'active' : ''}`} onClick={() => setProfilerEnabled((v) => !v)}>{profilerEnabled ? 'ON' : 'OFF'}</button>
-            </div>
-          )}
+          <div class="stat-row" style={{ marginTop: '8px', borderTop: '1px solid var(--border)', paddingTop: '8px' }}>
+            <span class="stat-label">Profiler:</span>
+            <button class={`profiler-toggle ${profilerEnabled ? 'active' : ''}`} onClick={() => setProfilerEnabled((v) => !v)}>{profilerEnabled ? 'ON' : 'OFF'}</button>
+          </div>
         </div>
       )}
 
-      {overlaysVisible && __DEV__ && <PerformanceGraph enabled={profilerEnabled} />}
+      {overlaysVisible && <PerformanceGraph enabled={profilerEnabled} />}
 
       <button class="floating-toggle" onClick={() => setOverlaysVisible((v) => !v)} title={overlaysVisible ? 'Hide overlays' : 'Show overlays'}>
         {overlaysVisible ? '\uD83D\uDC41' : '\uD83D\uDC41\u200D\uD83D\uDDE8'}

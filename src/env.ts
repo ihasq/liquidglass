@@ -204,7 +204,7 @@ if (__DEV__) {
 }
 
 // =============================================================================
-// PERFORMANCE PROFILING SYSTEM (DEV ONLY)
+// PERFORMANCE PROFILING SYSTEM
 // =============================================================================
 
 /**
@@ -264,7 +264,7 @@ const _profilerState = {
  * @internal
  */
 export function _profilerStartFrame(): void {
-  if (!__DEV__ || !_profilerState.enabled) return;
+  if (!_profilerState.enabled) return;
   _profilerState.currentFrame = {
     startTime: performance.now(),
     steps: {},
@@ -276,7 +276,7 @@ export function _profilerStartFrame(): void {
  * @internal
  */
 export function _profilerMarkStep(step: RenderStep): void {
-  if (!__DEV__ || !_profilerState.enabled || !_profilerState.currentFrame) return;
+  if (!_profilerState.enabled || !_profilerState.currentFrame) return;
   performance.mark(`lgc-${step}-start`);
 }
 
@@ -285,7 +285,7 @@ export function _profilerMarkStep(step: RenderStep): void {
  * @internal
  */
 export function _profilerEndStep(step: RenderStep): void {
-  if (!__DEV__ || !_profilerState.enabled || !_profilerState.currentFrame) return;
+  if (!_profilerState.enabled || !_profilerState.currentFrame) return;
 
   const endMark = `lgc-${step}-end`;
   const startMark = `lgc-${step}-start`;
@@ -310,7 +310,7 @@ export function _profilerEndStep(step: RenderStep): void {
  * @internal
  */
 export function _profilerEndFrame(): void {
-  if (!__DEV__ || !_profilerState.enabled || !_profilerState.currentFrame) return;
+  if (!_profilerState.enabled || !_profilerState.currentFrame) return;
 
   const frame = _profilerState.currentFrame;
   const totalMs = performance.now() - frame.startTime;
@@ -425,6 +425,22 @@ function createPerformanceProfiler(): PerformanceProfiler {
 export interface LiquidGlassDevAPIWithProfiler extends LiquidGlassDevAPI {
   profiler: PerformanceProfiler;
 }
+
+/**
+ * Production-ready performance profiler instance.
+ * Unlike `lgc_dev.profiler`, this is always available regardless of build mode.
+ *
+ * Usage:
+ * ```typescript
+ * import { profiler } from 'liquidglass.css/env';
+ *
+ * profiler.enable();
+ * const unsubscribe = profiler.subscribe((frame) => {
+ *   console.log('Frame timing:', frame);
+ * });
+ * ```
+ */
+export const profiler: PerformanceProfiler = createPerformanceProfiler();
 
 // Type augmentation for global scope
 declare global {

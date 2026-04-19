@@ -81,11 +81,11 @@ export const PARAMETERS = {
   refraction: {
     type: 'number',
     cssProperty: 'liquidglass-refraction',
-    // Accept both 50 and 50% so existing CSS keeps working while typed
+    // Accept both 100 and 100% so existing CSS keeps working while typed
     // values are now first-class.
     syntax: '<percentage> | <number>',
     inherits: true,
-    default: 50,
+    default: 100,
     unit: '%',
     min: 0,
     max: 100,
@@ -107,7 +107,7 @@ export const PARAMETERS = {
     cssProperty: 'liquidglass-gloss',
     syntax: '<percentage> | <number>',
     inherits: true,
-    default: 50,
+    default: 100,
     unit: '%',
     min: 0,
     max: 100,
