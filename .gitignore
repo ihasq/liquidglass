@@ -60,3 +60,6 @@ npm-debug.log*
 
 # History files (Claude conversation logs)
 HISTORY-*.md
+
+# Experimental directories (merged but kept for reference)
+experimental-*/

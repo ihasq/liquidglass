@@ -44,6 +44,81 @@ export {
   isWebGPUSupported,
 } from './webgpu-generator';
 
+// WebGPU Texture-based (LUT sampling)
+export {
+  generateWebGPUTextureDisplacementMap,
+  preloadWebGPUTexture,
+  isWebGPUTextureSupported,
+} from './webgpu-texture-generator';
+
+// WebGL2 Texture-based (LUT sampling)
+export {
+  generateWebGL2TextureDisplacementMap,
+  preloadWebGL2Texture,
+  isWebGL2TextureSupported,
+} from './webgl2-texture-generator';
+
+// LUT Texture management
+export {
+  getWebGPULutTexture,
+  getWebGL2LutTexture,
+  destroyWebGPULutTexture,
+  destroyWebGL2LutTexture,
+  getProfileIndex,
+} from './lut-texture';
+
+// Progressive LUT loading (WebGPU)
+export {
+  ProgressiveLutLoaderWebGPU,
+  initProgressiveLutWebGPU,
+  getProgressiveLutResourcesWebGPU,
+  isProgressiveLutReadyWebGPU,
+  isProgressiveLutFullQualityWebGPU,
+  destroyProgressiveLutWebGPU,
+} from './progressive-lut-webgpu';
+export type { ProgressiveLutUpdate, ProgressiveLutResources } from './progressive-lut-webgpu';
+
+// WebGPU Progressive Generator
+export {
+  configureProgressiveLutUrl,
+  setProgressCallback,
+  isWebGPUProgressiveSupported,
+  preloadWebGPUProgressive,
+  isLutReady,
+  isLutFullQuality,
+  generateWebGPUProgressiveDisplacementMap,
+  cleanupWebGPUProgressive,
+} from './webgpu-progressive-generator';
+
+// WebGPU Compute Shader Optimized Progressive Loader
+export {
+  ProgressiveLutComputeLoader,
+  initComputeLutWebGPU,
+  getComputeLutResourcesWebGPU,
+  isComputeLutReadyWebGPU,
+  isComputeLutFullQualityWebGPU,
+  destroyComputeLutWebGPU,
+} from './progressive-lut-webgpu-compute';
+export type { ComputeLutUpdate, ComputeLutResources } from './progressive-lut-webgpu-compute';
+
+// Streaming LUT Loader - WebGPU (zero-copy + compute)
+export {
+  StreamingLutLoader,
+  initStreamingLutWebGPU,
+  getStreamingLutResources,
+  destroyStreamingLut,
+} from './streaming-lut-webgpu';
+export type { StreamingLutUpdate, StreamingLutResources } from './streaming-lut-webgpu';
+
+// Streaming LUT Loader - WebGL2 (texSubImage2D)
+export {
+  StreamingLutLoaderGL2,
+  initStreamingLutWebGL2,
+  getStreamingLutResourcesGL2,
+  destroyStreamingLutGL2,
+} from './streaming-lut-webgl2';
+export type { StreamingLutUpdateGL2, StreamingLutResourcesGL2 } from './streaming-lut-webgl2';
+
 // Math utilities
 export { smoothstep, smootherstep, clamp } from './math/interpolation';
 export { getProfile } from './math/profiles';

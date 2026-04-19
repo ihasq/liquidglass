@@ -4,6 +4,7 @@ import glsl from 'vite-plugin-glsl';
 import preact from '@preact/preset-vite';
 import { resolve } from 'path';
 import { readFileSync } from 'fs';
+import { lutInlinePlugin } from './vite-plugin-lut-inline';
 
 // Read package.json for version
 const pkg = JSON.parse(readFileSync(resolve(__dirname, 'package.json'), 'utf-8'));
@@ -39,6 +40,10 @@ export default defineConfig(({ mode }) => {
     plugins: [
       inlineRawPlugin(),
       preact(),
+      // LUT inline plugin - transforms binary LUTs to inline code at build time
+      lutInlinePlugin({
+        lutDir: resolve(__dirname, 'build/luts'),
+      }),
       glsl({
         minify: !isDev,
         include: [

@@ -18,7 +18,7 @@ import type { CanvasDisplacementOptions, CanvasDisplacementResult } from './canv
 // ============================================================================
 
 import UBO_VERTEX_SHADER_SOURCE from '../shaders/gl2/ubo-fullscreen.vert.glsl';
-import UBO_FRAGMENT_SHADER_SOURCE from '../shaders/gl2/ubo-displacement.frag.glsl';
+import UBO_FRAGMENT_SHADER_SOURCE from '../shaders/gl2/ubo-displacement-core.frag.glsl';
 
 // ============================================================================
 // WebGL2 Context Management
@@ -395,7 +395,7 @@ function generateWebGL2DisplacementMapInternal(
     ctx: WebGL2UBOContext,
     options: CanvasDisplacementOptions
 ): CanvasDisplacementResult | null {
-    const { width, height, borderRadius, edgeWidthRatio = 0.5 } = options;
+    const { width, height, borderRadius, edgeWidthRatio = 0.5, profile = 0 } = options;
     const startTime = performance.now();
 
     const { gl, program, ubo, uboData, vao, canvas, maxTextureSize } = ctx;
@@ -429,12 +429,12 @@ function generateWebGL2DisplacementMapInternal(
     gl.useProgram(program);
 
     // Update UBO data (std140 layout)
-    // vec4 resRadius: xy = resolution, z = borderRadius, w = padding
+    // vec4 resRadius: xy = resolution, z = borderRadius, w = profile
     // float edge + 12 bytes padding
     uboData[0] = fullWidth;
     uboData[1] = fullHeight;
     uboData[2] = borderRadius;
-    uboData[3] = 0; // padding
+    uboData[3] = profile;  // LUT profile: 0=exponential, 1=squircle, etc.
     uboData[4] = edgeWidthRatio;
     // uboData[5-7] = padding (unused)
 

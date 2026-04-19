@@ -13,6 +13,7 @@ export interface CanvasDisplacementOptions {
   height: number;
   borderRadius: number;
   edgeWidthRatio?: number;  // 0.1-1.0, default 0.5
+  profile?: number;         // 0=exponential, 1=squircle, 2=circle, 3=parabolic, 4=cosine, 5=linear
 }
 
 export interface CanvasDisplacementResult {
