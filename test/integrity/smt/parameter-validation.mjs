@@ -62,11 +62,11 @@ function parseParameterSchema() {
       param.default = val === 'true' ? true : val === 'false' ? false : isNaN(Number(val)) ? val : Number(val);
     }
 
-    // Extract min/max for number types
-    const minMatch = body.match(/min:\s*(\d+)/);
+    // Extract min/max for number types (handles negative numbers)
+    const minMatch = body.match(/min:\s*(-?\d+)/);
     if (minMatch) param.min = Number(minMatch[1]);
 
-    const maxMatch = body.match(/max:\s*(\d+)/);
+    const maxMatch = body.match(/max:\s*(-?\d+)/);
     if (maxMatch) param.max = Number(maxMatch[1]);
 
     // Extract transform

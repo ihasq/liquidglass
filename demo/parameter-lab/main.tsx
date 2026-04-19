@@ -904,6 +904,8 @@ function ParameterLab() {
   );
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
   const [replayActive, setReplayActive] = useState<string | null>(null);
+  const [isRecording, setIsRecording] = useState(false);
+  const recordingAnimIdRef = useRef<number>(0);
   const [replayProgress, setReplayProgress] = useState(0);
   const stateRefsForRecord = useRef({
     elements,
@@ -923,6 +925,7 @@ function ParameterLab() {
     };
   }, [elements, params, radius, width, height, tintColor, tintOpacity, bgSpeed, bgDirection, bgBrightness, bgPlaying]);
 
+  // Initialize recorder (but don't start recording automatically to save memory)
   useEffect(() => {
     const rec = new Recorder();
     recorderRef.current = rec;
@@ -936,69 +939,78 @@ function ParameterLab() {
       console.warn('[Recorder]', e.message);
     });
 
-    let animId = 0;
-    let cancelled = false;
-
-    rec.start({
-      schema: PARAMETER_NAMES.reduce<Record<string, unknown>>((acc, name) => {
-        acc[name] = PARAMETERS[name];
-        return acc;
-      }, {}),
-    }).then(() => {
-      if (cancelled) return;
-      const previewArea = previewAreaRef.current;
-      const tick = () => {
-        if (cancelled) return;
-        const s = stateRefsForRecord.current;
-        // Resolve element positions to absolute pixel coordinates so the
-        // recording is replay-ready without preview-box context.
-        const previewRect = previewArea?.getBoundingClientRect();
-        const snapshots: ElementSnapshot[] = s.elements.map((el) => {
-          let x: number;
-          let y: number;
-          if (previewRect) {
-            x = el.x.includes('%')
-              ? (parseFloat(el.x) / 100) * previewRect.width
-              : parseFloat(el.x);
-            y = el.y.includes('%')
-              ? (parseFloat(el.y) / 100) * previewRect.height
-              : parseFloat(el.y);
-          } else {
-            x = parseFloat(el.x);
-            y = parseFloat(el.y);
-          }
-          return {
-            id: el.id,
-            x, y,
-            w: el.w,
-            h: el.h,
-            r: el.r,
-            radius: el.radius,
-          };
-        });
-
-        rec.recordFrame({
-          elements: snapshots,
-          params: { ...s.params } as Record<string, number | string>,
-          bg: s.bg,
-        });
-        animId = requestAnimationFrame(tick);
-      };
-      animId = requestAnimationFrame(tick);
-      // Refresh the session list once on startup so the UI knows what's there.
-      rec.list();
-    });
+    // Refresh the session list once on startup so the UI knows what's there.
+    rec.list();
 
     // Flush on unload — best effort; OPFS sync handle is already durable.
     const onBeforeUnload = () => rec.flush();
     window.addEventListener('beforeunload', onBeforeUnload);
 
     return () => {
-      cancelled = true;
-      cancelAnimationFrame(animId);
+      cancelAnimationFrame(recordingAnimIdRef.current);
       window.removeEventListener('beforeunload', onBeforeUnload);
       rec.flush();
     };
+  }, []);
+
+  // Start/stop recording functions
+  const startRecording = useCallback(async () => {
+    const rec = recorderRef.current;
+    if (!rec || isRecording) return;
+
+    await rec.start({
+      schema: PARAMETER_NAMES.reduce<Record<string, unknown>>((acc, name) => {
+        acc[name] = PARAMETERS[name];
+        return acc;
+      }, {}),
+    });
+
+    setIsRecording(true);
+
+    const previewArea = previewAreaRef.current;
+    const tick = () => {
+      const s = stateRefsForRecord.current;
+      const previewRect = previewArea?.getBoundingClientRect();
+      const snapshots: ElementSnapshot[] = s.elements.map((el) => {
+        let x: number;
+        let y: number;
+        if (previewRect) {
+          x = el.x.includes('%')
+            ? (parseFloat(el.x) / 100) * previewRect.width
+            : parseFloat(el.x);
+          y = el.y.includes('%')
+            ? (parseFloat(el.y) / 100) * previewRect.height
+            : parseFloat(el.y);
+        } else {
+          x = parseFloat(el.x);
+          y = parseFloat(el.y);
+        }
+        return {
+          id: el.id,
+          x, y,
+          w: el.w,
+          h: el.h,
+          r: el.r,
+          radius: el.radius,
+        };
+      });
+
+      rec.recordFrame({
+        elements: snapshots,
+        params: { ...s.params } as Record<string, number | string>,
+        bg: s.bg,
+      });
+      recordingAnimIdRef.current = requestAnimationFrame(tick);
+    };
+    recordingAnimIdRef.current = requestAnimationFrame(tick);
+  }, [isRecording]);
+
+  const stopRecording = useCallback(() => {
+    cancelAnimationFrame(recordingAnimIdRef.current);
+    recorderRef.current?.flush();
+    setIsRecording(false);
+    // Refresh session list to show new recording
+    recorderRef.current?.list();
   }, []);
 
   // ──────────────────────────────────────────────────────────────────
@@ -1437,12 +1449,21 @@ function ParameterLab() {
           )}
           {/* Recorder status: rec count + bytes written by the OPFS worker. */}
           <div class="stat-row" style={{ marginTop: '8px', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '8px', display: 'block' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span class="stat-label">Recording:</span>
-              <span class="stat-value" style={{ fontSize: '10px' }}>
-                {recorderStats.records.toLocaleString()} rec / {(recorderStats.bytes / 1024).toFixed(1)} KB
-              </span>
+              <button
+                class={`profiler-toggle ${isRecording ? 'active' : ''}`}
+                style={{ fontSize: '10px', padding: '2px 8px' }}
+                onClick={isRecording ? stopRecording : startRecording}
+              >
+                {isRecording ? '⏹ STOP' : '⏺ REC'}
+              </button>
             </div>
+            {isRecording && (
+              <div style={{ fontSize: '10px', color: '#ef4444', marginTop: '4px' }}>
+                ● {recorderStats.records.toLocaleString()} rec / {(recorderStats.bytes / 1024).toFixed(1)} KB
+              </div>
+            )}
             {replayActive && (
               <div style={{ marginTop: '6px' }}>
                 <div style={{ fontSize: '10px', color: '#facc15', marginBottom: '3px' }}>

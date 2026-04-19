@@ -451,19 +451,24 @@
       const result = LG.generateSpecularMap({
         width: 100,
         height: 80,
-        profile: 'squircle',
-        lightDirection: { x: 0.5, y: -0.5 },
-        intensity: 0.8,
-        saturation: 1.0,
         borderRadius: 10,
+        lightAngle: -Math.PI / 3,  // -60 degrees in radians
+        shininess: 8,
+        glossAlpha: 0.8,
       });
       assertDefined(result.canvas);
       assertDefined(result.dataUrl);
       assert(result.dataUrl.startsWith('data:image/png'), 'Should be PNG data URL');
     });
 
-    test('generateDefaultSpecularMap returns valid result', () => {
-      const result = LG.generateDefaultSpecularMap(100, 80);
+    test('generateSpecularMap with default glossAlpha', () => {
+      const result = LG.generateSpecularMap({
+        width: 100,
+        height: 80,
+        borderRadius: 10,
+        lightAngle: 0,
+        shininess: 4,
+      });
       assertDefined(result.canvas);
       assertDefined(result.dataUrl);
     });

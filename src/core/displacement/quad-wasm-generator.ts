@@ -117,12 +117,71 @@ interface QuadWasmExports {
   getOutputPtr: () => number;
 }
 
+/** Cached SIMD support result */
+let _simdSupported: boolean | null = null;
+
+/**
+ * Detect WASM SIMD support by compiling a minimal SIMD module.
+ *
+ * This catches:
+ * - Browsers that don't support SIMD
+ * - CPUs with buggy SIMD (e.g., Intel ADL-N crashes during JIT compilation)
+ * - V8 SIMD JIT bugs
+ *
+ * The test module contains a single v128.const instruction.
+ */
+async function detectWasmSimdSupport(): Promise<boolean> {
+  if (_simdSupported !== null) return _simdSupported;
+
+  if (typeof WebAssembly !== 'object' || typeof WebAssembly.compile !== 'function') {
+    _simdSupported = false;
+    return false;
+  }
+
+  try {
+    // Minimal WASM module with a single SIMD instruction (v128.const)
+    // (module (func (result v128) (v128.const i32x4 0 0 0 0)))
+    const simdTestModule = new Uint8Array([
+      0x00, 0x61, 0x73, 0x6d,  // \0asm magic
+      0x01, 0x00, 0x00, 0x00,  // version 1
+      // Type section: (func (result v128))
+      0x01, 0x05, 0x01, 0x60, 0x00, 0x01, 0x7b,
+      // Function section
+      0x03, 0x02, 0x01, 0x00,
+      // Export section
+      0x07, 0x08, 0x01, 0x04, 0x74, 0x65, 0x73, 0x74, 0x00, 0x00,
+      // Code section: v128.const i32x4 0 0 0 0
+      0x0a, 0x12, 0x01, 0x10, 0x00,
+      0xfd, 0x0c,  // v128.const
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+      0x0b
+    ]);
+
+    // Compile only (don't instantiate) to minimize overhead
+    await WebAssembly.compile(simdTestModule);
+    _simdSupported = true;
+    return true;
+  } catch (e) {
+    // SIMD not supported or compilation failed (could be SIGILL on buggy CPUs)
+    if (typeof console !== 'undefined') {
+      console.warn('[LiquidGlass] WASM SIMD not supported, using fallback:', e);
+    }
+    _simdSupported = false;
+    return false;
+  }
+}
+
+/** Synchronous check (returns cached result or assumes unsupported if not yet tested) */
 function checkWasmSimdSupport(): boolean {
-  return typeof WebAssembly === 'object' && typeof WebAssembly.instantiate === 'function';
+  return _simdSupported === true;
 }
 
 async function loadQuadWasmModule(): Promise<QuadWasmExports | null> {
-  if (!checkWasmSimdSupport()) {
+  // First, detect SIMD support with a minimal test module.
+  // This prevents SIGILL on CPUs that crash during SIMD JIT compilation.
+  const simdOk = await detectWasmSimdSupport();
+  if (!simdOk) {
     wasmSupported = false;
     return null;
   }
