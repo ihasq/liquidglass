@@ -1,0 +1,32 @@
+@import "tailwindcss";
+
+/* Custom scrollbar for control panel */
+.control-panel::-webkit-scrollbar {
+  width: 6px;
+}
+
+.control-panel::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.control-panel::-webkit-scrollbar-thumb {
+  background: rgba(128, 128, 128, 0.3);
+  border-radius: 3px;
+}
+
+.control-panel::-webkit-scrollbar-thumb:hover {
+  background: rgba(128, 128, 128, 0.5);
+}
+
+/* Utility classes for close button */
+.w-8 { width: 2rem; }
+.h-8 { height: 2rem; }
+.text-lg { font-size: 1.125rem; }
+.text-zinc-400 { color: #a1a1aa; }
+.hover\:text-zinc-600:hover { color: #52525b; }
+.dark .dark\:hover\:text-zinc-200:hover { color: #e4e4e7; }
+
+/* lg:hidden utility */
+@media (min-width: 1024px) {
+  .lg\:hidden { display: none; }
+}

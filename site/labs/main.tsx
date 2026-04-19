@@ -2,6 +2,7 @@ import { render } from 'preact';
 import { useState, useEffect, useRef, useCallback, useMemo } from 'preact/hooks';
 import type { RefObject } from 'preact';
 import { styles } from './styles';
+import './labs.css';
 
 // Import from liquidglass.css package
 import {
@@ -415,7 +416,20 @@ function ParameterLab() {
   const [debugVisible, setDebugVisible] = useState(false);
   const [fps, setFps] = useState(0);
   const [profilerEnabled, setProfilerEnabled] = useState(false);
+  const [panelOpen, setPanelOpen] = useState(false);
   const previewAreaRef = useRef<HTMLElement>(null);
+
+  // Close panel on escape key
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && panelOpen) setPanelOpen(false);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [panelOpen]);
+
+  // Close panel when clicking outside on mobile
+  const handleOverlayClick = () => setPanelOpen(false);
 
   useEffect(() => {
     let frameCount = 0, lastTime = performance.now(), animId: number;
@@ -470,8 +484,24 @@ function ParameterLab() {
       <style>{styles}</style>
       <div ref={bgRef} class="background-content" style={{ filter: `brightness(${bgBrightness / 100})` }} dangerouslySetInnerHTML={{ __html: generateBackgroundSVG() }} />
 
-      <aside class="control-panel">
-        <header class="panel-header"><h1>Liquid Glass Labs</h1><p>Explore glass effect parameters</p></header>
+      {/* Mobile panel overlay */}
+      <div class={`panel-overlay ${!panelOpen ? 'hidden' : ''}`} onClick={handleOverlayClick} />
+
+      {/* Mobile panel toggle */}
+      <button class="mobile-panel-toggle" onClick={() => setPanelOpen(v => !v)} aria-label="Toggle controls">
+        {panelOpen ? '\u2715' : '\u2630'}
+      </button>
+
+      <aside class={`control-panel ${panelOpen ? 'open' : ''}`}>
+        <header class="panel-header">
+          <div class="flex justify-between items-start">
+            <div>
+              <h1>Liquid Glass Labs</h1>
+              <p>Explore glass effect parameters</p>
+            </div>
+            <button class="lg:hidden w-8 h-8 flex items-center justify-center text-lg text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200" onClick={() => setPanelOpen(false)} aria-label="Close panel">&times;</button>
+          </div>
+        </header>
 
         <section class="section">
           <div class="section-title">Presets</div>
