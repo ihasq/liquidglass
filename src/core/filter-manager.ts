@@ -628,7 +628,8 @@ export class FilterManager {
     const newParams = { ...state.params, ...params };
     state.params = newParams;
 
-    this._scheduleRender(element);
+    // Force immediate render for parameter changes (no size change required)
+    this._scheduleRender(element, undefined, undefined, true);
     this._callbacks.onUpdate?.(element);
   }
 
@@ -773,7 +774,7 @@ export class FilterManager {
     };
   }
 
-  private _scheduleRender(element: HTMLElement, width?: number, height?: number): void {
+  private _scheduleRender(element: HTMLElement, width?: number, height?: number, forceRender = false): void {
     const state = this._registry.get(element);
     if (!state) return;
 
@@ -798,7 +799,7 @@ export class FilterManager {
 
     // Use refreshInterval frame skipping with progressive rendering
     // enableOptimization controls prediction, morph transitions, and adaptive interval in _render
-    this._renderWithRefreshRate(element, state, currentWidth, currentHeight);
+    this._renderWithRefreshRate(element, state, currentWidth, currentHeight, forceRender);
   }
 
   /**
@@ -887,14 +888,16 @@ export class FilterManager {
    * Unified flow:
    * - Stride trigger: √((Δw/strideWidth)² + (Δh/strideHeight)²) >= 1 → render, reset interval timer
    * - Interval trigger: refreshInterval frames elapsed → render, reset stride baseline
+   * - Force trigger: parameter changes bypass throttling for immediate update
    *
    * Both triggers reset each other's measurement, preventing redundant renders.
    * Skipped frames apply _stretchFilter() to maintain visual continuity.
    *
    * @param width - Current element width (from ResizeObserver, avoids getBoundingClientRect)
    * @param height - Current element height (from ResizeObserver)
+   * @param forceRender - Bypass throttling (e.g., parameter change without size change)
    */
-  private _renderWithRefreshRate(element: HTMLElement, state: FilterState, width: number, height: number): void {
+  private _renderWithRefreshRate(element: HTMLElement, state: FilterState, width: number, height: number, forceRender = false): void {
     // Displacement-only throttle interval. Specular is CSS Paint so
     // browser handles its own invalidation on property/geometry change.
     const dispInterval = Math.max(1, Math.round(state.params.displacementRefreshInterval));
@@ -925,13 +928,14 @@ export class FilterManager {
     const strideTrigger = normalizedDistance >= 1;
     const dispIntervalReady = state.dispFrameCounter >= dispInterval;
     const isFirstFrame = state.strideBaseWidth === 0 && state.strideBaseHeight === 0;
-    const shouldRender = isFirstFrame || (strideTrigger && dispIntervalReady);
+    // forceRender bypasses throttling for parameter changes without size change
+    const shouldRender = forceRender || isFirstFrame || (strideTrigger && dispIntervalReady);
 
     if (shouldRender) {
       if (__DEV__) {
         logThrottle('Throttle decision', {
           dispFrameCounter: state.dispFrameCounter, dispInterval,
-          strideTrigger, isFirstFrame,
+          strideTrigger, isFirstFrame, forceRender,
         });
       }
       state.currentWidth = width;
