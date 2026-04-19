@@ -7,7 +7,18 @@
   "module": "dist/liquidglass.js",
   "types": "dist/liquidglass.d.ts",
   "exports": {
-    ".": "./dist/liquidglass.js"
+    ".": {
+      "import": "./dist/liquidglass.js",
+      "types": "./dist/liquidglass.d.ts"
+    },
+    "./schema": {
+      "import": "./dist/schema.js",
+      "types": "./dist/schema.d.ts"
+    },
+    "./env": {
+      "import": "./dist/env.js",
+      "types": "./dist/env.d.ts"
+    }
   },
   "files": [
     "dist"

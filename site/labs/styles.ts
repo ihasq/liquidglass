@@ -45,8 +45,8 @@ export const styles = `
 
 body {
   min-height: 100vh;
-  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro Display', system-ui, sans-serif;
-  background: var(--bg-primary);
+  font-family: 'Inter Tight', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  background: #000;
   color: var(--text-primary);
   display: flex;
   overflow: hidden;
@@ -264,7 +264,7 @@ input[type="color"] {
   flex: 1;
   position: relative;
   overflow: hidden;
-  background: var(--bg-primary);
+  background: transparent;
 }
 
 /* Interactive Element */

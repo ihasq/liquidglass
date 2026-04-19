@@ -1,22 +1,26 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import preact from '@preact/preset-vite'
 import tailwindcss from '@tailwindcss/vite'
 import glsl from 'vite-plugin-glsl'
 import { resolve } from 'path'
 
 export default defineConfig({
   plugins: [
-    react(),
+    react({
+      // React for main site pages only
+      include: ['src/**/*.tsx', 'src/**/*.ts'],
+      exclude: ['**/labs/**'],
+    }),
+    preact({
+      // Preact for labs only
+      include: ['labs/**/*.tsx', 'labs/**/*.ts'],
+    }),
     tailwindcss(),
     glsl({
       include: ['**/*.glsl', '**/*.vert', '**/*.frag', '**/*.wgsl'],
     }),
   ],
-  resolve: {
-    alias: {
-      '@liquidglass': resolve(__dirname, '../src'),
-    },
-  },
   build: {
     rollupOptions: {
       input: {

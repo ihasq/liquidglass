@@ -35,14 +35,18 @@ export default defineConfig(({ mode }) => {
     },
     build: {
       lib: {
-        entry: resolve(__dirname, 'src/liquidglass.ts'),
-        name: 'LiquidGlass',
-        fileName: 'liquidglass'
+        entry: {
+          liquidglass: resolve(__dirname, 'src/liquidglass.ts'),
+          schema: resolve(__dirname, 'src/schema/parameters.ts'),
+          env: resolve(__dirname, 'src/env.ts'),
+        },
+        formats: ['es'],
       },
       rollupOptions: {
         external: [],
         output: {
-          globals: {}
+          globals: {},
+          entryFileNames: '[name].js',
         }
       },
       // esbuild handles dead code elimination automatically

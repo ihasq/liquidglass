@@ -1,8 +1,9 @@
-import { createRoot } from 'react-dom/client';
-import { useState, useEffect, useRef, useCallback, useMemo, type RefObject, type ChangeEvent, type MouseEvent as ReactMouseEvent } from 'react';
+import { render } from 'preact';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'preact/hooks';
+import type { RefObject } from 'preact';
 import { styles } from './styles';
 
-// Import from schema via alias
+// Import from liquidglass.css package
 import {
   PARAMETERS,
   PARAMETER_NAMES,
@@ -11,7 +12,7 @@ import {
   type ParameterName,
   type NumericParameterDef,
   type EnumParameterDef,
-} from '@liquidglass/schema/parameters';
+} from 'liquidglass.css/schema';
 
 // Import profiler types and dev API
 import {
@@ -19,10 +20,10 @@ import {
   lgc_dev,
   type RenderStep,
   type FrameTiming,
-} from '@liquidglass/env';
+} from 'liquidglass.css/env';
 
 // Auto-initializes CSS Custom Properties driver
-import '@liquidglass/liquidglass';
+import 'liquidglass.css';
 
 // ============================================================
 // Types
@@ -92,38 +93,25 @@ const initialElements: ElementData[] = [
 ];
 
 // ============================================================
-// Background SVG
+// Background SVG - Black with white grid
 // ============================================================
 function generateBackgroundSVG(): string {
-  const cellSize = 62;
-  const cols = 3;
-  const rows = 2;
-  const patternW = cellSize * cols;
-  const patternH = cellSize * rows;
-  const colors = ['#ff0000', '#00ff00', '#0000ff', '#ffff00', '#00ffff', '#ff00ff'];
-  const textColors = ['#000', '#000', '#fff', '#000', '#000', '#000'];
-  const chars = 'ABCDEF';
+  const cellSize = 40;
+  const totalW = Math.ceil((window.innerWidth + 600) / cellSize) * cellSize;
+  const totalH = Math.ceil((window.innerHeight + 600) / cellSize) * cellSize;
 
-  const tilesX = Math.ceil((window.innerWidth + 600) / patternW) + 1;
-  const tilesY = Math.ceil((window.innerHeight + 600) / patternH) + 1;
-
-  let svgContent = '';
-  for (let ty = 0; ty < tilesY; ty++) {
-    for (let tx = 0; tx < tilesX; tx++) {
-      const offsetX = tx * patternW;
-      const offsetY = ty * patternH;
-      for (let i = 0; i < 6; i++) {
-        const cx = (i % cols) * cellSize + offsetX;
-        const cy = Math.floor(i / cols) * cellSize + offsetY;
-        svgContent += `<rect x="${cx}" y="${cy}" width="${cellSize}" height="${cellSize}" fill="${colors[i]}" stroke="#000" stroke-width="1"/>`;
-        svgContent += `<text x="${cx + cellSize / 2}" y="${cy + cellSize / 2}" fill="${textColors[i]}" font-family="-apple-system, BlinkMacSystemFont, sans-serif" font-size="20" font-weight="bold" text-anchor="middle" dominant-baseline="central">${chars[i]}</text>`;
-      }
-    }
+  // Create grid lines - full white, brightness slider controls visibility
+  let gridLines = '';
+  // Vertical lines
+  for (let x = 0; x <= totalW; x += cellSize) {
+    gridLines += `<line x1="${x}" y1="0" x2="${x}" y2="${totalH}" stroke="#fff" stroke-width="1"/>`;
+  }
+  // Horizontal lines
+  for (let y = 0; y <= totalH; y += cellSize) {
+    gridLines += `<line x1="0" y1="${y}" x2="${totalW}" y2="${y}" stroke="#fff" stroke-width="1"/>`;
   }
 
-  const totalW = tilesX * patternW;
-  const totalH = tilesY * patternH;
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${totalW}" height="${totalH}" viewBox="0 0 ${totalW} ${totalH}" style="shape-rendering: crispEdges">${svgContent}</svg>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${totalW}" height="${totalH}" viewBox="0 0 ${totalW} ${totalH}" style="shape-rendering: crispEdges"><rect width="${totalW}" height="${totalH}" fill="#000"/>${gridLines}</svg>`;
 }
 
 // ============================================================
@@ -258,25 +246,25 @@ function PerformanceGraph({ enabled }: { enabled: boolean }) {
   const renderCount = frames.filter(f => f.hasRender).length;
 
   return (
-    <div className="profiler-graph">
-      <div className="profiler-header">
-        <span className="profiler-title">Frame Timeline</span>
-        <span className="profiler-stats">
-          <span className="profiler-total">{frameAvg.toFixed(1)}ms/f</span>
-          <span className={`profiler-drops ${frameDropCount > 0 ? 'has-drops' : ''}`}>{frameDropCount} drops ({frameDropRate}%)</span>
+    <div class="profiler-graph">
+      <div class="profiler-header">
+        <span class="profiler-title">Frame Timeline</span>
+        <span class="profiler-stats">
+          <span class="profiler-total">{frameAvg.toFixed(1)}ms/f</span>
+          <span class={`profiler-drops ${frameDropCount > 0 ? 'has-drops' : ''}`}>{frameDropCount} drops ({frameDropRate}%)</span>
         </span>
       </div>
-      <div ref={containerRef} className="profiler-canvas-container"><canvas ref={canvasRef} className="profiler-canvas" /></div>
-      <div className="profiler-legend">
+      <div ref={containerRef} class="profiler-canvas-container"><canvas ref={canvasRef} class="profiler-canvas" /></div>
+      <div class="profiler-legend">
         {RENDER_STEPS.map((step) => (
-          <div key={step} className="profiler-legend-item">
-            <span className="profiler-legend-color" style={{ backgroundColor: RENDER_STEP_COLORS[step] }} />
-            <span className="profiler-legend-label">{RENDER_STEP_LABELS[step]}</span>
-            {averages && <span className="profiler-legend-value">{averages[step].toFixed(2)}ms</span>}
+          <div key={step} class="profiler-legend-item">
+            <span class="profiler-legend-color" style={{ backgroundColor: RENDER_STEP_COLORS[step] }} />
+            <span class="profiler-legend-label">{RENDER_STEP_LABELS[step]}</span>
+            {averages && <span class="profiler-legend-value">{averages[step].toFixed(2)}ms</span>}
           </div>
         ))}
       </div>
-      <div className="profiler-frame-info">{frames.length} frames | {renderCount} renders ({renderAvg.toFixed(2)}ms avg)</div>
+      <div class="profiler-frame-info">{frames.length} frames | {renderCount} renders ({renderAvg.toFixed(2)}ms avg)</div>
     </div>
   );
 }
@@ -288,13 +276,13 @@ function RangeControl({ label, value, min, max, description, onChange, valueDisp
   label: string; value: number; min: number; max: number; description?: string; onChange: (v: number) => void; valueDisplay?: string;
 }) {
   return (
-    <div className="control">
-      <div className="control-header">
-        <span className="control-label">{label}</span>
-        <span className="control-value">{valueDisplay ?? value}</span>
+    <div class="control">
+      <div class="control-header">
+        <span class="control-label">{label}</span>
+        <span class="control-value">{valueDisplay ?? value}</span>
       </div>
-      {description && <div className="control-desc">{description}</div>}
-      <input type="range" min={min} max={max} value={value} onChange={(e) => onChange(parseInt(e.target.value))} />
+      {description && <div class="control-desc">{description}</div>}
+      <input type="range" min={min} max={max} value={value} onInput={(e) => onChange(parseInt((e.target as HTMLInputElement).value))} />
     </div>
   );
 }
@@ -303,15 +291,15 @@ function ToggleButtons<T extends string>({ label, description, value, options, o
   label: string; description?: string; value: T; options: { value: T; label: string }[]; onChange: (v: T) => void;
 }) {
   return (
-    <div className="control">
-      <div className="control-header">
-        <span className="control-label">{label}</span>
-        <span className="control-value">{value}</span>
+    <div class="control">
+      <div class="control-header">
+        <span class="control-label">{label}</span>
+        <span class="control-value">{value}</span>
       </div>
-      {description && <div className="control-desc">{description}</div>}
-      <div className="view-mode-toggle" style={{ marginTop: '8px' }}>
+      {description && <div class="control-desc">{description}</div>}
+      <div class="view-mode-toggle" style={{ marginTop: '8px' }}>
         {options.map((opt) => (
-          <button key={opt.value} className={`view-mode-btn ${value === opt.value ? 'active' : ''}`} onClick={() => onChange(opt.value)}>{opt.label}</button>
+          <button key={opt.value} class={`view-mode-btn ${value === opt.value ? 'active' : ''}`} onClick={() => onChange(opt.value)}>{opt.label}</button>
         ))}
       </div>
     </div>
@@ -368,7 +356,7 @@ function InteractiveElement({ data, selected, onSelect, onDelete, onUpdate, glas
     return () => { window.removeEventListener('mousemove', handleMouseMove); window.removeEventListener('mouseup', handleMouseUp); };
   }, [data, onUpdate, previewAreaRef]);
 
-  const startDrag = (e: ReactMouseEvent, type: 'drag' | 'resize' | 'rotate', resizeDir?: string) => {
+  const startDrag = (e: MouseEvent, type: 'drag' | 'resize' | 'rotate', resizeDir?: string) => {
     e.preventDefault(); e.stopPropagation();
     const rect = previewAreaRef.current?.getBoundingClientRect(); if (!rect) return;
     const currentX = data.x.includes('%') ? (parseFloat(data.x) / 100) * rect.width : parseFloat(data.x);
@@ -388,17 +376,17 @@ function InteractiveElement({ data, selected, onSelect, onDelete, onUpdate, glas
   }, [data, glassParams, tintColor, tintOpacity]);
 
   return (
-    <div ref={elementRef} className={`interactive-element ${selected ? 'selected' : ''} ${isDragging ? 'dragging' : ''}`}
+    <div ref={elementRef} class={`interactive-element ${selected ? 'selected' : ''} ${isDragging ? 'dragging' : ''}`}
       style={{ left: `${pos.left}px`, top: `${pos.top}px` }}
-      onMouseDown={(e) => { if ((e.target as HTMLElement).dataset.action) return; startDrag(e, 'drag'); }}>
-      <div className="glass-panel" style={glassStyle}><h2>{data.title}</h2><p>{data.subtitle}</p></div>
-      <div className="delete-handle" data-action="delete" onClick={onDelete}>x</div>
-      <div className="rotate-handle" data-action="rotate" onMouseDown={(e) => { e.stopPropagation(); startDrag(e, 'rotate'); }} />
+      onMouseDown={(e) => { if ((e.target as HTMLElement).dataset.action) return; startDrag(e as unknown as MouseEvent, 'drag'); }}>
+      <div class="glass-panel" style={glassStyle}><h2>{data.title}</h2><p>{data.subtitle}</p></div>
+      <div class="delete-handle" data-action="delete" onClick={onDelete}>x</div>
+      <div class="rotate-handle" data-action="rotate" onMouseDown={(e) => { e.stopPropagation(); startDrag(e as unknown as MouseEvent, 'rotate'); }} />
       {['nw', 'ne', 'sw', 'se', 'n', 's', 'e', 'w'].map((dir) => (
-        <div key={dir} className={`resize-handle ${dir}`} data-action="resize" data-dir={dir}
-          onMouseDown={(e) => { e.stopPropagation(); startDrag(e, 'resize', dir); }} />
+        <div key={dir} class={`resize-handle ${dir}`} data-action="resize" data-dir={dir}
+          onMouseDown={(e) => { e.stopPropagation(); startDrag(e as unknown as MouseEvent, 'resize', dir); }} />
       ))}
-      <div className="element-label">{`${Math.round(data.w)}x${Math.round(data.h)} @ ${Math.round(data.r)}deg`}</div>
+      <div class="element-label">{`${Math.round(data.w)}x${Math.round(data.h)} @ ${Math.round(data.r)}deg`}</div>
     </div>
   );
 }
@@ -409,7 +397,7 @@ function InteractiveElement({ data, selected, onSelect, onDelete, onUpdate, glas
 function ParameterLab() {
   const presets = createPresets();
   const [params, setParams] = useState<GlassParams>(() => ({ ...DEFAULT_PARAMS }));
-  const [radius, setRadius] = useState(24);
+  const [radius, setRadius] = useState(100);
   const [width, setWidth] = useState(320);
   const [height, setHeight] = useState(200);
   const [tintColor, setTintColor] = useState('#ffffff');
@@ -419,7 +407,7 @@ function ParameterLab() {
   const [activePreset, setActivePreset] = useState<PresetName>('default');
   const [bgSpeed, setBgSpeed] = useState(30);
   const [bgDirection, setBgDirection] = useState(135);
-  const [bgBrightness, setBgBrightness] = useState(100);
+  const [bgBrightness, setBgBrightness] = useState(30);
   const [bgPlaying, setBgPlaying] = useState(true);
   const bgRef = useRef<HTMLDivElement>(null);
   const bgAnimRef = useRef({ x: 0, y: 0, lastTime: 0 });
@@ -474,30 +462,30 @@ function ParameterLab() {
   }, [params, radius]);
 
   const copyCode = () => { navigator.clipboard.writeText(codeOutput); };
-  const directionArrows = ['->', '↘', '↓', '↙', '<-', '↖', '↑', '↗'];
+  const directionArrows = ['->', '\u2198', '\u2193', '\u2199', '<-', '\u2196', '\u2191', '\u2197'];
   const directionArrow = directionArrows[Math.round(bgDirection / 45) % 8];
 
   return (
     <>
       <style>{styles}</style>
-      <div ref={bgRef} className="background-content" style={{ filter: `brightness(${bgBrightness / 100})` }} dangerouslySetInnerHTML={{ __html: generateBackgroundSVG() }} />
+      <div ref={bgRef} class="background-content" style={{ filter: `brightness(${bgBrightness / 100})` }} dangerouslySetInnerHTML={{ __html: generateBackgroundSVG() }} />
 
-      <aside className="control-panel">
-        <header className="panel-header"><h1>Liquid Glass Labs</h1><p>Explore glass effect parameters</p></header>
+      <aside class="control-panel">
+        <header class="panel-header"><h1>Liquid Glass Labs</h1><p>Explore glass effect parameters</p></header>
 
-        <section className="section">
-          <div className="section-title">Presets</div>
-          <div className="preset-buttons">
+        <section class="section">
+          <div class="section-title">Presets</div>
+          <div class="preset-buttons">
             {(['default', 'subtle', 'bold', 'frosted', 'crystal', 'ios'] as PresetName[]).map((name) => (
-              <button key={name} className={`preset-btn ${activePreset === name ? 'active' : ''}`} onClick={() => applyPreset(name)}>
+              <button key={name} class={`preset-btn ${activePreset === name ? 'active' : ''}`} onClick={() => applyPreset(name)}>
                 {name.charAt(0).toUpperCase() + name.slice(1)}
               </button>
             ))}
           </div>
         </section>
 
-        <section className="section">
-          <div className="section-title">Parameters</div>
+        <section class="section">
+          <div class="section-title">Parameters</div>
           {PARAMETER_NAMES.map((name) => {
             const def = PARAMETERS[name];
             if (def.type === 'number') {
@@ -520,52 +508,52 @@ function ParameterLab() {
           })}
         </section>
 
-        <section className="section">
-          <div className="section-title">Geometry</div>
+        <section class="section">
+          <div class="section-title">Geometry</div>
           <RangeControl label="Corner Radius" value={radius} min={0} max={100} onChange={setRadius} />
           <RangeControl label="Width" value={width} min={100} max={4096} onChange={setWidth} />
           <RangeControl label="Height" value={height} min={80} max={4096} onChange={setHeight} />
         </section>
 
-        <section className="section">
-          <div className="section-title">Visual</div>
-          <div className="control">
-            <div className="control-header"><span className="control-label">Background Tint</span></div>
-            <input type="color" value={tintColor} onChange={(e) => setTintColor(e.target.value)} />
+        <section class="section">
+          <div class="section-title">Visual</div>
+          <div class="control">
+            <div class="control-header"><span class="control-label">Background Tint</span></div>
+            <input type="color" value={tintColor} onInput={(e) => setTintColor((e.target as HTMLInputElement).value)} />
           </div>
           <RangeControl label="Tint Opacity" value={tintOpacity} min={0} max={50} onChange={setTintOpacity} />
         </section>
 
-        <section className="section">
-          <div className="section-title">Actions</div>
-          <div className="preset-buttons">
-            <button className="preset-btn" onClick={() => setElements(initialElements)}>Reset Positions</button>
-            <button className="preset-btn" onClick={() => {
+        <section class="section">
+          <div class="section-title">Actions</div>
+          <div class="preset-buttons">
+            <button class="preset-btn" onClick={() => setElements(initialElements)}>Reset Positions</button>
+            <button class="preset-btn" onClick={() => {
               setElements(initialElements); applyPreset('default'); setTintColor('#ffffff'); setTintOpacity(8);
-              setBgSpeed(30); setBgDirection(135); setBgBrightness(100); setViewMode('lens');
+              setBgSpeed(30); setBgDirection(135); setBgBrightness(30); setViewMode('lens');
             }}>Reset All</button>
           </div>
         </section>
       </aside>
 
-      <main className="preview-area" ref={previewAreaRef}>
-        <div className="bg-control">
-          <div className="bg-control-header">
-            <div className="bg-control-title">Background</div>
-            <button className={`bg-play-btn ${!bgPlaying ? 'paused' : ''}`} onClick={() => { setBgPlaying((p) => !p); bgAnimRef.current.lastTime = 0; }}>
+      <main class="preview-area" ref={previewAreaRef}>
+        <div class="bg-control">
+          <div class="bg-control-header">
+            <div class="bg-control-title">Background</div>
+            <button class={`bg-play-btn ${!bgPlaying ? 'paused' : ''}`} onClick={() => { setBgPlaying((p) => !p); bgAnimRef.current.lastTime = 0; }}>
               {bgPlaying ? '\u23F8' : '\u25B6'}
             </button>
           </div>
-          <div className="bg-control-row"><label>Speed</label><input type="range" min={0} max={60} value={bgSpeed} onChange={(e) => setBgSpeed(parseInt(e.target.value))} /><span className="value">{bgSpeed}</span></div>
-          <div className="bg-control-row"><label>Direction</label><input type="range" min={0} max={315} step={45} value={bgDirection} onChange={(e) => setBgDirection(parseInt(e.target.value))} /><span className="value">{directionArrow}</span></div>
-          <div className="bg-control-row"><label>Brightness</label><input type="range" min={0} max={100} value={bgBrightness} onChange={(e) => setBgBrightness(parseInt(e.target.value))} /><span className="value">{bgBrightness}%</span></div>
+          <div class="bg-control-row"><label>Speed</label><input type="range" min={0} max={60} value={bgSpeed} onInput={(e) => setBgSpeed(parseInt((e.target as HTMLInputElement).value))} /><span class="value">{bgSpeed}</span></div>
+          <div class="bg-control-row"><label>Direction</label><input type="range" min={0} max={315} step={45} value={bgDirection} onInput={(e) => setBgDirection(parseInt((e.target as HTMLInputElement).value))} /><span class="value">{directionArrow}</span></div>
+          <div class="bg-control-row"><label>Brightness</label><input type="range" min={0} max={100} value={bgBrightness} onInput={(e) => setBgBrightness(parseInt((e.target as HTMLInputElement).value))} /><span class="value">{bgBrightness}%</span></div>
         </div>
 
-        <div className="bg-control" style={{ top: '170px' }}>
-          <div className="bg-control-header"><div className="bg-control-title">View Mode</div></div>
-          <div className="view-mode-toggle">
-            <button className={`view-mode-btn ${viewMode === 'lens' ? 'active' : ''}`} onClick={() => setViewMode('lens')}>Lens</button>
-            <button className={`view-mode-btn ${viewMode === 'displacement' ? 'active' : ''}`} onClick={() => setViewMode('displacement')}>Displacement</button>
+        <div class="bg-control" style={{ top: '170px' }}>
+          <div class="bg-control-header"><div class="bg-control-title">View Mode</div></div>
+          <div class="view-mode-toggle">
+            <button class={`view-mode-btn ${viewMode === 'lens' ? 'active' : ''}`} onClick={() => setViewMode('lens')}>Lens</button>
+            <button class={`view-mode-btn ${viewMode === 'displacement' ? 'active' : ''}`} onClick={() => setViewMode('displacement')}>Displacement</button>
           </div>
         </div>
 
@@ -581,22 +569,22 @@ function ParameterLab() {
       </main>
 
       {debugVisible && (
-        <div className="stats">
-          <div className="stat-row"><span className="stat-label">Elements:</span><span className="stat-value">{elements.length}</span></div>
-          <div className="stat-row"><span className="stat-label">FPS:</span><span className="stat-value">{fps}</span></div>
-          <div className="stat-row" style={{ marginTop: '8px', borderTop: '1px solid var(--border)', paddingTop: '8px' }}>
-            <span className="stat-label">Renderer:</span>
-            <div className="view-mode-toggle" style={{ display: 'flex', gap: '2px' }}>
+        <div class="stats">
+          <div class="stat-row"><span class="stat-label">Elements:</span><span class="stat-value">{elements.length}</span></div>
+          <div class="stat-row"><span class="stat-label">FPS:</span><span class="stat-value">{fps}</span></div>
+          <div class="stat-row" style={{ marginTop: '8px', borderTop: '1px solid var(--border)', paddingTop: '8px' }}>
+            <span class="stat-label">Renderer:</span>
+            <div class="view-mode-toggle" style={{ display: 'flex', gap: '2px' }}>
               {(PARAMETERS.displacementRenderer as EnumParameterDef).values.map((v) => (
-                <button key={v} className={`view-mode-btn ${params.displacementRenderer === v ? 'active' : ''}`}
+                <button key={v} class={`view-mode-btn ${params.displacementRenderer === v ? 'active' : ''}`}
                   style={{ fontSize: '10px', padding: '4px 8px' }} onClick={() => setParams((p) => ({ ...p, displacementRenderer: v as typeof p.displacementRenderer }))}>{v.toUpperCase()}</button>
               ))}
             </div>
           </div>
           {__DEV__ && (
-            <div className="stat-row" style={{ marginTop: '8px', borderTop: '1px solid var(--border)', paddingTop: '8px' }}>
-              <span className="stat-label">Profiler:</span>
-              <button className={`profiler-toggle ${profilerEnabled ? 'active' : ''}`} onClick={() => setProfilerEnabled((v) => !v)}>{profilerEnabled ? 'ON' : 'OFF'}</button>
+            <div class="stat-row" style={{ marginTop: '8px', borderTop: '1px solid var(--border)', paddingTop: '8px' }}>
+              <span class="stat-label">Profiler:</span>
+              <button class={`profiler-toggle ${profilerEnabled ? 'active' : ''}`} onClick={() => setProfilerEnabled((v) => !v)}>{profilerEnabled ? 'ON' : 'OFF'}</button>
             </div>
           )}
         </div>
@@ -604,17 +592,17 @@ function ParameterLab() {
 
       {debugVisible && __DEV__ && <PerformanceGraph enabled={profilerEnabled} />}
 
-      <button className="floating-toggle" onClick={() => setDebugVisible((v) => !v)} title={debugVisible ? 'Hide debug info' : 'Show debug info'}>
+      <button class="floating-toggle" onClick={() => setDebugVisible((v) => !v)} title={debugVisible ? 'Hide debug info' : 'Show debug info'}>
         {debugVisible ? '\uD83D\uDC41' : '\uD83D\uDC41\u200D\uD83D\uDDE8'}
       </button>
 
-      <div className="code-output">
-        <div className="code-output-title">Generated CSS</div>
+      <div class="code-output">
+        <div class="code-output-title">Generated CSS</div>
         <code>{codeOutput}</code>
-        <button className="copy-btn" onClick={copyCode}>Copy to Clipboard</button>
+        <button class="copy-btn" onClick={copyCode}>Copy to Clipboard</button>
       </div>
     </>
   );
 }
 
-createRoot(document.getElementById('app')!).render(<ParameterLab />);
+render(<ParameterLab />, document.getElementById('app')!);
