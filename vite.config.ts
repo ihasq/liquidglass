@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite';
+import { defineConfig, type Plugin } from 'vite';
 import dts from 'vite-plugin-dts';
 import glsl from 'vite-plugin-glsl';
 import preact from '@preact/preset-vite';
@@ -8,11 +8,36 @@ import { readFileSync } from 'fs';
 // Read package.json for version
 const pkg = JSON.parse(readFileSync(resolve(__dirname, 'package.json'), 'utf-8'));
 
+// Plugin to inline ?raw imports as string literals in production build
+function inlineRawPlugin(): Plugin {
+  return {
+    name: 'inline-raw',
+    enforce: 'pre',
+    resolveId(source, importer) {
+      if (source.endsWith('?raw') && importer) {
+        const cleanPath = source.replace('?raw', '');
+        const fullPath = resolve(importer, '..', cleanPath);
+        return `\0inline-raw:${fullPath}`;
+      }
+      return null;
+    },
+    load(id) {
+      if (id.startsWith('\0inline-raw:')) {
+        const filePath = id.slice('\0inline-raw:'.length);
+        const content = readFileSync(filePath, 'utf-8');
+        return `export default ${JSON.stringify(content)};`;
+      }
+      return null;
+    },
+  };
+}
+
 export default defineConfig(({ mode }) => {
   const isDev = mode !== 'production';
 
   return {
     plugins: [
+      inlineRawPlugin(),
       preact(),
       glsl({
         minify: !isDev,

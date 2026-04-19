@@ -9,6 +9,7 @@
 
 import { defineProperties, createEngine, CSSPropertyEngine } from '../engines/css-property-engine';
 import { FilterManager, preloadWasm } from '../core/filter';
+import SPECULAR_WORKLET_SOURCE from '../core/specular/specular-worklet.js?raw';
 import {
   PARAMETERS,
   PARAMETER_NAMES,
@@ -322,13 +323,9 @@ function ensureSpecularWorklet(): Promise<void> {
   // tooling/HMR injection (worklets reject ES module imports). We import
   // it via Vite's `?raw` query to get its source as a string, then wrap
   // it in a Blob URL so the worklet runtime sees only the original code.
-  // This strategy works in dev (Vite SSR), production builds, and any
-  // bundler that supports the `?raw` query.
   _paintWorkletPromise = (async () => {
     try {
-      const mod = await import(/* @vite-ignore */ '../core/specular/specular-worklet.js?raw');
-      const src: string = (mod as { default: string }).default;
-      const blobUrl = URL.createObjectURL(new Blob([src], { type: 'text/javascript' }));
+      const blobUrl = URL.createObjectURL(new Blob([SPECULAR_WORKLET_SOURCE], { type: 'text/javascript' }));
       await cssWithPaint.paintWorklet!.addModule(blobUrl);
       // Don't revoke immediately — some browsers fetch lazily.
       setTimeout(() => URL.revokeObjectURL(blobUrl), 30_000);
