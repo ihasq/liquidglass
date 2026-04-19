@@ -8,16 +8,19 @@
   "types": "dist/liquidglass.d.ts",
   "exports": {
     ".": {
+      "types": "./dist/liquidglass.d.ts",
       "import": "./dist/liquidglass.js",
-      "types": "./dist/liquidglass.d.ts"
+      "default": "./dist/liquidglass.js"
     },
     "./schema": {
+      "types": "./dist/schema.d.ts",
       "import": "./dist/schema.js",
-      "types": "./dist/schema.d.ts"
+      "default": "./dist/schema.js"
     },
     "./env": {
+      "types": "./dist/env.d.ts",
       "import": "./dist/env.js",
-      "types": "./dist/env.d.ts"
+      "default": "./dist/env.js"
     }
   },
   "files": [
@@ -26,6 +29,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "build:site": "npm run build && cd site && npm install && npm run build",
     "preview": "vite preview",
     "test": "node test/integrity/index.mjs",
     "test:types": "node test/integrity/index.mjs --only=types",
