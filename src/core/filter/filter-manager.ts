@@ -1014,7 +1014,7 @@ export class FilterManager {
 
     if (previousRenderer && previousRenderer !== currentRenderer) {
       // Switching renderers - wait for any in-progress WASM generation
-      if (previousRenderer === 'wasm-simd' && isWasmGenerationInProgress()) {
+      if (previousRenderer === 'wasm' && isWasmGenerationInProgress()) {
         // WASM is still generating - skip this render frame
         // The generation lock will be released when WASM completes
         state.renderInProgress = false;
@@ -1026,7 +1026,7 @@ export class FilterManager {
       }
 
       // Clean up previous renderer resources
-      if (previousRenderer === 'wasm-simd') {
+      if (previousRenderer === 'wasm') {
         cleanupWasmResources();
       }
 
@@ -1521,9 +1521,9 @@ export class FilterManager {
    * Generate displacement map using the specified renderer with automatic fallback
    *
    * Fallback chain:
-   * - 'gpu' -> 'gl2' -> 'wasm-simd' (if WebGPU fails)
-   * - 'gl2' -> 'wasm-simd' (if WebGL2 fails)
-   * - 'wasm-simd' -> null (WASM is the last resort)
+   * - 'gpu' -> 'gl2' -> 'wasm' (if WebGPU fails)
+   * - 'gl2' -> 'wasm' (if WebGL2 fails)
+   * - 'wasm' -> null (WASM is the last resort)
    */
   private async _generateDisplacementMap(
     renderer: LiquidGlassParams['displacementRenderer'],
@@ -1574,16 +1574,16 @@ export class FilterManager {
       }
       // WebGL2 failed or not supported - fallback to WASM
       if (__DEV__) {
-        console.warn('Liquid Glass: WebGL2 failed, falling back to wasm-simd');
+        console.warn('Liquid Glass: WebGL2 failed, falling back to wasm');
       }
-      effectiveRenderer = 'wasm-simd';
+      effectiveRenderer = 'wasm';
     }
 
     // WASM-SIMD is the default and final fallback
     const wasmResult = await generateWasmDisplacementMap(options);
     if (wasmResult && __DEV__) {
       logProgressive('Displacement map generated with WASM-SIMD', {
-        renderer: 'wasm-simd',
+        renderer: 'wasm',
         generationTime: `${wasmResult.generationTime.toFixed(2)}ms`,
       });
     }

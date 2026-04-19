@@ -19,7 +19,7 @@ async function runTest() {
   // Switch to WASM-SIMD
   console.log('Switching to WASM-SIMD renderer...');
   await page.evaluate(() => {
-    // Find the renderer toggle and click wasm-simd option
+    // Find the renderer toggle and click wasm option
     const buttons = document.querySelectorAll('.view-mode-btn');
     for (const btn of buttons) {
       if (btn.textContent?.includes('WASM-SIMD')) {

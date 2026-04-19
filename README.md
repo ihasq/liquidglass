@@ -108,7 +108,7 @@ prefix is `--liquidglass-`.
 
 | Property | Values | Default | Description |
 |----------|--------|---------|-------------|
-| `displacement-renderer` | `gpu` \| `gl2` \| `wasm-simd` | `gpu` | Displacement backend (auto-fallback) |
+| `displacement-renderer` | `gpu` \| `gl2` \| `wasm` | `gpu` | Displacement backend (auto-fallback) |
 | `displacement-resolution` | `<percentage>` | 40 | Map resolution |
 | `displacement-min-resolution` | `<percentage>` | 10 | Min resolution during resize |
 | `displacement-smoothing` | `<percentage>` | 0 | Map smoothing blur |

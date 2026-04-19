@@ -239,11 +239,11 @@ export const PARAMETERS = {
   displacementRenderer: {
     type: 'enum',
     cssProperty: 'liquidglass-displacement-renderer',
-    syntax: 'gpu | gl2 | wasm-simd',
+    syntax: 'gpu | gl2 | wasm',
     inherits: true,
     default: 'gpu',
-    values: ['gpu', 'gl2', 'wasm-simd'] as const,
-    description: 'Displacement map generation backend (auto-fallback: gpu → gl2 → wasm-simd)',
+    values: ['gpu', 'gl2', 'wasm'] as const,
+    description: 'Displacement map generation backend (auto-fallback: gpu → gl2 → wasm)',
   },
 } as const satisfies Record<string, ParameterDef>;
 

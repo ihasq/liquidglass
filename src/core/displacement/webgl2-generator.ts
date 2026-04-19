@@ -72,7 +72,7 @@ let _gl2ContextLost = false;
 //       added below as discovered.
 //
 //   Mitigation: declare WebGL2 unsupported on these platforms so the
-//   FilterManager auto-fallback chain (gpu → gl2 → wasm-simd) advances to
+//   FilterManager auto-fallback chain (gpu → gl2 → wasm) advances to
 //   the safer WASM-SIMD path.
 //
 //   User override: set `globalThis.__lg_force_webgl2 = true` before module
@@ -204,7 +204,7 @@ async function initWebGL2Context(): Promise<WebGL2UBOContext | null> {
 
     // GPU process crash / context loss handler. When the GPU dies (often due
     // to driver bugs during heavy resize), we permanently disable the WebGL2
-    // path and let the FilterManager auto-fallback chain advance to wasm-simd.
+    // path and let the FilterManager auto-fallback chain advance to wasm.
     // The handler must be on the *canvas* element, not gl.
     const lossHandler = (e: Event) => {
         e.preventDefault();  // Allow restoreContext if browser supports it

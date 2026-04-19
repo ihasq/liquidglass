@@ -837,7 +837,7 @@
         <div class="view-mode-toggle" style="margin-top: 8px;">
           <button class="view-mode-btn active" id="renderer-gpu-btn" data-renderer="gpu">WebGPU</button>
           <button class="view-mode-btn" id="renderer-gl2-btn" data-renderer="gl2">WebGL2</button>
-          <button class="view-mode-btn" id="renderer-wasm-btn" data-renderer="wasm-simd">WASM-SIMD</button>
+          <button class="view-mode-btn" id="renderer-wasm-btn" data-renderer="wasm">WASM-SIMD</button>
         </div>
       </div>
     </section>
@@ -1161,7 +1161,7 @@
     // Enable optimization state (separate since it's a toggle, not a range)
     let enableOptimization = 1;
 
-    // Displacement renderer state (default: 'gpu' with fallback chain gpu -> gl2 -> wasm-simd)
+    // Displacement renderer state (default: 'gpu' with fallback chain gpu -> gl2 -> wasm)
     let displacementRenderer = 'gpu';
 
     // Presets
@@ -1899,11 +1899,11 @@
 
     function setDisplacementRenderer(value) {
       // Validate renderer value
-      const validRenderers = ['wasm-simd', 'gl2', 'gpu'];
-      displacementRenderer = validRenderers.includes(value) ? value : 'wasm-simd';
+      const validRenderers = ['wasm', 'gl2', 'gpu'];
+      displacementRenderer = validRenderers.includes(value) ? value : 'wasm';
 
       // Update toggle button states
-      document.getElementById('renderer-wasm-btn').classList.toggle('active', displacementRenderer === 'wasm-simd');
+      document.getElementById('renderer-wasm-btn').classList.toggle('active', displacementRenderer === 'wasm');
       document.getElementById('renderer-gl2-btn').classList.toggle('active', displacementRenderer === 'gl2');
       document.getElementById('renderer-gpu-btn').classList.toggle('active', displacementRenderer === 'gpu');
 

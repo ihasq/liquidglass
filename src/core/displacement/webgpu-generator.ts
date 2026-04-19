@@ -27,10 +27,10 @@ import type { CanvasDisplacementOptions, CanvasDisplacementResult } from './canv
 // WGSL Shaders
 // ============================================================================
 
-import FULLSCREEN_VERTEX_SHADER from '../../shaders/fullscreen.vert.wgsl';
-import QUADRANT_FRAGMENT_SHADER from '../../shaders/quadrant.frag.wgsl';
-import INSTANCED_VERTEX_SHADER from '../../shaders/instanced.vert.wgsl';
-import INSTANCED_FRAGMENT_SHADER from '../../shaders/instanced.frag.wgsl';
+import FULLSCREEN_VERTEX_SHADER from '../../shaders/gpu/fullscreen.vert.wgsl';
+import QUADRANT_FRAGMENT_SHADER from '../../shaders/gpu/quadrant.frag.wgsl';
+import INSTANCED_VERTEX_SHADER from '../../shaders/gpu/instanced.vert.wgsl';
+import INSTANCED_FRAGMENT_SHADER from '../../shaders/gpu/instanced.frag.wgsl';
 
 // ============================================================================
 // WebGPU Context Management

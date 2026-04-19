@@ -194,7 +194,7 @@ async function run() {
         const btns = group.querySelectorAll('.view-mode-btn');
         for (const btn of btns) {
           // Check if this is a WASM-SIMD button (case-insensitive)
-          if (btn.textContent.toLowerCase() === 'wasm-simd') {
+          if (btn.textContent.toLowerCase() === 'wasm') {
             btn.click();
             return { found: true, text: btn.textContent };
           }
@@ -235,7 +235,7 @@ async function run() {
 
     // Verify the switch
     const currentRenderer = await page.evaluate(() => window.__wasmMonitor.getCurrentRenderer());
-    console.log(`${colors.green}✓ Switched to WASM-SIMD (current: ${currentRenderer || 'wasm-simd'})${colors.reset}`);
+    console.log(`${colors.green}✓ Switched to WASM-SIMD (current: ${currentRenderer || 'wasm'})${colors.reset}`);
 
     // Take initial heap snapshot
     console.log(`${colors.dim}Taking initial heap snapshot...${colors.reset}`);
