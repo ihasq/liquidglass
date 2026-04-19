@@ -289,7 +289,7 @@ npx knip            # static dead-code analysis
 
 This project would not have been possible without the groundbreaking work of [**@KubeKhrm**](https://x.com/KubeKhrm) and [**kube.io**](https://kube.io).
 
-His pioneering research into real-time glass refraction effects using SVG filters and displacement maps laid the foundation for everything in this library. The core technique of encoding refraction vectors into RGB channels and applying them via `feDisplacementMap` — the very heart of liquidglass.css — originated from his brilliant invention.
+His invention goes far beyond simply applying displacement via SVG filters. He identified the precise mathematical formulas required to simulate physically-accurate glass refraction — deriving how border-radius geometry translates into displacement vectors that create the characteristic lens distortion effect. The core technique of encoding these computed refraction vectors into RGB channels and applying them via `feDisplacementMap` — the very heart of liquidglass.css — originated from his brilliant research.
 
 We stand on the shoulders of giants. Thank you, Kube.
 
