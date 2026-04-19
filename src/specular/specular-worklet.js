@@ -2,20 +2,7 @@
  * CSS Paint Worklet: liquid-glass-specular
  *
  * Renders the Phong specular model exclusively with Canvas2D primitives
- * (clip + gradient + destination-in), no per-pixel loop. See
- * highlight.ts for the full algorithmic derivation.
- *
- * Registered inputs (all @property-typed CSS custom properties):
- *   --lg-spec-angle      <angle>   light direction (e.g. -60deg)
- *   --lg-spec-shininess  <number>  Phong exponent (1..128)
- *   --lg-spec-width      <length>  bezel width in px
- *   --lg-spec-gloss      <number>  peak alpha 0..1
- *   --lg-spec-radius     <length>  corner radius in px
- *
- * Browser contract:
- *   The browser re-invokes paint() automatically when any inputProperty
- *   or element geometry changes — replacing our JS ResizeObserver +
- *   cache-invalidation state machine.
+ * (clip + gradient + destination-in), no per-pixel loop.
  */
 
 const STOP_COUNT = 64;
@@ -25,26 +12,11 @@ function addPhongConicStops(grad, shininess, glossAlpha) {
   for (let i = 0; i <= STOP_COUNT; i++) {
     const t = i / STOP_COUNT;
     const c = Math.cos(twoPi * t);
-    // Math.pow(Math.abs(c), shininess) inlined for hot path
     const intensity = (c < 0 ? -c : c) ** shininess * glossAlpha;
     grad.addColorStop(t, `rgba(255,255,255,${intensity})`);
   }
 }
 
-function addDepthRadialStops(grad, rInner, rOuter) {
-  const total = (rOuter + 1) - rInner;
-  if (total <= 0) {
-    grad.addColorStop(0, 'rgba(255,255,255,1)');
-    grad.addColorStop(1, 'rgba(255,255,255,1)');
-    return;
-  }
-  const bezelSpan = rOuter - rInner;
-  const aaWidth = Math.min(1 / total, 0.5);
-  grad.addColorStop(0,                  'rgba(255,255,255,0)');
-  grad.addColorStop(aaWidth,            'rgba(255,255,255,1)');
-  grad.addColorStop(bezelSpan / total,  'rgba(255,255,255,1)');
-  grad.addColorStop(1,                  'rgba(255,255,255,0)');
-}
 
 function addDepthLinearStops(grad, outerAtStart) {
   if (outerAtStart) {
@@ -61,57 +33,24 @@ function addDepthLinearStops(grad, outerAtStart) {
 function drawSpecular(ctx, p) {
   const { w, h, lightAngle, shininess, glossAlpha, bezelWidth } = p;
 
-  // Early return for invisible or degenerate cases
   if (w <= 0 || h <= 0 || glossAlpha <= 0.01 || bezelWidth <= 0) return;
 
   const r = Math.max(1, Math.min(p.r, w / 2, h / 2));
+  const effectiveBezelWidth = Math.min(bezelWidth, r);
   const lightX = Math.cos(lightAngle);
   const lightY = Math.sin(lightAngle);
-  const rInner = Math.max(0, r - bezelWidth);
-  const rOuter = r;
-
-  // Skip corners if bezel is too thin (< 2px) — edges alone suffice
   const drawCorners = bezelWidth >= 2 && r >= 2;
 
-  if (drawCorners) {
-    // 4 corner regions — conic + radial depth
-    const corners = [
-      { cx: r,     cy: r,     x: 0,     y: 0,     s: r },
-      { cx: w - r, cy: r,     x: w - r, y: 0,     s: r },
-      { cx: w - r, cy: h - r, x: w - r, y: h - r, s: r },
-      { cx: r,     cy: h - r, x: 0,     y: h - r, s: r },
-    ];
-    for (const c of corners) {
-      ctx.save();
-      ctx.beginPath();
-      ctx.rect(c.x, c.y, c.s, c.s);
-      ctx.clip();
-
-      const angleGrad = ctx.createConicGradient(lightAngle, c.cx, c.cy);
-      addPhongConicStops(angleGrad, shininess, glossAlpha);
-      ctx.fillStyle = angleGrad;
-      ctx.fillRect(c.x, c.y, c.s, c.s);
-
-      ctx.globalCompositeOperation = 'destination-in';
-      const depthGrad = ctx.createRadialGradient(c.cx, c.cy, rInner, c.cx, c.cy, rOuter + 1);
-      addDepthRadialStops(depthGrad, rInner, rOuter);
-      ctx.fillStyle = depthGrad;
-      ctx.fillRect(c.x, c.y, c.s, c.s);
-
-      ctx.restore();
-    }
-  }
-
-  // 4 edge bands — constant-alpha + linear depth
+  // ─────── STEP 1: DRAW EDGES ───────
   const edges = [
-    { x: r, y: 0,              w: w - 2 * r, h: bezelWidth, dot: lightY, axis: 'y', outerAtStart: true  },
-    { x: w - bezelWidth, y: r, w: bezelWidth, h: h - 2 * r, dot: lightX, axis: 'x', outerAtStart: false },
-    { x: r, y: h - bezelWidth, w: w - 2 * r, h: bezelWidth, dot: lightY, axis: 'y', outerAtStart: false },
-    { x: 0, y: r,              w: bezelWidth, h: h - 2 * r, dot: lightX, axis: 'x', outerAtStart: true  },
+    { x: r, y: 0,                        w: w - 2 * r, h: effectiveBezelWidth, dot: lightY, axis: 'y', outerAtStart: true  },
+    { x: w - effectiveBezelWidth, y: r,  w: effectiveBezelWidth, h: h - 2 * r, dot: lightX, axis: 'x', outerAtStart: false },
+    { x: r, y: h - effectiveBezelWidth,  w: w - 2 * r, h: effectiveBezelWidth, dot: lightY, axis: 'y', outerAtStart: false },
+    { x: 0, y: r,                        w: effectiveBezelWidth, h: h - 2 * r, dot: lightX, axis: 'x', outerAtStart: true  },
   ];
+
   for (const e of edges) {
     if (e.w <= 0 || e.h <= 0) continue;
-    // Inline Math.pow(Math.abs(e.dot), shininess) for hot path
     const absDot = e.dot < 0 ? -e.dot : e.dot;
     const alphaA = absDot ** shininess * glossAlpha;
     if (alphaA <= 1e-4) continue;
@@ -134,9 +73,49 @@ function drawSpecular(ctx, p) {
 
     ctx.restore();
   }
+
+  // ─────── STEP 2: DRAW CORNERS ───────
+  if (drawCorners) {
+    const corners = [
+      { cx: r,     cy: r,     clipX: 0,     clipY: 0,     clipW: r, clipH: r },
+      { cx: w - r, cy: r,     clipX: w - r, clipY: 0,     clipW: r, clipH: r },
+      { cx: w - r, cy: h - r, clipX: w - r, clipY: h - r, clipW: r, clipH: r },
+      { cx: r,     cy: h - r, clipX: 0,     clipY: h - r, clipW: r, clipH: r },
+    ];
+
+    for (const c of corners) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(c.clipX, c.clipY, c.clipW, c.clipH);
+      ctx.clip();
+
+      const angleGrad = ctx.createConicGradient(lightAngle, c.cx, c.cy);
+      addPhongConicStops(angleGrad, shininess, glossAlpha);
+      ctx.fillStyle = angleGrad;
+      ctx.fillRect(c.clipX, c.clipY, c.clipW, c.clipH);
+
+      ctx.restore();
+    }
+  }
+
+  // ─────── STEP 3: CROP INNER REGION ───────
+  if (effectiveBezelWidth > 0) {
+    const innerX = effectiveBezelWidth;
+    const innerY = effectiveBezelWidth;
+    const innerW = w - 2 * effectiveBezelWidth;
+    const innerH = h - 2 * effectiveBezelWidth;
+    const innerR = Math.max(0, r - effectiveBezelWidth);
+
+    if (innerW > 0 && innerH > 0) {
+      ctx.globalCompositeOperation = 'destination-out';
+      ctx.beginPath();
+      ctx.roundRect(innerX, innerY, innerW, innerH, innerR);
+      ctx.fillStyle = 'rgba(0,0,0,1)';
+      ctx.fill();
+    }
+  }
 }
 
-/** CSS value parsing helpers. Worklet props come as CSSUnitValue or tokens. */
 function cssNumber(v, fallback) {
   if (v == null) return fallback;
   if (typeof v === 'number') return v;
@@ -146,8 +125,6 @@ function cssNumber(v, fallback) {
 }
 
 class LiquidGlassSpecular {
-  // Observe the same CSS properties the schema already defines, plus a
-  // radius value the driver mirrors from the element's border-radius.
   static get inputProperties() {
     return [
       '--liquidglass-specular-angle',
@@ -165,11 +142,9 @@ class LiquidGlassSpecular {
   paint(ctx, geom, props) {
     const w = geom.width;
     const h = geom.height;
-    // angle in deg → rad
     const angleDeg = cssNumber(props.get('--liquidglass-specular-angle'), -60);
     const shininess = Math.max(1, cssNumber(props.get('--liquidglass-specular-shininess'), 8));
     const bezelWidth = Math.max(1, cssNumber(props.get('--liquidglass-specular-width'), 2));
-    // gloss is 0..100 in schema; convert to 0..1 alpha
     const gloss100 = cssNumber(props.get('--liquidglass-gloss'), 50);
     const radius = Math.max(1, cssNumber(props.get('--liquidglass-radius'), 24));
 
