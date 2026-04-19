@@ -329,10 +329,6 @@ export function isWebGPUSupported(): boolean {
     return true;
 }
 
-export function isWebGPUReady(): boolean {
-    return _gpuContext !== null;
-}
-
 export function preloadWebGPU(): Promise<boolean> {
     return ensureWebGPUContext().then((ctx) => ctx !== null);
 }
@@ -347,16 +343,6 @@ export async function generateWebGPUDisplacementMap(
     if (!ctx) return null;
 
     return generateWebGPUDisplacementMapInternal(ctx, options);
-}
-
-/**
- * Generate displacement map using WebGPU (sync version)
- */
-export function generateWebGPUDisplacementMapSync(
-    options: CanvasDisplacementOptions
-): CanvasDisplacementResult | null {
-    if (!_gpuContext) return null;
-    return generateWebGPUDisplacementMapInternalSync(_gpuContext, options);
 }
 
 /**
@@ -519,21 +505,3 @@ async function generateWebGPUDisplacementMapInternal(
     return generateWebGPUDisplacementMapInternalSync(ctx, options);
 }
 
-/**
- * Clean up WebGPU resources
- */
-export function destroyWebGPUContext(): void {
-    if (_gpuContext) {
-        _gpuContext.quadrantTexture?.destroy();
-        _gpuContext.quadrantUniformBuffer.destroy();
-        _gpuContext.quadrantBindGroup = null;
-        _gpuContext.quadrantTextureView = null;
-        _gpuContext.instancedBindGroup = null;
-        _gpuContext.outputCache = null;
-        _gpuContext.exportCanvas = null;
-        _gpuContext.device.destroy();
-        _gpuContext = null;
-    }
-    _gpuSupported = null;
-    _gpuInitializing = null;
-}

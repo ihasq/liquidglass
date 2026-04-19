@@ -13,7 +13,9 @@
  * - WASM-exclusive canvas resources (not shared with WebGL2)
  */
 
-// Re-export quadrant-based implementations as the primary API
+// Re-export quadrant-based implementations as the primary API.
+// Demos that need the raw quadrant entry points import directly from
+// './quad-wasm-generator', so no second alias block is needed here.
 export {
   generateQuadWasmDisplacementMap as generateWasmDisplacementMap,
   generateQuadWasmDisplacementMapSync as generateWasmDisplacementMapSync,
@@ -22,16 +24,4 @@ export {
   isQuadWasmReady as isWasmReady,
   isWasmGenerationInProgress,
   cleanupWasmResources,
-} from './quad-wasm-generator';
-
-// Also export quadrant-specific APIs for direct access
-export {
-  generateQuadrantDisplacementMap,
-  generateQuadWasmDisplacementMap,
-  generateQuadWasmDisplacementMapSync,
-  preloadQuadWasm,
-  isQuadWasmReady,
-  isQuadWasmSimdSupported,
-  type QuadrantDisplacementOptions,
-  type QuadrantDisplacementResult,
 } from './quad-wasm-generator';

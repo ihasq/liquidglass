@@ -38,15 +38,6 @@ export function applyLiquidGlassCss(element: HTMLElement, options: CssOptions): 
 }
 
 /**
- * Remove liquid glass CSS from an element
- */
-export function removeLiquidGlassCss(element: HTMLElement): void {
-  element.style.backdropFilter = '';
-  element.style.setProperty('-webkit-backdrop-filter', '');
-  element.style.backgroundColor = '';
-}
-
-/**
  * Create CSS class definitions for liquid glass
  */
 export function generateLiquidGlassCssClass(

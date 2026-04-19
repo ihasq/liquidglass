@@ -17,7 +17,7 @@ export interface ProfileResult {
  * h(rho) = sqrt(1 - rho^2)
  * dh/drho = -rho / sqrt(1 - rho^2)
  */
-export function circleProfile(rho: number): ProfileResult {
+function circleProfile(rho: number): ProfileResult {
   const rhoSq = rho * rho;
   if (rhoSq >= 1) {
     return { height: 0, slope: -Infinity };
@@ -34,7 +34,7 @@ export function circleProfile(rho: number): ProfileResult {
  * h(rho) = (1 - rho^4)^(1/4)
  * dh/drho = -rho^3 * (1 - rho^4)^(-3/4)
  */
-export function squircleProfile(rho: number): ProfileResult {
+function squircleProfile(rho: number): ProfileResult {
   const rho4 = Math.pow(rho, 4);
   if (rho4 >= 1) {
     return { height: 0, slope: -Infinity };
@@ -49,7 +49,7 @@ export function squircleProfile(rho: number): ProfileResult {
  * Concave profile (inverted - causes ray divergence)
  * h(rho) = -sqrt(1 - rho^2) + 1
  */
-export function concaveProfile(rho: number): ProfileResult {
+function concaveProfile(rho: number): ProfileResult {
   const rhoSq = rho * rho;
   if (rhoSq >= 1) {
     return { height: 0, slope: Infinity };
@@ -66,7 +66,7 @@ export function concaveProfile(rho: number): ProfileResult {
  * h(rho) = 1 - rho^2
  * dh/drho = -2 * rho
  */
-export function parabolicProfile(rho: number): ProfileResult {
+function parabolicProfile(rho: number): ProfileResult {
   return {
     height: 1 - rho * rho,
     slope: -2 * rho
@@ -77,7 +77,7 @@ export function parabolicProfile(rho: number): ProfileResult {
  * Lip profile - blend of convex center and concave edge
  * Uses smootherstep to transition between profiles
  */
-export function lipProfile(rho: number, blendStart: number = 0.3, blendEnd: number = 0.7): ProfileResult {
+function lipProfile(rho: number, blendStart: number = 0.3, blendEnd: number = 0.7): ProfileResult {
   const convex = squircleProfile(rho);
   const concave = concaveProfile(rho);
 

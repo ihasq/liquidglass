@@ -49,18 +49,10 @@ export function calculateRefraction(
 }
 
 /**
- * Calculate critical angle for Total Internal Reflection
- */
-export function criticalAngle(n1: number, n2: number): number {
-  if (n1 <= n2) return Math.PI / 2;  // No TIR possible
-  return Math.asin(n2 / n1);
-}
-
-/**
  * Convert surface slope to normal angle
  * The normal angle is measured from vertical (perpendicular to surface)
  */
-export function slopeToNormalAngle(slope: number): number {
+function slopeToNormalAngle(slope: number): number {
   return Math.atan(Math.abs(slope));
 }
 

@@ -48,7 +48,7 @@ export interface SessionInfo {
   lastModified: number;
 }
 
-export interface RecorderStats {
+interface RecorderStats {
   bytesWritten: number;
   recordCount: number;
   fps: number;

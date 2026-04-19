@@ -34,7 +34,7 @@ export interface DisplacementMapResult {
  * - 0 = no displacement (at center or edge)
  * - 1 = maximum displacement (somewhere in between)
  */
-export function buildRadialLUT(
+function buildRadialLUT(
   samples: number,
   profile: ProfileType,
   refractiveIndex: number,

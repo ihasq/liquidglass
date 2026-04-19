@@ -370,13 +370,6 @@ export function isWebGL2Supported(): boolean {
 }
 
 /**
- * Check if WebGL2 context is ready
- */
-export function isWebGL2Ready(): boolean {
-    return _gl2Context !== null;
-}
-
-/**
  * Preload WebGL2 context (call early to avoid first-use latency)
  */
 export function preloadWebGL2(): Promise<boolean> {
@@ -396,19 +389,6 @@ export async function generateWebGL2DisplacementMap(
     if (!ctx) return null;
 
     return generateWebGL2DisplacementMapInternal(ctx, options);
-}
-
-/**
- * Generate displacement map using WebGL2 (sync)
- *
- * Returns null if WebGL2 context is not ready.
- * Use async version for guaranteed result.
- */
-export function generateWebGL2DisplacementMapSync(
-    options: CanvasDisplacementOptions
-): CanvasDisplacementResult | null {
-    if (!_gl2Context) return null;
-    return generateWebGL2DisplacementMapInternal(_gl2Context, options);
 }
 
 function generateWebGL2DisplacementMapInternal(
@@ -533,20 +513,3 @@ function generateWebGL2DisplacementMapInternal(
     };
 }
 
-/**
- * Clean up WebGL2 resources
- */
-export function destroyWebGL2Context(): void {
-    if (_gl2Context) {
-        const { gl, program, ubo, vao } = _gl2Context;
-        gl.deleteBuffer(ubo);
-        gl.deleteVertexArray(vao);
-        gl.deleteProgram(program);
-        _gl2Context.exportCanvas = null;
-        _gl2Context.cachedPixelBuffer = null;
-        _gl2Context.cachedImageData = null;
-        _gl2Context = null;
-    }
-    _gl2Supported = null;
-    _gl2Initializing = null;
-}

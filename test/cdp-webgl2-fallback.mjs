@@ -40,7 +40,7 @@ async function newPage(extraInit) {
 
 async function probeWebGL2Status(page) {
   return page.evaluate(async () => {
-    const mod = await import('/specular-poc/src/core/displacement/webgl2-generator.ts');
+    const mod = await import('/src/core/displacement/webgl2-generator.ts');
     return {
       supported: mod.isWebGL2Supported(),
     };

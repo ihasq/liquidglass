@@ -345,7 +345,6 @@ export { supportsBackdropSvgFilter } from './svg-builder';
 export { preloadWasm } from '../displacement/wasm-generator';
 export { preloadWebGL2 } from '../displacement/webgl2-generator';
 export { preloadWebGPU } from '../displacement/webgpu-generator';
-export type { LiquidGlassParams, FilterManagerOptions, FilterCallbacks } from './types';
 export { DEFAULT_PARAMS } from './types';
 
 // Singleton shared resources

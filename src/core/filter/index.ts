@@ -16,15 +16,7 @@ export type {
   LiquidGlassParams,
   FilterManagerOptions,
   FilterCallbacks,
-  FilterState,
-  SizeSample,
-  PredictedSize,
   DisplacementRenderer,
 } from './types';
 
 export { VALID_RENDERERS } from './types';
-
-export {
-  buildFilterChain,
-  createFilterElement,
-} from './svg-builder';

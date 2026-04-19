@@ -352,34 +352,3 @@ export function supportsBackdropSvgFilter(): boolean {
 }
 
 // ─────────────────────────────────────────────────────────────
-// Legacy exports (for backwards compatibility during transition)
-// ─────────────────────────────────────────────────────────────
-
-/**
- * @deprecated Use createFilterDOM instead
- */
-export function buildFilterChain(
-  params: LiquidGlassParams,
-  dispUrl: string,
-  width: number,
-  height: number,
-  resolutionScale: number = 1
-): string {
-  const { filter } = createFilterDOM('temp', params, dispUrl, width, height, resolutionScale);
-  return filter.innerHTML;
-}
-
-/**
- * @deprecated Use createFilterDOM instead
- */
-export function createFilterElement(
-  id: string,
-  params: LiquidGlassParams,
-  dispUrl: string,
-  width: number,
-  height: number,
-  resolutionScale: number = 1
-): SVGFilterElement {
-  const { filter } = createFilterDOM(id, params, dispUrl, width, height, resolutionScale);
-  return filter;
-}
