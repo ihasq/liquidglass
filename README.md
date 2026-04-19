@@ -285,6 +285,14 @@ npm run test        # type / build / SMT / e2e integrity suite
 npx knip            # static dead-code analysis
 ```
 
+## Acknowledgments
+
+This project would not have been possible without the groundbreaking work of [**@KubeKhrm**](https://x.com/KubeKhrm) and [**kube.io**](https://kube.io).
+
+His pioneering research into real-time glass refraction effects using SVG filters and displacement maps laid the foundation for everything in this library. The core technique of encoding refraction vectors into RGB channels and applying them via `feDisplacementMap` — the very heart of liquidglass.css — originated from his brilliant invention.
+
+We stand on the shoulders of giants. Thank you, Kube.
+
 ## License
 
 MIT License.
