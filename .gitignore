@@ -34,6 +34,9 @@ resize-profile.json
 *.png
 parameter-lab-test.png
 
+# Allow public assets (OGP images, etc.)
+!site/public/*.png
+
 # Vite temp files
 vite.config.ts.timestamp-*.mjs
 
