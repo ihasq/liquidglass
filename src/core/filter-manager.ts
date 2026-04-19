@@ -249,7 +249,7 @@ import {
   preloadWebGPU,
   isWebGPUSupported,
 } from '../displacement/webgpu-generator';
-import { smootherstep } from '../math/interpolation';
+import { smootherstep } from '../displacement/math/interpolation';
 import {
   createFilterDOM,
   updateDisplacementMaps,
@@ -257,7 +257,7 @@ import {
   updateMorphWeights,
   calculateSmoothingBlur,
   supportsBackdropSvgFilter,
-} from './svg-builder';
+} from '../svg/builder';
 import {
   __DEV__,
   isLogEnabled,
@@ -265,7 +265,7 @@ import {
   _profilerMarkStep,
   _profilerEndStep,
   _profilerEndFrame,
-} from '../../env';
+} from '../env';
 import {
   DEFAULT_PARAMS,
   type LiquidGlassParams,
@@ -341,7 +341,7 @@ function logInterval(message: string, data?: Record<string, unknown>): void {
 }
 
 // Re-export for convenience
-export { supportsBackdropSvgFilter } from './svg-builder';
+export { supportsBackdropSvgFilter } from '../svg/builder';
 export { preloadWasm } from '../displacement/wasm-generator';
 export { preloadWebGL2 } from '../displacement/webgl2-generator';
 export { preloadWebGPU } from '../displacement/webgpu-generator';

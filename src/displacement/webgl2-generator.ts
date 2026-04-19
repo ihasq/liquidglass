@@ -17,8 +17,8 @@ import type { CanvasDisplacementOptions, CanvasDisplacementResult } from './canv
 // GLSL Shaders (UBO-based single-pass)
 // ============================================================================
 
-import UBO_VERTEX_SHADER_SOURCE from '../../shaders/gl2/ubo-fullscreen.vert.glsl';
-import UBO_FRAGMENT_SHADER_SOURCE from '../../shaders/gl2/ubo-displacement.frag.glsl';
+import UBO_VERTEX_SHADER_SOURCE from '../shaders/gl2/ubo-fullscreen.vert.glsl';
+import UBO_FRAGMENT_SHADER_SOURCE from '../shaders/gl2/ubo-displacement.frag.glsl';
 
 // ============================================================================
 // WebGL2 Context Management

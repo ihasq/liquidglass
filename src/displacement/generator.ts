@@ -3,8 +3,8 @@
  * Generates RGB-encoded displacement maps for SVG feDisplacementMap
  */
 
-import { getProfile, ProfileType } from '../math/profiles';
-import { smootherstep, clamp } from '../math/interpolation';
+import { getProfile, ProfileType } from './math/profiles';
+import { smootherstep, clamp } from './math/interpolation';
 
 export interface DisplacementMapOptions {
   width: number;

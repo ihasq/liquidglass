@@ -32,14 +32,14 @@ export {
   preloadWebGPU,
   DEFAULT_PARAMS,
   VALID_RENDERERS,
-} from './core/filter';
+} from './core';
 
 export type {
   LiquidGlassParams,
   FilterManagerOptions,
   FilterCallbacks,
   DisplacementRenderer,
-} from './core/filter';
+} from './core';
 
 // === CSS Properties Driver ===
 export {
@@ -53,7 +53,7 @@ export {
   getEngineV2,
   getManagerV2,
   destroyCSSPropertiesV2,
-} from './driver';
+} from './core';
 
 // === CSS Property Engine (Generic) ===
 export {
@@ -62,14 +62,14 @@ export {
   getEngine,
   destroyEngine,
   CSSPropertyEngine,
-} from './engines/css-property-engine';
+} from './css';
 export type {
   PropertyCallback,
   PropertyDefinition,
   PropertyDefinitions,
   PropertySyntax,
   EngineOptions,
-} from './engines/css-property-engine';
+} from './css';
 
 // === Parameter Schema ===
 export {
@@ -89,30 +89,29 @@ export type {
   EnumParameterDef,
 } from './schema/parameters';
 
-// Core math exports
-export type { ProfileType } from './core/math/profiles';
-export { getProfile } from './core/math/profiles';
-export { calculateRefraction, calculateDisplacementVector } from './core/math/snell';
-export { smoothstep, smootherstep } from './core/math/interpolation';
+// === Displacement Engine ===
+export type { ProfileType } from './displacement/math/profiles';
+export { getProfile } from './displacement/math/profiles';
+export { calculateRefraction, calculateDisplacementVector } from './displacement/math/snell';
+export { smoothstep, smootherstep } from './displacement/math/interpolation';
 
-// Displacement map exports
-export { generateDisplacementMap, generateSquircleDisplacementMap } from './core/displacement/generator';
-export type { DisplacementMapOptions, DisplacementMapResult } from './core/displacement/generator';
+export { generateDisplacementMap, generateSquircleDisplacementMap } from './displacement/generator';
+export type { DisplacementMapOptions, DisplacementMapResult } from './displacement/generator';
 
 // WASM accelerated displacement (per-element encoding)
-export { generateWasmDisplacementMap, isWasmSimdSupported } from './core/displacement/wasm-generator';
+export { generateWasmDisplacementMap, isWasmSimdSupported } from './displacement/wasm-generator';
 
 // WebGL2 accelerated displacement
-export { generateWebGL2DisplacementMap, isWebGL2Supported } from './core/displacement/webgl2-generator';
+export { generateWebGL2DisplacementMap, isWebGL2Supported } from './displacement/webgl2-generator';
 
 // WebGPU accelerated displacement
-export { generateWebGPUDisplacementMap, isWebGPUSupported } from './core/displacement/webgpu-generator';
+export { generateWebGPUDisplacementMap, isWebGPUSupported } from './displacement/webgpu-generator';
 
-// Specular exports — main-thread fallback only; primary path is the
-// CSS Paint Worklet at src/core/specular/specular-worklet.js.
-export { generateSpecularMap, drawSpecular } from './core/specular/highlight';
-export type { SpecularMapOptions, SpecularMapResult, SpecularParams } from './core/specular/highlight';
+// === Specular Engine ===
+// Main-thread fallback only; primary path is CSS Paint Worklet
+export { generateSpecularMap, drawSpecular } from './specular/highlight';
+export type { SpecularMapOptions, SpecularMapResult, SpecularParams } from './specular/highlight';
 
-// Renderer exports
-export { createLiquidGlassFilter } from './renderer/svg-filter';
-export { applyLiquidGlassCss, generateLiquidGlassCssClass } from './renderer/css-bridge';
+// === SVG Layout Engine ===
+export { createLiquidGlassFilter } from './svg/filter';
+export { applyLiquidGlassCss, generateLiquidGlassCssClass } from './svg/css-bridge';

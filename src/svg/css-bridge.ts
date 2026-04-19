@@ -3,7 +3,7 @@
  * Handles backdrop-filter application and fallbacks
  */
 
-import { supportsBackdropSvgFilter } from './svg-filter';
+import { supportsBackdropSvgFilter } from './builder';
 
 export interface CssOptions {
   filterUrl: string;

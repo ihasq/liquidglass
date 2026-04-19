@@ -213,7 +213,8 @@ async function runTypeValidation() {
   // Test 1.3: Verify filter-manager types
   const fmStart = Date.now();
   try {
-    const typesPath = join(ROOT, 'src/core/filter/filter-manager-types.ts');
+    // Check src/core/types.ts (new modular structure)
+    const typesPath = join(ROOT, 'src/core/types.ts');
     if (existsSync(typesPath)) {
       const typesContent = readFileSync(typesPath, 'utf-8');
       const hasFilterState = typesContent.includes('FilterState');
@@ -224,18 +225,10 @@ async function runTypeValidation() {
 
       if (!hasFilterState) allPassed = false;
     } else {
-      // Check alternative location
-      const altPath = join(ROOT, 'src/core/filter/types.ts');
-      if (existsSync(altPath)) {
-        const fmDuration = Date.now() - fmStart;
-        logResult('FilterManager types (types.ts)', true, fmDuration);
-        tests.push({ name: 'filter-manager-types', passed: true, duration: fmDuration });
-      } else {
-        const fmDuration = Date.now() - fmStart;
-        logResult('FilterManager types', false, fmDuration);
-        tests.push({ name: 'filter-manager-types', passed: false, duration: fmDuration });
-        allPassed = false;
-      }
+      const fmDuration = Date.now() - fmStart;
+      logResult('FilterManager types', false, fmDuration);
+      tests.push({ name: 'filter-manager-types', passed: false, duration: fmDuration });
+      allPassed = false;
     }
   } catch (error) {
     const fmDuration = Date.now() - fmStart;

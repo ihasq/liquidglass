@@ -10,7 +10,7 @@ export {
   type LiquidGlassParams,
   DEFAULT_PARAMS,
   VALID_RENDERERS,
-} from '../../schema/parameters';
+} from '../schema/parameters';
 
 /**
  * Sample for tracking size history (predictive rendering)
@@ -93,7 +93,7 @@ export interface FilterState {
   borderRadius: number;
 
   // Cached parameters (for fast-update detection)
-  params: import('../../schema/parameters').LiquidGlassParams;
+  params: import('../schema/parameters').LiquidGlassParams;
 
   // Timing
   lastEncodeTime: number;
@@ -144,7 +144,7 @@ export interface FilterState {
    * eagerly in `update()` before `_render` runs, so we must NOT compare
    * against it for change detection.
    */
-  lastAppliedParams: import('../../schema/parameters').LiquidGlassParams | null;
+  lastAppliedParams: import('../schema/parameters').LiquidGlassParams | null;
 }
 
 /**

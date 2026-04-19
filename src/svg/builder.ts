@@ -5,7 +5,7 @@
  * This eliminates innerHTML/ParseHTML overhead during resize operations.
  */
 
-import type { LiquidGlassParams, FilterElementRefs } from './types';
+import type { LiquidGlassParams, FilterElementRefs } from '../core/types';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 

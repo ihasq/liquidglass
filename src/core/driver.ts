@@ -7,9 +7,10 @@
  * Parameter definitions are derived from the centralized schema.
  */
 
-import { defineProperties, createEngine, CSSPropertyEngine } from '../engines/css-property-engine';
-import { FilterManager, preloadWasm } from '../core/filter';
-import SPECULAR_WORKLET_SOURCE from '../core/specular/specular-worklet.js?raw';
+import { defineProperties, createEngine, CSSPropertyEngine } from '../css/engine';
+import { FilterManager } from './filter-manager';
+import { preloadWasm } from '../displacement';
+import SPECULAR_WORKLET_SOURCE from '../specular/specular-worklet.js?raw';
 import {
   PARAMETERS,
   PARAMETER_NAMES,
@@ -22,7 +23,7 @@ import {
   type LiquidGlassParams,
   type DisplacementRenderer,
 } from '../schema/parameters';
-import type { PropertyDefinition, PropertyCallback } from '../engines/css-property-engine';
+import type { PropertyDefinition, PropertyCallback } from '../css/engine';
 
 // ============================================================================
 // CSS Property Names (derived from schema)
