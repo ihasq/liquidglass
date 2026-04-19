@@ -61,9 +61,8 @@ export interface FilterElementRefs {
   // Saturation
   saturate: SVGFEColorMatrixElement;
 
-  // Specular highlight
-  specImage: SVGFEImageElement;
-  specAlpha: SVGFEFuncAElement;
+  // NOTE: specular is rendered via CSS Paint API (specular-worklet.js),
+  // not via the SVG filter chain. No specular-related filter primitives.
 }
 
 /**
@@ -114,8 +113,8 @@ export interface FilterState {
   pendingStyleChange: boolean;     // True when style changed, radius needs recalculation
   styleObserver: MutationObserver | null;  // Per-element observer for style/class changes
 
-  // Frame skip state (refreshInterval-based throttling)
-  frameCounter: number;            // Counts frames since last full render
+  // Frame skip state (displacement refreshInterval throttling)
+  dispFrameCounter: number;        // Frames since last displacement regen
   lastResizeTime: number;          // Timestamp of last resize event
   pendingStretchTimeout: ReturnType<typeof setTimeout> | null;  // Timeout for final render after resize stops
 
@@ -123,6 +122,29 @@ export interface FilterState {
   strideBaseWidth: number;         // Width at last render (stride baseline)
   strideBaseHeight: number;        // Height at last render (stride baseline)
   lastIntervalTime: number;        // Timestamp of last interval-based render
+
+  // Renderer switching state
+  lastRenderer: string | null;     // Last used renderer (for cleanup on switch)
+  renderInProgress: boolean;       // True while _render() is executing (prevents concurrent renders)
+
+  // Independent regen caches for displacement bitmap only. Specular is
+  // rendered by CSS Paint API and needs no bitmap cache here — browser
+  // handles invalidation via @property observations.
+  lastDispDataUrlLow: string | null;
+  lastDispInputsLow: {
+    w: number; h: number; r: number; edgeRatio: number; renderer: string;
+  } | null;
+  lastDispDataUrlHigh: string | null;
+  lastDispInputsHigh: {
+    w: number; h: number; r: number; edgeRatio: number; renderer: string;
+  } | null;
+  /**
+   * Parameters at the moment the last render actually completed.
+   * Used to detect which params changed since — `state.params` is mutated
+   * eagerly in `update()` before `_render` runs, so we must NOT compare
+   * against it for change detection.
+   */
+  lastAppliedParams: import('../../schema/parameters').LiquidGlassParams | null;
 }
 
 /**

@@ -1,6 +1,14 @@
 import { render } from 'preact';
 import { useState, useEffect, useRef, useCallback, useMemo } from 'preact/hooks';
 import { styles } from './styles';
+import {
+  Recorder,
+  parseSession,
+  type ElementSnapshot,
+  type FrameRecord,
+  type SessionInfo,
+  type SessionRecord,
+} from './recorder';
 
 // Import from schema - HMR will update these automatically
 import {
@@ -59,6 +67,18 @@ function formatParameterName(name: string): string {
 /** Get CSS custom property name from parameter name */
 function getCSSPropertyName(name: ParameterName): string {
   return `--${PARAMETERS[name].cssProperty}`;
+}
+
+/**
+ * Format a parameter value as a typed CSS string, suffixing the canonical
+ * unit declared in the schema (e.g. `2px`, `45deg`, `50%`). Enum params
+ * pass through as-is. Unitless numerics serialize as the bare number.
+ */
+function formatCSSValue(name: ParameterName, value: number | string): string {
+  const def = PARAMETERS[name];
+  if (def.type === 'enum') return String(value);
+  const unit = (def as NumericParameterDef).unit ?? '';
+  return `${value}${unit}`;
 }
 
 // ============================================================
@@ -763,11 +783,14 @@ function InteractiveElement({
       height: `${data.h}px`,
       borderRadius: `${data.radius}px`,
       transform: `rotate(${data.r}deg)`,
-      background: `rgba(${parseInt(tintColor.slice(1, 3), 16)}, ${parseInt(tintColor.slice(3, 5), 16)}, ${parseInt(tintColor.slice(5, 7), 16)}, ${tintOpacity / 100})`,
+      // Specific properties (NOT the `background` shorthand) so the CSS
+      // Paint API specular layer (background-image) isn't clobbered on rerender.
+      backgroundColor: `rgba(${parseInt(tintColor.slice(1, 3), 16)}, ${parseInt(tintColor.slice(3, 5), 16)}, ${parseInt(tintColor.slice(5, 7), 16)}, ${tintOpacity / 100})`,
+      backgroundImage: 'paint(liquid-glass-specular)',
     };
-    // Apply all parameters from schema dynamically
+    // Apply all parameters from schema dynamically, with proper CSS units
     for (const name of PARAMETER_NAMES) {
-      style[getCSSPropertyName(name)] = glassParams[name];
+      style[getCSSPropertyName(name)] = formatCSSValue(name, glassParams[name]);
     }
     return style;
   }, [data, glassParams, tintColor, tintOpacity]);
@@ -835,6 +858,7 @@ function ParameterLab() {
   // Background animation
   const [bgSpeed, setBgSpeed] = useState(30);
   const [bgDirection, setBgDirection] = useState(135);
+  const [bgBrightness, setBgBrightness] = useState(100);
   const [bgPlaying, setBgPlaying] = useState(true);
   const bgRef = useRef<HTMLDivElement>(null);
   const bgAnimRef = useRef({ x: 0, y: 0, lastTime: 0 });
@@ -865,6 +889,192 @@ function ParameterLab() {
     animId = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(animId);
   }, []);
+
+  // ──────────────────────────────────────────────────────────────────
+  // Crash-resilient interaction recorder.
+  //
+  // A dedicated Worker writes every rAF's snapshot to OPFS as NDJSON.
+  // This survives even SIGILL on the main process: the worker keeps
+  // running, and the file is .flush()'d after every batch, so the
+  // recording up to the moment of crash is recoverable on next launch.
+  // ──────────────────────────────────────────────────────────────────
+  const recorderRef = useRef<Recorder | null>(null);
+  const [recorderStats, setRecorderStats] = useState<{ bytes: number; records: number }>(
+    { bytes: 0, records: 0 }
+  );
+  const [sessions, setSessions] = useState<SessionInfo[]>([]);
+  const [replayActive, setReplayActive] = useState<string | null>(null);
+  const [replayProgress, setReplayProgress] = useState(0);
+  const stateRefsForRecord = useRef({
+    elements,
+    params,
+    radius,
+    width,
+    height,
+    tintColor,
+    tintOpacity,
+    bg: { speed: bgSpeed, direction: bgDirection, brightness: bgBrightness, playing: bgPlaying },
+  });
+  // Keep the ref in sync with the latest React state for the rAF loop.
+  useEffect(() => {
+    stateRefsForRecord.current = {
+      elements, params, radius, width, height, tintColor, tintOpacity,
+      bg: { speed: bgSpeed, direction: bgDirection, brightness: bgBrightness, playing: bgPlaying },
+    };
+  }, [elements, params, radius, width, height, tintColor, tintOpacity, bgSpeed, bgDirection, bgBrightness, bgPlaying]);
+
+  useEffect(() => {
+    const rec = new Recorder();
+    recorderRef.current = rec;
+
+    rec.on('stats', (s) => {
+      setRecorderStats({ bytes: s.bytesWritten, records: s.recordCount });
+    });
+    rec.on('list', (l) => setSessions(l.sessions));
+    rec.on('error', (e) => {
+      // eslint-disable-next-line no-console
+      console.warn('[Recorder]', e.message);
+    });
+
+    let animId = 0;
+    let cancelled = false;
+
+    rec.start({
+      schema: PARAMETER_NAMES.reduce<Record<string, unknown>>((acc, name) => {
+        acc[name] = PARAMETERS[name];
+        return acc;
+      }, {}),
+    }).then(() => {
+      if (cancelled) return;
+      const previewArea = previewAreaRef.current;
+      const tick = () => {
+        if (cancelled) return;
+        const s = stateRefsForRecord.current;
+        // Resolve element positions to absolute pixel coordinates so the
+        // recording is replay-ready without preview-box context.
+        const previewRect = previewArea?.getBoundingClientRect();
+        const snapshots: ElementSnapshot[] = s.elements.map((el) => {
+          let x: number;
+          let y: number;
+          if (previewRect) {
+            x = el.x.includes('%')
+              ? (parseFloat(el.x) / 100) * previewRect.width
+              : parseFloat(el.x);
+            y = el.y.includes('%')
+              ? (parseFloat(el.y) / 100) * previewRect.height
+              : parseFloat(el.y);
+          } else {
+            x = parseFloat(el.x);
+            y = parseFloat(el.y);
+          }
+          return {
+            id: el.id,
+            x, y,
+            w: el.w,
+            h: el.h,
+            r: el.r,
+            radius: el.radius,
+          };
+        });
+
+        rec.recordFrame({
+          elements: snapshots,
+          params: { ...s.params } as Record<string, number | string>,
+          bg: s.bg,
+        });
+        animId = requestAnimationFrame(tick);
+      };
+      animId = requestAnimationFrame(tick);
+      // Refresh the session list once on startup so the UI knows what's there.
+      rec.list();
+    });
+
+    // Flush on unload — best effort; OPFS sync handle is already durable.
+    const onBeforeUnload = () => rec.flush();
+    window.addEventListener('beforeunload', onBeforeUnload);
+
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(animId);
+      window.removeEventListener('beforeunload', onBeforeUnload);
+      rec.flush();
+    };
+  }, []);
+
+  // ──────────────────────────────────────────────────────────────────
+  // Replay engine: read a stored NDJSON session and re-apply each frame
+  // at its recorded timestamp.
+  // ──────────────────────────────────────────────────────────────────
+  const replayRafRef = useRef<number | null>(null);
+  const stopReplay = useCallback(() => {
+    if (replayRafRef.current !== null) cancelAnimationFrame(replayRafRef.current);
+    replayRafRef.current = null;
+    setReplayActive(null);
+    setReplayProgress(0);
+  }, []);
+
+  const startReplay = useCallback(async (sessionId: string) => {
+    if (!recorderRef.current) return;
+    setReplayActive(sessionId);
+
+    // Receive the full session content from the worker
+    const content: string = await new Promise((resolve) => {
+      const off = recorderRef.current!.on('data', (msg) => {
+        if (msg.sessionId === sessionId) { off(); resolve(msg.content); }
+      });
+      recorderRef.current!.read(sessionId);
+    });
+
+    const records = parseSession(content);
+    const frames = records.filter((r): r is FrameRecord => r.type === 'frame');
+    if (frames.length === 0) { stopReplay(); return; }
+
+    const startWall = performance.now();
+    const firstT = frames[0].t;
+    let idx = 0;
+    const previewArea = previewAreaRef.current;
+
+    const tick = () => {
+      const elapsed = performance.now() - startWall;
+      // Advance to the latest frame whose timestamp has passed.
+      while (idx + 1 < frames.length && frames[idx + 1].t - firstT <= elapsed) {
+        idx++;
+      }
+      const f = frames[idx];
+      // Map snapshot back into React state. Element coords were stored as
+      // viewport-pixels relative to previewArea, so re-apply directly.
+      const previewRect = previewArea?.getBoundingClientRect();
+      setElements((prev) => prev.map((p) => {
+        const snap = f.elements.find((s) => s.id === p.id);
+        if (!snap) return p;
+        const xStr = previewRect ? `${snap.x}px` : p.x;
+        const yStr = previewRect ? `${snap.y}px` : p.y;
+        return {
+          ...p,
+          x: xStr, y: yStr,
+          w: snap.w, h: snap.h, r: snap.r,
+          radius: snap.radius,
+        };
+      }));
+      setParams((prev) => ({ ...prev, ...f.params } as GlassParams));
+      if (f.bg) {
+        setBgSpeed(f.bg.speed);
+        setBgDirection(f.bg.direction);
+        setBgBrightness(f.bg.brightness);
+        setBgPlaying(f.bg.playing);
+      }
+
+      const lastT = frames[frames.length - 1].t - firstT;
+      setReplayProgress(lastT > 0 ? Math.min(1, elapsed / lastT) : 1);
+
+      if (idx + 1 < frames.length) {
+        replayRafRef.current = requestAnimationFrame(tick);
+      } else {
+        stopReplay();
+      }
+    };
+    replayRafRef.current = requestAnimationFrame(tick);
+  }, [stopReplay]);
 
   // Background animation
   useEffect(() => {
@@ -905,7 +1115,7 @@ function ParameterLab() {
   const codeOutput = useMemo(() => {
     const lines = ['.glass-panel {'];
     for (const name of PARAMETER_NAMES) {
-      lines.push(`  ${getCSSPropertyName(name)}: ${params[name]};`);
+      lines.push(`  ${getCSSPropertyName(name)}: ${formatCSSValue(name, params[name])};`);
     }
     lines.push(`  border-radius: ${radius}px;`);
     lines.push('}');
@@ -927,6 +1137,7 @@ function ParameterLab() {
       <div
         ref={bgRef}
         class="background-content"
+        style={{ filter: `brightness(${bgBrightness / 100})` }}
         dangerouslySetInnerHTML={{ __html: generateBackgroundSVG() }}
       />
 
@@ -979,7 +1190,7 @@ function ParameterLab() {
                   />
                 );
               }
-              // Numeric: show as range slider
+              // Numeric: show as range slider with typed value display
               return (
                 <RangeControl
                   key={name}
@@ -988,6 +1199,7 @@ function ParameterLab() {
                   min={numDef.min}
                   max={numDef.max}
                   description={numDef.description}
+                  valueDisplay={formatCSSValue(name, params[name] as number)}
                   onChange={(v) => setParams((p) => ({ ...p, [name]: v }))}
                 />
               );
@@ -1069,6 +1281,7 @@ function ParameterLab() {
                 setTintOpacity(8);
                 setBgSpeed(30);
                 setBgDirection(135);
+                setBgBrightness(100);
                 setViewMode('lens');
               }}
             >
@@ -1117,10 +1330,21 @@ function ParameterLab() {
             />
             <span class="value">{directionArrow}</span>
           </div>
+          <div class="bg-control-row">
+            <label>Brightness</label>
+            <input
+              type="range"
+              min={0}
+              max={100}
+              value={bgBrightness}
+              onInput={(e) => setBgBrightness(parseInt((e.target as HTMLInputElement).value))}
+            />
+            <span class="value">{bgBrightness}%</span>
+          </div>
         </div>
 
         {/* View Mode Toggle */}
-        <div class="bg-control" style={{ top: '140px' }}>
+        <div class="bg-control" style={{ top: '170px' }}>
           <div class="bg-control-header">
             <div class="bg-control-title">View Mode</div>
           </div>
@@ -1182,6 +1406,24 @@ function ParameterLab() {
             <span class="stat-label">FPS:</span>
             <span class="stat-value">{fps}</span>
           </div>
+          {/* Renderer: bidirectionally bound with `Displacement Renderer`
+              control in the side panel. Click to cycle through values. */}
+          <div class="stat-row" style={{ marginTop: '8px', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '8px' }}>
+            <span class="stat-label">Renderer:</span>
+            <div class="view-mode-toggle" style={{ display: 'flex', gap: '2px' }}>
+              {(PARAMETERS.displacementRenderer as EnumParameterDef).values.map((v) => (
+                <button
+                  key={v}
+                  class={`view-mode-btn ${params.displacementRenderer === v ? 'active' : ''}`}
+                  style={{ fontSize: '10px', padding: '2px 6px' }}
+                  onClick={() => setParams((p) => ({ ...p, displacementRenderer: v as typeof p.displacementRenderer }))}
+                  title={`Switch displacement renderer to ${v.toUpperCase()}`}
+                >
+                  {v.toUpperCase()}
+                </button>
+              ))}
+            </div>
+          </div>
           {__DEV__ && (
             <div class="stat-row" style={{ marginTop: '8px', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '8px' }}>
               <span class="stat-label">Profiler:</span>
@@ -1193,6 +1435,72 @@ function ParameterLab() {
               </button>
             </div>
           )}
+          {/* Recorder status: rec count + bytes written by the OPFS worker. */}
+          <div class="stat-row" style={{ marginTop: '8px', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '8px', display: 'block' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span class="stat-label">Recording:</span>
+              <span class="stat-value" style={{ fontSize: '10px' }}>
+                {recorderStats.records.toLocaleString()} rec / {(recorderStats.bytes / 1024).toFixed(1)} KB
+              </span>
+            </div>
+            {replayActive && (
+              <div style={{ marginTop: '6px' }}>
+                <div style={{ fontSize: '10px', color: '#facc15', marginBottom: '3px' }}>
+                  ▶ REPLAY  {Math.round(replayProgress * 100)}%
+                </div>
+                <div style={{ height: '3px', background: 'rgba(255,255,255,0.1)', borderRadius: '2px', overflow: 'hidden' }}>
+                  <div style={{ width: `${replayProgress * 100}%`, height: '100%', background: '#facc15', transition: 'width 0.1s' }} />
+                </div>
+                <button
+                  class="profiler-toggle"
+                  style={{ marginTop: '4px', width: '100%' }}
+                  onClick={stopReplay}
+                >
+                  Stop Replay
+                </button>
+              </div>
+            )}
+            {!replayActive && (
+              <div style={{ marginTop: '6px' }}>
+                <button
+                  class="profiler-toggle"
+                  style={{ width: '100%', fontSize: '10px' }}
+                  onClick={() => recorderRef.current?.list()}
+                >
+                  Refresh Sessions ({sessions.length})
+                </button>
+                {sessions.length > 0 && (
+                  <div style={{ marginTop: '4px', maxHeight: '120px', overflowY: 'auto', fontSize: '10px' }}>
+                    {sessions.slice(0, 8).map((s) => {
+                      // Strip "session-" prefix and ".ndjson" suffix for the id we pass back to read()
+                      const sessionId = s.name.replace(/^session-/, '').replace(/\.ndjson$/, '');
+                      const label = sessionId.length > 24 ? sessionId.slice(0, 24) + '…' : sessionId;
+                      return (
+                        <div key={s.name} style={{ display: 'flex', gap: '4px', alignItems: 'center', padding: '2px 0' }}>
+                          <button
+                            class="profiler-toggle"
+                            style={{ flex: 1, fontSize: '9px', padding: '2px 4px', textAlign: 'left' }}
+                            onClick={() => startReplay(sessionId)}
+                            title={`${(s.size / 1024).toFixed(1)} KB`}
+                          >
+                            ▶ {label}
+                          </button>
+                          <button
+                            class="profiler-toggle"
+                            style={{ fontSize: '9px', padding: '2px 4px', minWidth: '20px' }}
+                            onClick={() => recorderRef.current?.delete(sessionId)}
+                            title="Delete session"
+                          >
+                            ×
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       )}
 

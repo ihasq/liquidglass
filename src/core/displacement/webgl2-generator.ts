@@ -51,6 +51,87 @@ interface WebGL2UBOContext {
 let _gl2Context: WebGL2UBOContext | null = null;
 let _gl2Supported: boolean | null = null;
 let _gl2Initializing: Promise<WebGL2UBOContext | null> | null = null;
+let _envCheckCached: boolean | null = null;
+/** Set true when a context loss event fires; subsequent calls fall back. */
+let _gl2ContextLost = false;
+
+// ============================================================================
+// Environment detection (avoid GPU process crashes on known-bad platforms)
+// ============================================================================
+//
+// Background:
+//   On ChromeOS + Intel Alder Lake-N + Mesa Vulkan 24.x + ANGLE-via-Vulkan,
+//   continuous resize triggers a chain:
+//     glCopySubTextureCHROMIUM offset overflow  →  SharedImage mailbox dangling
+//     →  ProduceSkia on non-existent mailbox    →  Mesa VkImage UAF
+//     →  GPU process SIGILL.
+//   The renderer process survives but the page freezes / rerenders to white.
+//   Affected platforms detected via WEBGL_debug_renderer_info:
+//     - "ADL-N" / "Alder Lake-N" + "Mesa"
+//     - Other Intel + Mesa combinations exhibiting the same pattern can be
+//       added below as discovered.
+//
+//   Mitigation: declare WebGL2 unsupported on these platforms so the
+//   FilterManager auto-fallback chain (gpu → gl2 → wasm-simd) advances to
+//   the safer WASM-SIMD path.
+//
+//   User override: set `globalThis.__lg_force_webgl2 = true` before module
+//   load to bypass this check (for debugging).
+
+function isUnsafeWebGL2Environment(): boolean {
+  if (_envCheckCached !== null) return _envCheckCached;
+
+  // Manual override
+  if ((globalThis as { __lg_force_webgl2?: boolean }).__lg_force_webgl2) {
+    _envCheckCached = false;
+    return false;
+  }
+  if ((globalThis as { __lg_disable_webgl2?: boolean }).__lg_disable_webgl2) {
+    _envCheckCached = true;
+    return true;
+  }
+
+  try {
+    // Probe the GPU renderer string via a throw-away WebGL context
+    const probe = document.createElement('canvas').getContext('webgl');
+    if (!probe) {
+      _envCheckCached = false;
+      return false;
+    }
+    const ext = probe.getExtension('WEBGL_debug_renderer_info');
+    const renderer = ext
+      ? probe.getParameter(ext.UNMASKED_RENDERER_WEBGL) as string
+      : probe.getParameter(probe.RENDERER) as string;
+    // Best-effort cleanup
+    const lose = probe.getExtension('WEBGL_lose_context');
+    lose?.loseContext();
+
+    if (typeof renderer !== 'string') {
+      _envCheckCached = false;
+      return false;
+    }
+
+    // Known bad combinations
+    const isMesa = /Mesa/i.test(renderer);
+    const isIntel = /Intel/i.test(renderer);
+    const isAdlN = /ADL[\s-]?N|Alder\s*Lake[\s-]?N/i.test(renderer);
+
+    // ChromeOS-specific: Mesa+Intel+ADL-N → known SIGILL trigger via SharedImage
+    const unsafe = isMesa && isIntel && isAdlN;
+    if (unsafe && typeof console !== 'undefined') {
+      console.warn(
+        '[LiquidGlass] WebGL2 displacement disabled on this platform ' +
+        '(Mesa+Intel+ADL-N triggers GPU process crash during resize). ' +
+        'Falling back to WASM-SIMD. Override with __lg_force_webgl2=true.'
+      );
+    }
+    _envCheckCached = unsafe;
+    return unsafe;
+  } catch {
+    _envCheckCached = false;
+    return false;
+  }
+}
 
 function compileShader(
     gl: WebGL2RenderingContext,
@@ -119,6 +200,27 @@ async function initWebGL2Context(): Promise<WebGL2UBOContext | null> {
     if (!gl) {
         console.warn('WebGL2 not supported');
         return null;
+    }
+
+    // GPU process crash / context loss handler. When the GPU dies (often due
+    // to driver bugs during heavy resize), we permanently disable the WebGL2
+    // path and let the FilterManager auto-fallback chain advance to wasm-simd.
+    // The handler must be on the *canvas* element, not gl.
+    const lossHandler = (e: Event) => {
+        e.preventDefault();  // Allow restoreContext if browser supports it
+        _gl2ContextLost = true;
+        _gl2Context = null;
+        _gl2Supported = false;
+        _gl2Initializing = null;
+        if (typeof console !== 'undefined') {
+            console.warn(
+                '[LiquidGlass] WebGL2 context lost (likely GPU process crash). ' +
+                'Permanently switching to WASM-SIMD displacement.'
+            );
+        }
+    };
+    if ('addEventListener' in canvas) {
+        (canvas as HTMLCanvasElement).addEventListener('webglcontextlost', lossHandler, { once: true });
     }
 
     try {
@@ -237,12 +339,29 @@ async function ensureWebGL2Context(): Promise<WebGL2UBOContext | null> {
 // ============================================================================
 
 /**
- * Check if WebGL2 is supported
+ * Check if WebGL2 is supported AND safe on this platform.
+ *
+ * Returns false if:
+ *   - The browser lacks WebGL2 entirely
+ *   - A previous context was lost (GPU process crash)
+ *   - The platform is on the known-unsafe list (e.g. Intel ADL-N + Mesa)
  */
 export function isWebGL2Supported(): boolean {
     if (_gl2Supported !== null) return _gl2Supported;
 
     if (typeof WebGL2RenderingContext === 'undefined') {
+        _gl2Supported = false;
+        return false;
+    }
+
+    // Already lost the context once → don't try again
+    if (_gl2ContextLost) {
+        _gl2Supported = false;
+        return false;
+    }
+
+    // Known-bad GPU/driver combinations
+    if (isUnsafeWebGL2Environment()) {
         _gl2Supported = false;
         return false;
     }
@@ -295,15 +414,25 @@ export function generateWebGL2DisplacementMapSync(
 function generateWebGL2DisplacementMapInternal(
     ctx: WebGL2UBOContext,
     options: CanvasDisplacementOptions
-): CanvasDisplacementResult {
+): CanvasDisplacementResult | null {
     const { width, height, borderRadius, edgeWidthRatio = 0.5 } = options;
     const startTime = performance.now();
 
     const { gl, program, ubo, uboData, vao, canvas, maxTextureSize } = ctx;
 
-    // Clamp to max texture size
-    const fullWidth = Math.min(width, maxTextureSize);
-    const fullHeight = Math.min(height, maxTextureSize);
+    // Bail out early if context was lost between the call site and now
+    if (gl.isContextLost()) {
+        _gl2ContextLost = true;
+        _gl2Context = null;
+        _gl2Supported = false;
+        return null;
+    }
+
+    // Clamp to max texture size AND validate non-zero dims (prevents
+    // glCopySubTextureCHROMIUM offset-overflow in Chromium's SharedImage
+    // path when downstream feImage decodes a 0-dim canvas).
+    const fullWidth = Math.max(1, Math.min(width | 0, maxTextureSize));
+    const fullHeight = Math.max(1, Math.min(height | 0, maxTextureSize));
 
     // Resize canvas if needed
     if (canvas.width !== fullWidth || canvas.height !== fullHeight) {
@@ -348,9 +477,40 @@ function generateWebGL2DisplacementMapInternal(
     const outputCtx = exportCanvas.getContext('2d')!;
 
     // Read pixels from WebGL (reuse pixel buffer)
+    // Bounds check: Chromium's internal glCopySubTextureCHROMIUM (used by
+    // putImageData/toDataURL downstream) crashes the GPU process on Mesa+ADL-N
+    // when source rect overflows the framebuffer. Verify framebuffer matches
+    // expected size before reading.
+    const fbWidth = gl.drawingBufferWidth;
+    const fbHeight = gl.drawingBufferHeight;
+    if (fbWidth < fullWidth || fbHeight < fullHeight) {
+        // Drawing buffer is smaller than requested (e.g. due to OOM or context
+        // loss recovery). Aborting prevents Chrome from issuing an out-of-bounds
+        // copy that would crash the GPU process.
+        if (typeof console !== 'undefined') {
+            console.warn(
+                `[LiquidGlass] WebGL2 drawing buffer (${fbWidth}x${fbHeight}) ` +
+                `smaller than requested (${fullWidth}x${fullHeight}). Aborting frame.`
+            );
+        }
+        return null;
+    }
     const pixelBufferSize = fullWidth * fullHeight * 4;
     const pixels = getPixelBuffer(ctx, pixelBufferSize);
     gl.readPixels(0, 0, fullWidth, fullHeight, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+
+    // Post-readPixels error check: GL_INVALID_VALUE here typically precedes
+    // the GPU process SIGILL chain on Intel Mesa drivers.
+    const glErr = gl.getError();
+    if (glErr !== gl.NO_ERROR) {
+        if (typeof console !== 'undefined') {
+            console.warn(
+                `[LiquidGlass] WebGL2 readPixels error 0x${glErr.toString(16)} ` +
+                `at ${fullWidth}x${fullHeight}. Aborting frame.`
+            );
+        }
+        return null;
+    }
 
     // WebGL has Y=0 at bottom, Canvas has Y=0 at top - flip vertically
     // Reuse ImageData to avoid allocation

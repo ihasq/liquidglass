@@ -47,7 +47,6 @@ export function createFilterDOM(
   id: string,
   params: LiquidGlassParams,
   dispUrl: string,
-  specUrl: string,
   width: number,
   height: number,
   resolutionScale: number = 1
@@ -66,8 +65,8 @@ export function createFilterDOM(
   // Calculate parameter values
   const scale = params.refraction * 2;
   const blurStdDev = (params.softness / 100) * 5;
+  // Computed for forward-compat only — see comment near `saturate` below.
   const saturationVal = (params.saturation / 100) * 20;
-  const specAlpha = (params.gloss / 100) * 0.75;
   const slopeBlurStdDev = (params.dispersion / 100) * 6;
   const slopeIntensity = (params.dispersion / 100) * 1.5;
   const dmapSmoothBlur = calculateSmoothingBlur(params.displacementSmoothing, resolutionScale);
@@ -218,62 +217,34 @@ export function createFilterDOM(
   });
   filter.appendChild(displacement);
 
+  // Final output is `r` (the displaced background — `displacement` is the
+  // last appended primitive). Specular is rendered separately via CSS
+  // Paint API (see specular-worklet.js).
+  //
+  // We deliberately DO NOT apply a global `feColorMatrix saturate` here:
+  //   - In the original SVG chain, saturation was applied (`s = saturate(r)`)
+  //     but only USED inside the specular ring shape, where it was then
+  //     immediately desaturated to grayscale (`ssGray`). For non-spec
+  //     pixels the output reduced to `r`. Hence the `saturation`
+  //     parameter had no user-visible effect on the bulk of the image.
+  //   - When this PoC moved specular out of the SVG chain, the saturate
+  //     primitive was inadvertently exposed to ALL pixels → global
+  //     brightness/saturation boost. Removing it restores parity with
+  //     the visible behavior of the original.
+  //   - The `saturation` schema parameter is still accepted (computed
+  //     into `saturationVal` for forward compat) but currently unused.
+  //     A future commit can apply it via CSS `filter: saturate(...)`
+  //     on the host element if a real saturation slider is desired.
+  void saturationVal;
+
+  // The `saturate` ref slot is kept on FilterElementRefs purely as a
+  // forward-compat stub so updateFilterParams can stay schema-aligned.
+  // We point it at a detached element so existing code paths that try
+  // to setAttribute on it become harmless no-ops.
   const saturate = createSVGElement('feColorMatrix', {
-    in: 'r',
     type: 'saturate',
-    values: String(saturationVal),
-    result: 's',
+    values: '1',
   });
-  filter.appendChild(saturate);
-
-  // ─────────────────────────────────────────────────────────────
-  // Specular highlight
-  // ─────────────────────────────────────────────────────────────
-
-  const specImage = createSVGElement('feImage', {
-    href: specUrl,
-    x: '0', y: '0', width: w, height: h,
-    preserveAspectRatio: 'none',
-    result: 'sp',
-  });
-  filter.appendChild(specImage);
-
-  // Composite specular with saturated image
-  const specComposite = createSVGElement('feComposite', {
-    in: 's',
-    in2: 'sp',
-    operator: 'in',
-    result: 'ss',
-  });
-  filter.appendChild(specComposite);
-
-  // Specular alpha adjustment
-  const specTransfer = createSVGElement('feComponentTransfer', {
-    in: 'sp',
-    result: 'sf',
-  });
-  const specAlphaFunc = createSVGElement('feFuncA', {
-    type: 'linear',
-    slope: specAlpha.toFixed(3),
-  });
-  specTransfer.appendChild(specAlphaFunc);
-  filter.appendChild(specTransfer);
-
-  // Final blending
-  const blend1 = createSVGElement('feBlend', {
-    in: 'ss',
-    in2: 'r',
-    mode: 'normal',
-    result: 'w',
-  });
-  filter.appendChild(blend1);
-
-  const blend2 = createSVGElement('feBlend', {
-    in: 'sf',
-    in2: 'w',
-    mode: 'normal',
-  });
-  filter.appendChild(blend2);
 
   return {
     filter,
@@ -288,8 +259,6 @@ export function createFilterDOM(
       slopeMagnitude,
       displacement,
       saturate,
-      specImage,
-      specAlpha: specAlphaFunc,
     },
   };
 }
@@ -329,21 +298,8 @@ export function updateDisplacementMaps(
 }
 
 /**
- * Update specular map image
- */
-export function updateSpecularMap(
-  refs: FilterElementRefs,
-  specUrl: string,
-  width: number,
-  height: number
-): void {
-  refs.specImage.setAttribute('href', specUrl);
-  refs.specImage.setAttribute('width', String(width));
-  refs.specImage.setAttribute('height', String(height));
-}
-
-/**
- * Update effect parameters (when params change, not just size)
+ * Update effect parameters (when params change, not just size). Specular
+ * is no longer part of the SVG filter — driven by CSS Paint API.
  */
 export function updateFilterParams(
   refs: FilterElementRefs,
@@ -352,37 +308,26 @@ export function updateFilterParams(
 ): void {
   const scale = params.refraction * 2;
   const blurStdDev = (params.softness / 100) * 5;
-  const saturationVal = (params.saturation / 100) * 20;
-  const specAlpha = (params.gloss / 100) * 0.75;
   const slopeBlurStdDev = (params.dispersion / 100) * 6;
   const slopeIntensity = (params.dispersion / 100) * 1.5;
   const dmapSmoothBlur = calculateSmoothingBlur(params.displacementSmoothing, resolutionScale);
   const needsSmoothing = dmapSmoothBlur > 0.1;
   const useDispersion = params.dispersion > 0;
 
-  // Update displacement smoothing
   const blur = needsSmoothing ? dmapSmoothBlur.toFixed(2) : '0';
   refs.dispSmoothOld.setAttribute('stdDeviation', blur);
   refs.dispSmoothNew.setAttribute('stdDeviation', blur);
-
-  // Update base blur
   refs.baseBlur.setAttribute('stdDeviation', blurStdDev.toFixed(2));
-
-  // Update slope blur (dispersion)
   refs.slopeBlur.setAttribute('stdDeviation', useDispersion ? slopeBlurStdDev.toFixed(2) : '0');
   refs.slopeMagnitude.setAttribute(
     'values',
     `0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  ${(slopeIntensity * 0.5).toFixed(3)} ${(slopeIntensity * 0.5).toFixed(3)} 0 0 0`
   );
-
-  // Update displacement scale
   refs.displacement.setAttribute('scale', String(scale));
-
-  // Update saturation
-  refs.saturate.setAttribute('values', String(saturationVal));
-
-  // Update specular alpha
-  refs.specAlpha.setAttribute('slope', specAlpha.toFixed(3));
+  // refs.saturate is intentionally NOT touched — see svg-builder createFilterDOM
+  // for the rationale (saturate primitive is detached from the filter chain
+  // to avoid global brightness boost; `saturation` schema param is currently
+  // unused in this PoC).
 }
 
 /**
@@ -416,12 +361,11 @@ export function supportsBackdropSvgFilter(): boolean {
 export function buildFilterChain(
   params: LiquidGlassParams,
   dispUrl: string,
-  specUrl: string,
   width: number,
   height: number,
   resolutionScale: number = 1
 ): string {
-  const { filter } = createFilterDOM('temp', params, dispUrl, specUrl, width, height, resolutionScale);
+  const { filter } = createFilterDOM('temp', params, dispUrl, width, height, resolutionScale);
   return filter.innerHTML;
 }
 
@@ -432,11 +376,10 @@ export function createFilterElement(
   id: string,
   params: LiquidGlassParams,
   dispUrl: string,
-  specUrl: string,
   width: number,
   height: number,
   resolutionScale: number = 1
 ): SVGFilterElement {
-  const { filter } = createFilterDOM(id, params, dispUrl, specUrl, width, height, resolutionScale);
+  const { filter } = createFilterDOM(id, params, dispUrl, width, height, resolutionScale);
   return filter;
 }

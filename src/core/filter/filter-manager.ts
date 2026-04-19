@@ -229,8 +229,16 @@
  * ============================================================================
  */
 
-import { generateSpecularMap } from '../specular/highlight';
-import { generateWasmDisplacementMap, preloadWasm } from '../displacement/wasm-generator';
+// NOTE: specular is rendered via CSS Paint Worklet (see
+// src/core/specular/specular-worklet.js), registered once by the driver.
+// No specular bitmap is generated on the main thread; hence no import of
+// generateSpecularMap / updateSpecularMap.
+import {
+  generateWasmDisplacementMap,
+  preloadWasm,
+  isWasmGenerationInProgress,
+  cleanupWasmResources,
+} from '../displacement/wasm-generator';
 import {
   generateWebGL2DisplacementMap,
   preloadWebGL2,
@@ -245,7 +253,6 @@ import { smootherstep } from '../math/interpolation';
 import {
   createFilterDOM,
   updateDisplacementMaps,
-  updateSpecularMap,
   updateFilterParams,
   updateMorphWeights,
   calculateSmoothingBlur,
@@ -686,6 +693,10 @@ export class FilterManager {
         clearTimeout(state.highResRenderTimeout);
         state.highResRenderTimeout = null;
       }
+      // Invalidate displacement bitmap caches (both tiers) so refresh
+      // truly regenerates. Specular is CSS Paint; browser handles invalidation.
+      state.lastDispInputsLow = null;
+      state.lastDispInputsHigh = null;
       // Render at full resolution
       this._render(element, state.params, false);
     }
@@ -742,14 +753,24 @@ export class FilterManager {
       // Style change tracking
       pendingStyleChange: false,
       styleObserver: null,
-      // Frame skip state (refreshInterval-based throttling)
-      frameCounter: 0,
+      // Frame skip state (displacement refreshInterval throttling)
+      dispFrameCounter: 0,
       lastResizeTime: 0,
       pendingStretchTimeout: null,
       // Stride-based throttling (integrated with refreshInterval)
       strideBaseWidth: 0,
       strideBaseHeight: 0,
       lastIntervalTime: 0,
+      // Renderer switching state
+      lastRenderer: null,
+      renderInProgress: false,
+      // Displacement bitmap cache (two tiers for isLowRes/isHighRes).
+      // Specular has no cache here — CSS Paint Worklet handles it.
+      lastDispDataUrlLow: null,
+      lastDispInputsLow: null,
+      lastDispDataUrlHigh: null,
+      lastDispInputsHigh: null,
+      lastAppliedParams: null,
     };
   }
 
@@ -846,9 +867,7 @@ export class FilterManager {
       state.refs.dispImageNew.setAttribute('width', String(width));
       state.refs.dispImageNew.setAttribute('height', String(height));
 
-      // Stretch specular image to new size
-      state.refs.specImage.setAttribute('width', String(width));
-      state.refs.specImage.setAttribute('height', String(height));
+      // NOTE: specular is CSS Paint; it auto-reflows on element resize.
 
       if (__DEV__) {
         logProgressive('Filter STRETCHED to new size', {
@@ -877,9 +896,12 @@ export class FilterManager {
    * @param height - Current element height (from ResizeObserver)
    */
   private _renderWithRefreshRate(element: HTMLElement, state: FilterState, width: number, height: number): void {
-    const refreshInterval = Math.max(1, Math.round(state.params.refreshInterval));
-    const strideWidth = Math.max(1, Math.round(state.params.strideWidth));
-    const strideHeight = Math.max(1, Math.round(state.params.strideHeight));
+    // Displacement-only throttle interval. Specular is CSS Paint so
+    // browser handles its own invalidation on property/geometry change.
+    const dispInterval = Math.max(1, Math.round(state.params.displacementRefreshInterval));
+    // Stride is fixed at 1px (effectively disabled - every pixel change triggers stride condition)
+    const strideWidth = 1;
+    const strideHeight = 1;
 
     // Cancel pending stretch timeout (resize is still active)
     if (state.pendingStretchTimeout) {
@@ -889,8 +911,8 @@ export class FilterManager {
 
     const now = performance.now();
 
-    // Increment frame counter
-    state.frameCounter++;
+    // Increment displacement frame counter
+    state.dispFrameCounter++;
     state.lastResizeTime = now;
 
     // Calculate normalized Euclidean distance from stride baseline
@@ -900,84 +922,47 @@ export class FilterManager {
       (deltaW / strideWidth) ** 2 + (deltaH / strideHeight) ** 2
     );
 
-    // Determine trigger conditions
+    // Trigger conditions (displacement only — specular is auto-managed by browser)
     const strideTrigger = normalizedDistance >= 1;
-    // Interval trigger: render every N frames (frameCounter counts up from 1 after reset)
-    const intervalTrigger = state.frameCounter >= refreshInterval || refreshInterval === 1;
-
-    // First frame always renders (stride baseline not yet set)
+    const dispIntervalReady = state.dispFrameCounter >= dispInterval;
     const isFirstFrame = state.strideBaseWidth === 0 && state.strideBaseHeight === 0;
-
-    const shouldRender = isFirstFrame || strideTrigger || intervalTrigger;
+    const shouldRender = isFirstFrame || (strideTrigger && dispIntervalReady);
 
     if (shouldRender) {
-      const triggerReason = isFirstFrame ? 'first-frame' : strideTrigger ? 'stride' : 'interval';
-
       if (__DEV__) {
-        logThrottle('Unified throttle - rendering', {
-          trigger: triggerReason,
-          frameCounter: state.frameCounter,
-          refreshInterval,
-          stride: { width: strideWidth, height: strideHeight },
-          delta: { w: deltaW, h: deltaH },
-          normalizedDistance: normalizedDistance.toFixed(3),
-          action: 'full render',
+        logThrottle('Throttle decision', {
+          dispFrameCounter: state.dispFrameCounter, dispInterval,
+          strideTrigger, isFirstFrame,
         });
       }
-
-      // Update current size before rendering
       state.currentWidth = width;
       state.currentHeight = height;
-
-      // Render with low-res preview
       this._render(element, state.params, true);
-
-      // Reset BOTH measurements on any trigger (unified flow)
+      state.dispFrameCounter = 0;
       state.strideBaseWidth = width;
       state.strideBaseHeight = height;
-      state.frameCounter = 0;
       state.lastIntervalTime = now;
     } else {
       if (__DEV__) {
-        logThrottle('Unified throttle - stretching', {
-          frameCounter: state.frameCounter,
-          refreshInterval,
-          stride: { width: strideWidth, height: strideHeight },
-          delta: { w: deltaW, h: deltaH },
-          normalizedDistance: normalizedDistance.toFixed(3),
-          action: 'stretch only',
-        });
+        logThrottle('Throttled - stretch only', { dispFrameCounter: state.dispFrameCounter });
       }
-      // Stretch existing filter to new size (no map regeneration)
       this._stretchFilter(state, width, height);
     }
-
-    // Schedule final render after resize stops
-    // Capture current size for closure (avoids getBoundingClientRect in timeout)
-    const capturedWidth = width;
-    const capturedHeight = height;
 
     state.pendingStretchTimeout = setTimeout(() => {
       state.pendingStretchTimeout = null;
 
-      // If last action was a stretch, force a final render for accuracy
+      // If we stretched (no render this frame), force a final unthrottled render
       if (!shouldRender) {
         if (__DEV__) {
-          logThrottle('Unified throttle - forced final render', {
-            frameCounter: state.frameCounter,
-            reason: 'resize stopped after stretch',
-          });
+          logThrottle('Forced final render (resize stopped after stretch)', {});
         }
-        // Do a final low-res render to match current size
         this._render(element, state.params, true);
-
-        // Update stride baseline to current size (use state.currentWidth/Height which is updated by _render)
         state.strideBaseWidth = state.currentWidth;
         state.strideBaseHeight = state.currentHeight;
       }
 
-      // Reset frame counter for next resize sequence
-      state.frameCounter = 0;
+      state.dispFrameCounter = 0;
 
       // Schedule high-res render (always, for final quality)
       this._scheduleHighResRender(element);
@@ -988,8 +973,17 @@ export class FilterManager {
    * Render displacement map and update filter
    * @param isLowRes - If true, use displacementMinResolution for fast preview
    *                   If false, use displacementResolution for final quality
+   *
+   * CONCURRENCY SAFETY:
+   * - renderInProgress flag prevents concurrent renders for the same element
+   * - When renderer changes, we wait for WASM to complete if it was active
+   * - Resources are cleaned up when switching away from a renderer
    */
-  private async _render(element: HTMLElement, params: LiquidGlassParams, isLowRes: boolean = false): Promise<void> {
+  private async _render(
+    element: HTMLElement,
+    params: LiquidGlassParams,
+    isLowRes: boolean = false
+  ): Promise<void> {
     // Start frame profiling
     if (__DEV__) {
       _profilerStartFrame();
@@ -1001,6 +995,48 @@ export class FilterManager {
       if (__DEV__) _profilerEndFrame();
       return;
     }
+
+    // CONCURRENCY CHECK: Skip if another render is in progress for this element
+    // This prevents race conditions during rapid resize/parameter changes
+    if (state.renderInProgress) {
+      if (__DEV__) {
+        console.debug('[LiquidGlass] Skipping render - previous render in progress');
+        _profilerEndFrame();
+      }
+      return;
+    }
+
+    // Acquire render lock
+    state.renderInProgress = true;
+
+    // RENDERER SWITCH HANDLING: Clean up previous renderer resources if switching
+    const currentRenderer = params.displacementRenderer;
+    const previousRenderer = state.lastRenderer;
+
+    if (previousRenderer && previousRenderer !== currentRenderer) {
+      // Switching renderers - wait for any in-progress WASM generation
+      if (previousRenderer === 'wasm-simd' && isWasmGenerationInProgress()) {
+        // WASM is still generating - skip this render frame
+        // The generation lock will be released when WASM completes
+        state.renderInProgress = false;
+        if (__DEV__) {
+          console.debug('[LiquidGlass] Waiting for WASM generation to complete before switching renderer');
+          _profilerEndFrame();
+        }
+        return;
+      }
+
+      // Clean up previous renderer resources
+      if (previousRenderer === 'wasm-simd') {
+        cleanupWasmResources();
+      }
+
+      if (__DEV__) {
+        console.debug(`[LiquidGlass] Renderer switched: ${previousRenderer} → ${currentRenderer}`);
+      }
+    }
+
+    state.lastRenderer = currentRenderer;
 
     // Use cached size from state (updated by ResizeObserver -> _scheduleRender -> _stretchFilter)
     // Fall back to getBoundingClientRect only if state hasn't been initialized yet
@@ -1021,6 +1057,7 @@ export class FilterManager {
     }
 
     if (width <= 0 || height <= 0) {
+      state.renderInProgress = false;  // Release lock before early return
       if (__DEV__) _profilerEndFrame();
       return;
     }
@@ -1028,6 +1065,7 @@ export class FilterManager {
     // Check browser support
     if (!supportsBackdropSvgFilter()) {
       this._applyFallback(element);
+      state.renderInProgress = false;  // Release lock before early return
       if (__DEV__) _profilerEndFrame();
       return;
     }
@@ -1141,162 +1179,104 @@ export class FilterManager {
 
     if (__DEV__) _profilerEndStep('prediction');
 
-    // Generate displacement map at (potentially) reduced resolution
-    // Select renderer based on params.displacementRenderer with automatic fallback
-    if (__DEV__) _profilerMarkStep('displacementMap');
-
-    const dispOptions = {
-      width: renderWidth,
-      height: renderHeight,
-      borderRadius: renderRadius * resolutionScale,
-      edgeWidthRatio,
+    // ─────────────────────────────────────────────────────────────
+    // Change detection: only DISPLACEMENT bitmap needs regen tracking.
+    // Specular is rendered by CSS Paint Worklet — Chromium handles its
+    // invalidation automatically via @property observation.
+    // ─────────────────────────────────────────────────────────────
+    const dispInputs = {
+      w: renderWidth,
+      h: renderHeight,
+      r: renderRadius * resolutionScale,
+      edgeRatio: edgeWidthRatio,
+      renderer: params.displacementRenderer,
     };
 
-    const dispResult = await this._generateDisplacementMap(params.displacementRenderer, dispOptions);
+    // Pick the appropriate cache tier (low-res vs high-res) for this render
+    const cachedDispUrl = isLowRes ? state.lastDispDataUrlLow : state.lastDispDataUrlHigh;
+    const cachedDispInputs = isLowRes ? state.lastDispInputsLow : state.lastDispInputsHigh;
 
-    if (__DEV__) _profilerEndStep('displacementMap');
+    const prev = state.lastAppliedParams;
+    const needDispRegen = !cachedDispUrl || !this._dispInputsEqual(cachedDispInputs, dispInputs);
+    const svgAttrChanged = !prev || this._svgAttrParamsChanged(prev, params);
 
-    if (!dispResult) {
-      console.warn('Liquid Glass: Displacement map generation failed (all backends)');
-      if (__DEV__) _profilerEndFrame();
-      return;
+    // Generate displacement map only if its inputs changed at this tier
+    let dispDataUrl: string | null = cachedDispUrl;
+    if (needDispRegen) {
+      if (__DEV__) _profilerMarkStep('displacementMap');
+      const dispResult = await this._generateDisplacementMap(params.displacementRenderer, {
+        width: renderWidth,
+        height: renderHeight,
+        borderRadius: renderRadius * resolutionScale,
+        edgeWidthRatio,
+      });
+      if (__DEV__) _profilerEndStep('displacementMap');
+      if (!dispResult) {
+        console.warn('Liquid Glass: Displacement map generation failed (all backends)');
+        state.renderInProgress = false;
+        if (__DEV__) _profilerEndFrame();
+        return;
+      }
+      dispDataUrl = dispResult.dataUrl;
+      if (isLowRes) {
+        state.lastDispDataUrlLow = dispDataUrl;
+        state.lastDispInputsLow = dispInputs;
+      } else {
+        state.lastDispDataUrlHigh = dispDataUrl;
+        state.lastDispInputsHigh = dispInputs;
+      }
     }
 
-    // Generate specular map
-    if (__DEV__) _profilerMarkStep('specularMap');
-
-    const specMap = generateSpecularMap({
-      width: renderWidth,
-      height: renderHeight,
-      profile: 'squircle',
-      lightDirection: { x: 0.6, y: -0.8 },
-      intensity: params.gloss / 100,
-      saturation: 0,
-      borderRadius: renderRadius,
-    });
-
-    if (__DEV__) _profilerEndStep('specularMap');
-
-    // Check if we can do a fast update with morphing
-    // Morph transitions are only available when optimization is enabled
+    // Apply to SVG filter DOM
     const hasFilterElement = !!state.filterElement;
     const hasRefs = !!state.refs;
-    const paramsUnchanged = this._paramsEqual(state.params, params);
-
-    // Fast update: only size changed, can update DOM attributes directly
-    const canFastUpdate = optimizationEnabled && hasFilterElement && hasRefs && paramsUnchanged;
-
-    // Medium update: params changed but filter exists, update params + maps
-    const canParamUpdate = hasFilterElement && hasRefs && !paramsUnchanged;
+    // Morph: smooth blend old→new only when only size changed (params equal).
+    const dispParamsUnchanged = prev !== null &&
+                                prev.thickness === params.thickness &&
+                                prev.displacementResolution === params.displacementResolution &&
+                                prev.displacementMinResolution === params.displacementMinResolution &&
+                                prev.displacementRenderer === params.displacementRenderer;
+    const canMorph = optimizationEnabled && hasFilterElement && hasRefs &&
+                     !isLowRes && needDispRegen && dispParamsUnchanged;
 
     if (__DEV__) {
-      logMorph('Fast update eligibility check', {
-        optimizationEnabled,
-        hasFilterElement,
-        hasRefs,
-        paramsUnchanged,
-        canFastUpdate,
-        canParamUpdate,
-        verdict: canFastUpdate ? 'MORPH transition' : (canParamUpdate ? 'PARAM update' : 'FULL recreation'),
-      });
+      logMorph('Render dispatch', { needDispRegen, svgAttrChanged, hasFilterElement, canMorph });
     }
 
     const smoothingBlur = calculateSmoothingBlur(params.displacementSmoothing, resolutionScale);
 
     if (__DEV__) _profilerMarkStep('svgUpdate');
 
-    if (canFastUpdate) {
-      // Fast path: only size changed - update displacement/specular maps
-      const refs = state.refs!;
-
-      // During active resize (isLowRes), skip morph and show new map immediately
-      // This prevents rapid start/cancel cycles that waste CPU
-      if (isLowRes) {
-        // Direct update without morph transition
-        updateDisplacementMaps(
-          refs,
-          null,  // Don't copy old href
-          dispResult.dataUrl,
-          baseWidth,
-          baseHeight,
-          smoothingBlur
-        );
-        updateSpecularMap(refs, specMap.dataUrl, baseWidth, baseHeight);
-
-        // Cancel any running morph and show new map immediately
-        if (state.morphAnimationId !== null) {
-          cancelAnimationFrame(state.morphAnimationId);
-          state.morphAnimationId = null;
-        }
-        updateMorphWeights(refs, 0, 1);
-        state.morphProgress = 1;
-
-        if (__DEV__) {
-          logMorph('MORPH SKIPPED (active resize)', {
-            reason: 'isLowRes=true, direct map swap',
-            newSize: { w: baseWidth, h: baseHeight },
-          });
-        }
-      } else {
-        // High-res render: use morph transition for smooth visual
-        const currentNewHref = refs.dispImageNew.getAttribute('href');
-
-        updateDisplacementMaps(
-          refs,
-          currentNewHref,
-          dispResult.dataUrl,
-          baseWidth,
-          baseHeight,
-          smoothingBlur
-        );
-        updateSpecularMap(refs, specMap.dataUrl, baseWidth, baseHeight);
-
-        if (__DEV__) {
-          logMorph('Starting MORPH transition', {
-            fromSize: { w: state.currentWidth, h: state.currentHeight },
-            toSize: { w: baseWidth, h: baseHeight },
-            duration: `${this._options.morphDuration}ms`,
-          });
-          _profilerMarkStep('morph');
-        }
-
-        this._startMorphTransition(state);
-
-        if (__DEV__) _profilerEndStep('morph');
-      }
-    } else if (canParamUpdate) {
-      // Medium path: params changed - update params and maps (no morph)
-      const refs = state.refs!;
-
-      updateFilterParams(refs, params, resolutionScale);
-      updateDisplacementMaps(refs, null, dispResult.dataUrl, baseWidth, baseHeight, smoothingBlur);
-      updateSpecularMap(refs, specMap.dataUrl, baseWidth, baseHeight);
-
-      // Reset morph to show new map immediately
-      updateMorphWeights(refs, 0, 1);
-      state.morphProgress = 1;
-
-      if (__DEV__) {
-        logMorph('PARAM update completed (no morph)', {
-          newSize: { w: baseWidth, h: baseHeight },
-          resolutionScale: `${(resolutionScale * 100).toFixed(0)}%`,
-        });
-      }
+    if (!hasFilterElement || !hasRefs) {
+      // First-time creation: build the displacement-only filter DOM
+      this._createFilter(element, state, params,
+        dispDataUrl!,
+        baseWidth, baseHeight, resolutionScale);
     } else {
-      if (__DEV__) {
-        const reasons: string[] = [];
-        if (!optimizationEnabled) reasons.push('optimization disabled');
-        if (!hasFilterElement) reasons.push('no existing filter');
-        if (!hasRefs) reasons.push('missing element refs');
-
-        logMorph('FULL filter creation required', {
-          reasons,
-          newSize: { w: baseWidth, h: baseHeight },
-          resolutionScale: `${(resolutionScale * 100).toFixed(0)}%`,
-        });
+      const refs = state.refs!;
+      if (svgAttrChanged) {
+        updateFilterParams(refs, params, resolutionScale);
       }
-      // Full creation (first time only) - creates DOM elements
-      this._createFilter(element, state, params, dispResult.dataUrl, specMap.dataUrl, baseWidth, baseHeight, resolutionScale);
+      if (needDispRegen) {
+        if (canMorph) {
+          const currentNewHref = refs.dispImageNew.getAttribute('href');
+          updateDisplacementMaps(refs, currentNewHref, dispDataUrl!,
+            baseWidth, baseHeight, smoothingBlur);
+          if (__DEV__) _profilerMarkStep('morph');
+          this._startMorphTransition(state);
+          if (__DEV__) _profilerEndStep('morph');
+        } else {
+          updateDisplacementMaps(refs, null, dispDataUrl!,
+            baseWidth, baseHeight, smoothingBlur);
+          if (state.morphAnimationId !== null) {
+            cancelAnimationFrame(state.morphAnimationId);
+            state.morphAnimationId = null;
+          }
+          updateMorphWeights(refs, 0, 1);
+          state.morphProgress = 1;
+        }
+      }
+      // Specular updates are 100% handled by the browser via CSS Paint API.
     }
 
     if (__DEV__) _profilerEndStep('svgUpdate');
@@ -1308,6 +1288,7 @@ export class FilterManager {
     state.encodedHeight = renderHeight;
     state.borderRadius = borderRadius;
     state.params = params;
+    state.lastAppliedParams = params;  // Snapshot: what we just rendered with
     state.lastEncodeTime = now;
 
     // Only calculate adaptive interval when optimization is enabled
@@ -1339,6 +1320,9 @@ export class FilterManager {
       }
     }
 
+    // Release render lock (normal completion)
+    state.renderInProgress = false;
+
     // End frame profiling
     if (__DEV__) _profilerEndFrame();
   }
@@ -1348,7 +1332,6 @@ export class FilterManager {
     state: FilterState,
     params: LiquidGlassParams,
     dispUrl: string,
-    specUrl: string,
     width: number,
     height: number,
     resolutionScale: number = 1
@@ -1361,7 +1344,7 @@ export class FilterManager {
 
     // Create new filter with DOM elements (no innerHTML)
     const filterId = generateFilterId();
-    const { filter, refs } = createFilterDOM(filterId, params, dispUrl, specUrl, width, height, resolutionScale);
+    const { filter, refs } = createFilterDOM(filterId, params, dispUrl, width, height, resolutionScale);
     defs.appendChild(filter);
 
     // Update marker (only if not already present)
@@ -1478,11 +1461,37 @@ export class FilterManager {
     );
   }
 
+  /**
+   * Whether the inputs to the DISPLACEMENT bitmap generator changed.
+   * If this returns false, we can reuse the cached dispDataUrl.
+   */
+  private _dispInputsEqual(
+    a: FilterState['lastDispInputsLow'],
+    b: NonNullable<FilterState['lastDispInputsLow']>
+  ): boolean {
+    return !!a && a.w === b.w && a.h === b.h && a.r === b.r &&
+           a.edgeRatio === b.edgeRatio && a.renderer === b.renderer;
+  }
+
+  /**
+   * Whether any parameter that feeds into SVG filter attributes (but not
+   * the displacement bitmap) has changed. Specular params do NOT appear
+   * here — they drive the CSS Paint Worklet directly.
+   */
+  private _svgAttrParamsChanged(a: LiquidGlassParams, b: LiquidGlassParams): boolean {
+    return (
+      a.refraction !== b.refraction ||
+      a.softness !== b.softness ||
+      a.saturation !== b.saturation ||
+      a.dispersion !== b.dispersion ||
+      a.displacementSmoothing !== b.displacementSmoothing
+    );
+  }
+
   private _paramsEqual(a: LiquidGlassParams, b: LiquidGlassParams): boolean {
     return (
       a.refraction === b.refraction &&
       a.thickness === b.thickness &&
-      a.gloss === b.gloss &&
       a.softness === b.softness &&
       a.saturation === b.saturation &&
       a.dispersion === b.dispersion &&
@@ -1490,9 +1499,7 @@ export class FilterManager {
       a.displacementMinResolution === b.displacementMinResolution &&
       a.displacementSmoothing === b.displacementSmoothing &&
       this._normalizeOptimization(a.enableOptimization) === this._normalizeOptimization(b.enableOptimization) &&
-      a.refreshInterval === b.refreshInterval &&
-      a.strideWidth === b.strideWidth &&
-      a.strideHeight === b.strideHeight &&
+      a.displacementRefreshInterval === b.displacementRefreshInterval &&
       a.displacementRenderer === b.displacementRenderer
     );
   }

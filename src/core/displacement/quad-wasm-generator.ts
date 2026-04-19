@@ -17,6 +17,11 @@
  * │   BL   │   BR   │  BL: flip X only (R' = 255-R)
  * │(-X,+Y) │(+X,+Y) │  BR: original quadrant (no change)
  * └────────┴────────┘
+ *
+ * IMPORTANT: Memory Safety
+ * - After memory.grow(), all existing ArrayBuffer views become detached
+ * - We MUST re-fetch wasm.memory.buffer after any potential grow operation
+ * - Canvas resources are WASM-exclusive to prevent conflicts with WebGL2
  */
 
 import type { CanvasDisplacementOptions, CanvasDisplacementResult } from './canvas-generator';
@@ -41,9 +46,13 @@ let wasmModule: QuadWasmExports | null = null;
 let wasmLoading: Promise<void> | null = null;
 let wasmSupported: boolean | null = null;
 
-// Cached canvases to avoid memory leaks during continuous resize
-let _fullExportCanvas: HTMLCanvasElement | null = null;
-let _quadExportCanvas: HTMLCanvasElement | null = null;
+// Generation lock to prevent concurrent WASM operations
+let _wasmGenerationInProgress = false;
+
+// WASM-exclusive cached canvases (NOT shared with WebGL2)
+// These are separate from webgl2-generator.ts's exportCanvas
+let _wasmFullExportCanvas: HTMLCanvasElement | null = null;
+let _wasmQuadExportCanvas: HTMLCanvasElement | null = null;
 
 // Cached ImageData to avoid allocation during resize
 let _fullImageData: ImageData | null = null;
@@ -55,31 +64,35 @@ let _quadImageDataHeight = 0;
 
 
 /**
- * Get or create export canvas for full displacement map (reused to avoid memory leaks)
+ * Get or create WASM-exclusive export canvas for full displacement map
+ * NOTE: This canvas is NOT shared with WebGL2 to prevent resource conflicts
  */
-function getFullExportCanvas(width: number, height: number): HTMLCanvasElement {
-  if (!_fullExportCanvas) {
-    _fullExportCanvas = document.createElement('canvas');
+function getWasmFullExportCanvas(width: number, height: number): HTMLCanvasElement {
+  if (!_wasmFullExportCanvas) {
+    _wasmFullExportCanvas = document.createElement('canvas');
+    _wasmFullExportCanvas.setAttribute('data-lg-renderer', 'wasm-full');
   }
-  if (_fullExportCanvas.width !== width || _fullExportCanvas.height !== height) {
-    _fullExportCanvas.width = width;
-    _fullExportCanvas.height = height;
+  if (_wasmFullExportCanvas.width !== width || _wasmFullExportCanvas.height !== height) {
+    _wasmFullExportCanvas.width = width;
+    _wasmFullExportCanvas.height = height;
   }
-  return _fullExportCanvas;
+  return _wasmFullExportCanvas;
 }
 
 /**
- * Get or create export canvas for quadrant displacement map (reused to avoid memory leaks)
+ * Get or create WASM-exclusive export canvas for quadrant displacement map
+ * NOTE: This canvas is NOT shared with WebGL2 to prevent resource conflicts
  */
-function getQuadExportCanvas(width: number, height: number): HTMLCanvasElement {
-  if (!_quadExportCanvas) {
-    _quadExportCanvas = document.createElement('canvas');
+function getWasmQuadExportCanvas(width: number, height: number): HTMLCanvasElement {
+  if (!_wasmQuadExportCanvas) {
+    _wasmQuadExportCanvas = document.createElement('canvas');
+    _wasmQuadExportCanvas.setAttribute('data-lg-renderer', 'wasm-quad');
   }
-  if (_quadExportCanvas.width !== width || _quadExportCanvas.height !== height) {
-    _quadExportCanvas.width = width;
-    _quadExportCanvas.height = height;
+  if (_wasmQuadExportCanvas.width !== width || _wasmQuadExportCanvas.height !== height) {
+    _wasmQuadExportCanvas.width = width;
+    _wasmQuadExportCanvas.height = height;
   }
-  return _quadExportCanvas;
+  return _wasmQuadExportCanvas;
 }
 
 interface QuadWasmExports {
@@ -165,8 +178,19 @@ async function ensureQuadWasmLoaded(): Promise<QuadWasmExports | null> {
   return wasmModule;
 }
 
-function ensureMemorySize(requiredBytes: number): void {
-  if (!wasmModule || !wasmModule.memory) return;
+/**
+ * Ensure WASM memory is large enough for the required bytes.
+ *
+ * CRITICAL: After memory.grow(), all existing ArrayBuffer views become DETACHED.
+ * Any Uint8Array/Uint8ClampedArray/etc. created before grow() will have
+ * byteLength === 0 and accessing them will throw or return garbage.
+ *
+ * Callers MUST re-create views from wasm.memory.buffer after calling this function.
+ *
+ * @returns true if memory was grown (views are now invalid), false if no change
+ */
+function ensureMemorySize(requiredBytes: number): boolean {
+  if (!wasmModule || !wasmModule.memory) return false;
 
   const memory = wasmModule.memory;
   const currentSize = memory.buffer.byteLength;
@@ -175,10 +199,15 @@ function ensureMemorySize(requiredBytes: number): void {
     const pagesToGrow = Math.ceil((requiredBytes - currentSize) / 65536);
     try {
       memory.grow(pagesToGrow);
+      // After grow(), memory.buffer is a NEW ArrayBuffer
+      // All existing views are now DETACHED
+      return true;
     } catch (e) {
       console.warn('Failed to grow WASM memory:', e);
+      return false;
     }
   }
+  return false;
 }
 
 /**
@@ -221,7 +250,7 @@ function compositeQuadrantToFull(
   fullWidth: number,
   fullHeight: number
 ): { canvas: HTMLCanvasElement; imageData: ImageData } {
-  const fullCanvas = getFullExportCanvas(fullWidth, fullHeight);
+  const fullCanvas = getWasmFullExportCanvas(fullWidth, fullHeight);
   const fullCtx = fullCanvas.getContext('2d')!;
   const fullImageData = getFullImageData(fullCtx, fullWidth, fullHeight);
 
@@ -354,12 +383,15 @@ export async function generateQuadrantDisplacementMap(
     edgeWidthRatio
   );
 
-  // Read pixel data from allocated buffer
+  // CRITICAL: Re-fetch memory.buffer AFTER SIMD generation
+  // memory.grow() may have been called internally by AssemblyScript runtime,
+  // which would invalidate any previously created ArrayBuffer views
   const outputPtr = wasm.getOutputPtr();
-  const pixelData = new Uint8ClampedArray(wasm.memory.buffer, outputPtr, requiredBytes);
+  const freshBuffer = wasm.memory.buffer;  // Always get fresh reference
+  const pixelData = new Uint8ClampedArray(freshBuffer, outputPtr, requiredBytes);
 
-  // Use cached canvas to avoid memory leaks
-  const canvas = getQuadExportCanvas(quadWidth, quadHeight);
+  // Use WASM-exclusive cached canvas (not shared with WebGL2)
+  const canvas = getWasmQuadExportCanvas(quadWidth, quadHeight);
   const ctx = canvas.getContext('2d')!;
 
   // Use cached ImageData
@@ -392,147 +424,203 @@ export async function generateQuadrantDisplacementMap(
  * The output is compatible with the existing SVG filter chain and can be used
  * as a drop-in replacement for generateWasmDisplacementMap().
  *
- * WASM-JS optimization notes:
- * - Zero-copy: Passes WASM memory view directly to compositing (no intermediate buffer)
- * - Uint32Array: Uses 32-bit read/write for 4x faster pixel operations
- * - Lazy dataUrl: PNG encoding deferred via getter to avoid unnecessary work
+ * MEMORY SAFETY:
+ * - After ensureMemorySize(), memory.buffer may be a NEW ArrayBuffer
+ * - We MUST re-fetch wasm.memory.buffer after SIMD generation completes
+ * - A generation lock prevents concurrent WASM operations that could corrupt state
+ *
+ * RESOURCE ISOLATION:
+ * - Uses WASM-exclusive canvas (_wasmFullExportCanvas)
+ * - NOT shared with WebGL2 to prevent renderer switch conflicts
  *
  * @returns CanvasDisplacementResult compatible with wasm-generator.ts
  */
 export async function generateQuadWasmDisplacementMap(
   options: CanvasDisplacementOptions
 ): Promise<CanvasDisplacementResult | null> {
+  // Check if another WASM generation is in progress
+  // This prevents concurrent access to WASM memory during renderer switches
+  if (_wasmGenerationInProgress) {
+    // Return null to signal caller should skip this frame
+    // This is safe because resize throttling will retry
+    return null;
+  }
+
   const wasm = await ensureQuadWasmLoaded();
   if (!wasm) return null;
 
-  // Ensure integer dimensions (element sizes may be floats)
-  const width = options.width | 0;
-  const height = options.height | 0;
+  // Acquire generation lock
+  _wasmGenerationInProgress = true;
 
-  // Guard against zero/invalid dimensions
-  if (width <= 0 || height <= 0) return null;
+  try {
+    // Ensure integer dimensions (element sizes may be floats)
+    const width = options.width | 0;
+    const height = options.height | 0;
 
-  const borderRadius = options.borderRadius;
-  const edgeWidthRatio = options.edgeWidthRatio ?? 0.5;
-  const startTime = performance.now();
+    // Guard against zero/invalid dimensions
+    if (width <= 0 || height <= 0) return null;
 
-  // Calculate quadrant dimensions (already integer due to Math.ceil on integers)
-  const quadWidth = Math.ceil(width / 2);
-  const quadHeight = Math.ceil(height / 2);
+    const borderRadius = options.borderRadius;
+    const edgeWidthRatio = options.edgeWidthRatio ?? 0.5;
+    const startTime = performance.now();
 
-  // Ensure WASM memory (may grow, invalidating existing views)
-  const requiredBytes = quadWidth * quadHeight * 4;
-  ensureMemorySize(requiredBytes);
+    // Calculate quadrant dimensions (already integer due to Math.ceil on integers)
+    const quadWidth = Math.ceil(width / 2);
+    const quadHeight = Math.ceil(height / 2);
 
-  // Generate quadrant using SIMD
-  wasm.generateQuadrantDisplacementMapSIMD(
-    quadWidth,
-    quadHeight,
-    width,
-    height,
-    borderRadius,
-    edgeWidthRatio
-  );
+    // Ensure WASM memory (may grow, invalidating existing views)
+    const requiredBytes = quadWidth * quadHeight * 4;
+    ensureMemorySize(requiredBytes);
+    // NOTE: After ensureMemorySize, any existing ArrayBuffer views are potentially INVALID
 
-  // Copy WASM output to JS-owned buffer for safety
-  // This ensures complete isolation from WASM memory during compositing,
-  // protecting against any potential memory issues from AssemblyScript's GC
-  // or WASM memory operations. The copy cost is minimal compared to the
-  // robustness benefit.
-  const outputPtr = wasm.getOutputPtr();
-  const wasmView = new Uint8ClampedArray(wasm.memory.buffer, outputPtr, requiredBytes);
-  const quadPixelsCopy = new Uint8ClampedArray(requiredBytes);
-  quadPixelsCopy.set(wasmView);
+    // Generate quadrant using SIMD
+    // This is synchronous - WASM executes immediately
+    wasm.generateQuadrantDisplacementMapSIMD(
+      quadWidth,
+      quadHeight,
+      width,
+      height,
+      borderRadius,
+      edgeWidthRatio
+    );
 
-  // Composite quadrant to full displacement map using Canvas2D
-  const { canvas } = compositeQuadrantToFull(
-    quadPixelsCopy,
-    quadWidth,
-    quadHeight,
-    width,
-    height
-  );
+    // CRITICAL: Re-fetch memory.buffer AFTER SIMD generation completes
+    // AssemblyScript runtime may have triggered GC or memory operations
+    // that could have grown memory, invalidating any previous buffer reference
+    const outputPtr = wasm.getOutputPtr();
+    const freshBuffer = wasm.memory.buffer;  // MUST get fresh reference here
 
-  const generationTime = performance.now() - startTime;
+    // Validate buffer is not detached (defensive check)
+    if (freshBuffer.byteLength === 0) {
+      console.error('WASM memory buffer is detached - this should not happen');
+      return null;
+    }
 
-  // IMPORTANT: Must capture dataUrl immediately before canvas is reused!
-  // The canvas is shared/cached, so if we defer toDataURL(), a subsequent
-  // render may overwrite the canvas contents, causing the wrong image
-  // to be encoded. This was the root cause of the "texture collapse" bug
-  // when switching renderers from GPU to WASM-SIMD during resize.
-  const dataUrl = canvas.toDataURL('image/png');
+    // Validate output pointer is within bounds
+    if (outputPtr + requiredBytes > freshBuffer.byteLength) {
+      console.error('WASM output pointer out of bounds');
+      return null;
+    }
 
-  return {
-    canvas,
-    dataUrl,
-    generationTime,
-  };
+    // Create view from fresh buffer and copy to JS-owned memory
+    // This copy isolates us from any subsequent WASM memory operations
+    const wasmView = new Uint8ClampedArray(freshBuffer, outputPtr, requiredBytes);
+    const quadPixelsCopy = new Uint8ClampedArray(requiredBytes);
+    quadPixelsCopy.set(wasmView);
+
+    // Composite quadrant to full displacement map using WASM-exclusive Canvas
+    const { canvas } = compositeQuadrantToFull(
+      quadPixelsCopy,
+      quadWidth,
+      quadHeight,
+      width,
+      height
+    );
+
+    const generationTime = performance.now() - startTime;
+
+    // IMPORTANT: Must capture dataUrl immediately before canvas is reused!
+    // The canvas is cached, so if we defer toDataURL(), a subsequent
+    // render may overwrite the canvas contents, causing the wrong image
+    // to be encoded. This was the root cause of the "texture collapse" bug
+    // when switching renderers from GPU to WASM-SIMD during resize.
+    const dataUrl = canvas.toDataURL('image/png');
+
+    return {
+      canvas,
+      dataUrl,
+      generationTime,
+    };
+  } finally {
+    // Always release the generation lock
+    _wasmGenerationInProgress = false;
+  }
 }
 
 /**
  * Synchronous version (returns null if WASM not ready)
  *
- * Uses same WASM-JS optimizations as async version:
- * - Zero-copy WASM memory view
- * - Uint32Array compositing
- * - Lazy dataUrl encoding
+ * Uses same memory safety guarantees as async version:
+ * - Generation lock to prevent concurrent access
+ * - Fresh memory.buffer reference after SIMD generation
+ * - WASM-exclusive canvas (not shared with WebGL2)
  */
 export function generateQuadWasmDisplacementMapSync(
   options: CanvasDisplacementOptions
 ): CanvasDisplacementResult | null {
   if (!wasmModule) return null;
 
-  // Ensure integer dimensions
-  const width = options.width | 0;
-  const height = options.height | 0;
+  // Check generation lock (same as async version)
+  if (_wasmGenerationInProgress) {
+    return null;
+  }
 
-  // Guard against zero/invalid dimensions
-  if (width <= 0 || height <= 0) return null;
+  _wasmGenerationInProgress = true;
 
-  const borderRadius = options.borderRadius;
-  const edgeWidthRatio = options.edgeWidthRatio ?? 0.5;
-  const startTime = performance.now();
+  try {
+    // Ensure integer dimensions
+    const width = options.width | 0;
+    const height = options.height | 0;
 
-  const quadWidth = Math.ceil(width / 2);
-  const quadHeight = Math.ceil(height / 2);
+    // Guard against zero/invalid dimensions
+    if (width <= 0 || height <= 0) return null;
 
-  const requiredBytes = quadWidth * quadHeight * 4;
-  ensureMemorySize(requiredBytes);
+    const borderRadius = options.borderRadius;
+    const edgeWidthRatio = options.edgeWidthRatio ?? 0.5;
+    const startTime = performance.now();
 
-  wasmModule.generateQuadrantDisplacementMapSIMD(
-    quadWidth,
-    quadHeight,
-    width,
-    height,
-    borderRadius,
-    edgeWidthRatio
-  );
+    const quadWidth = Math.ceil(width / 2);
+    const quadHeight = Math.ceil(height / 2);
 
-  // Copy WASM output to JS-owned buffer for safety (see async version comment)
-  const outputPtr = wasmModule.getOutputPtr();
-  const wasmView = new Uint8ClampedArray(wasmModule.memory.buffer, outputPtr, requiredBytes);
-  const quadPixelsCopy = new Uint8ClampedArray(requiredBytes);
-  quadPixelsCopy.set(wasmView);
+    const requiredBytes = quadWidth * quadHeight * 4;
+    ensureMemorySize(requiredBytes);
 
-  // Composite to full size using Uint32Array
-  const { canvas } = compositeQuadrantToFull(
-    quadPixelsCopy,
-    quadWidth,
-    quadHeight,
-    width,
-    height
-  );
+    wasmModule.generateQuadrantDisplacementMapSIMD(
+      quadWidth,
+      quadHeight,
+      width,
+      height,
+      borderRadius,
+      edgeWidthRatio
+    );
 
-  const generationTime = performance.now() - startTime;
+    // CRITICAL: Re-fetch memory.buffer AFTER SIMD generation
+    const outputPtr = wasmModule.getOutputPtr();
+    const freshBuffer = wasmModule.memory.buffer;
 
-  // IMPORTANT: Must capture dataUrl immediately (see async version comment)
-  const dataUrl = canvas.toDataURL('image/png');
+    // Validate buffer state
+    if (freshBuffer.byteLength === 0 || outputPtr + requiredBytes > freshBuffer.byteLength) {
+      console.error('WASM memory buffer invalid');
+      return null;
+    }
 
-  return {
-    canvas,
-    dataUrl,
-    generationTime,
-  };
+    // Copy to JS-owned buffer for safety
+    const wasmView = new Uint8ClampedArray(freshBuffer, outputPtr, requiredBytes);
+    const quadPixelsCopy = new Uint8ClampedArray(requiredBytes);
+    quadPixelsCopy.set(wasmView);
+
+    // Composite using WASM-exclusive canvas
+    const { canvas } = compositeQuadrantToFull(
+      quadPixelsCopy,
+      quadWidth,
+      quadHeight,
+      width,
+      height
+    );
+
+    const generationTime = performance.now() - startTime;
+
+    // Capture dataUrl immediately
+    const dataUrl = canvas.toDataURL('image/png');
+
+    return {
+      canvas,
+      dataUrl,
+      generationTime,
+    };
+  } finally {
+    _wasmGenerationInProgress = false;
+  }
 }
 
 /**
@@ -556,4 +644,35 @@ export function isQuadWasmSimdSupported(): boolean {
   if (wasmSupported !== null) return wasmSupported;
   wasmSupported = checkWasmSimdSupport();
   return wasmSupported;
+}
+
+/**
+ * Check if WASM generation is currently in progress
+ * Used by filter-manager to prevent renderer switch during generation
+ */
+export function isWasmGenerationInProgress(): boolean {
+  return _wasmGenerationInProgress;
+}
+
+/**
+ * Clean up WASM resources
+ * Call this when switching away from WASM renderer
+ */
+export function cleanupWasmResources(): void {
+  // Clear cached canvases (they're WASM-exclusive, safe to clear)
+  if (_wasmFullExportCanvas) {
+    _wasmFullExportCanvas.width = 0;
+    _wasmFullExportCanvas.height = 0;
+  }
+  if (_wasmQuadExportCanvas) {
+    _wasmQuadExportCanvas.width = 0;
+    _wasmQuadExportCanvas.height = 0;
+  }
+  // Clear cached ImageData
+  _fullImageData = null;
+  _fullImageDataWidth = 0;
+  _fullImageDataHeight = 0;
+  _quadImageData = null;
+  _quadImageDataWidth = 0;
+  _quadImageDataHeight = 0;
 }

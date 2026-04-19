@@ -257,61 +257,32 @@ async function runBuildTest() {
   const tests = [];
   let allPassed = true;
 
-  // Test 2.1: Shader transpilation (WGSL -> GLSL)
-  const glslStart = Date.now();
-  const glslResult = await exec('npm', ['run', 'shaders:glsl']);
-  const glslDuration = Date.now() - glslStart;
-
-  if (glslResult.code === 0) {
-    logResult('WGSL -> GLSL transpilation', true, glslDuration);
-    tests.push({ name: 'shader-glsl', passed: true, duration: glslDuration });
-  } else {
-    logResult('WGSL -> GLSL transpilation', false, glslDuration);
-    tests.push({ name: 'shader-glsl', passed: false, duration: glslDuration, error: glslResult.stderr });
-    allPassed = false;
-  }
-
-  // Test 2.2: Shader transpilation (WGSL -> AssemblyScript)
-  const asStart = Date.now();
-  const asResult = await exec('npm', ['run', 'shaders:as']);
-  const asDuration = Date.now() - asStart;
-
-  if (asResult.code === 0) {
-    logResult('WGSL -> AssemblyScript transpilation', true, asDuration);
-    tests.push({ name: 'shader-as', passed: true, duration: asDuration });
-  } else {
-    logResult('WGSL -> AssemblyScript transpilation', false, asDuration);
-    tests.push({ name: 'shader-as', passed: false, duration: asDuration, error: asResult.stderr });
-    allPassed = false;
-  }
-
-  // Test 2.3: Generated files exist
-  const genStart = Date.now();
-  const generatedFiles = [
-    'generated/gl2/fullscreen.vert',   // Shared vertex shader
-    'generated/gl2/quadrant.frag',     // Pass 1: quadrant displacement
-    'generated/gl2/composite.frag',    // Pass 2: quadrant compositing
-    'generated/wasm-simd/index.ts',    // AssemblyScript WASM source
+  // Test 2.1: Shader source files exist (checked-in, not generated)
+  const shaderStart = Date.now();
+  const shaderFiles = [
+    'src/shaders/gl2/ubo-fullscreen.vert.glsl',
+    'src/shaders/gl2/ubo-displacement.frag.glsl',
+    'src/shaders/wasm/index.ts',
   ];
 
-  const missingFiles = generatedFiles.filter(f => !existsSync(join(ROOT, f)));
-  const genDuration = Date.now() - genStart;
+  const missingShaders = shaderFiles.filter(f => !existsSync(join(ROOT, f)));
+  const shaderDuration = Date.now() - shaderStart;
 
-  if (missingFiles.length === 0) {
-    logResult('Generated shader files exist', true, genDuration);
-    tests.push({ name: 'generated-files', passed: true, duration: genDuration });
+  if (missingShaders.length === 0) {
+    logResult('Shader source files exist', true, shaderDuration);
+    tests.push({ name: 'shader-sources', passed: true, duration: shaderDuration });
   } else {
-    logResult('Generated shader files exist', false, genDuration);
+    logResult('Shader source files exist', false, shaderDuration);
     tests.push({
-      name: 'generated-files',
+      name: 'shader-sources',
       passed: false,
-      duration: genDuration,
-      error: `Missing: ${missingFiles.join(', ')}`
+      duration: shaderDuration,
+      error: `Missing: ${missingShaders.join(', ')}`
     });
     allPassed = false;
   }
 
-  // Test 2.4: TypeScript compilation
+  // Test 2.2: TypeScript compilation
   const tscStart = Date.now();
   const tscResult = await exec('npx', ['tsc']);
   const tscDuration = Date.now() - tscStart;
@@ -325,7 +296,7 @@ async function runBuildTest() {
     allPassed = false;
   }
 
-  // Test 2.5: Vite build
+  // Test 2.3: Vite build
   const viteStart = Date.now();
   const viteResult = await exec('npx', ['vite', 'build']);
   const viteDuration = Date.now() - viteStart;
@@ -339,7 +310,7 @@ async function runBuildTest() {
     allPassed = false;
   }
 
-  // Test 2.6: Output files exist
+  // Test 2.4: Output files exist
   const outStart = Date.now();
   const outputFiles = [
     'dist/liquidglass.js',
@@ -376,49 +347,7 @@ async function runSMTCoverage() {
   const tests = [];
   let allPassed = true;
 
-  // Test 3.1: Transpiler coverage verification (WGSL->GLSL)
-  const tcStart = Date.now();
-  const tcResult = await exec('node', ['scripts/verify-transpiler-coverage.mjs']);
-  const tcDuration = Date.now() - tcStart;
-
-  if (tcResult.code === 0) {
-    logResult('Transpiler coverage (WGSL->GLSL)', true, tcDuration);
-    tests.push({ name: 'smt-transpiler-glsl', passed: true, duration: tcDuration });
-  } else {
-    logResult('Transpiler coverage (WGSL->GLSL)', false, tcDuration);
-    tests.push({ name: 'smt-transpiler-glsl', passed: false, duration: tcDuration, error: tcResult.stderr });
-    allPassed = false;
-  }
-
-  // Test 3.2: AssemblyScript transpiler SMT verification
-  const asStart = Date.now();
-  const asResult = await exec('node', ['scripts/verify-transpiler-smt.mjs']);
-  const asDuration = Date.now() - asStart;
-
-  if (asResult.code === 0) {
-    logResult('Transpiler coverage (WGSL->AS)', true, asDuration);
-    tests.push({ name: 'smt-transpiler-as', passed: true, duration: asDuration });
-  } else {
-    logResult('Transpiler coverage (WGSL->AS)', false, asDuration);
-    tests.push({ name: 'smt-transpiler-as', passed: false, duration: asDuration, error: asResult.stderr });
-    allPassed = false;
-  }
-
-  // Test 3.3: Shader equivalence verification
-  const seStart = Date.now();
-  const seResult = await exec('node', ['scripts/verify-shader-equivalence.mjs']);
-  const seDuration = Date.now() - seStart;
-
-  if (seResult.code === 0) {
-    logResult('Shader output equivalence (WGSL≡GLSL)', true, seDuration);
-    tests.push({ name: 'smt-shader-equiv', passed: true, duration: seDuration });
-  } else {
-    logResult('Shader output equivalence (WGSL≡GLSL)', false, seDuration);
-    tests.push({ name: 'smt-shader-equiv', passed: false, duration: seDuration, error: seResult.stderr });
-    allPassed = false;
-  }
-
-  // Test 3.4: Shader mathematical coverage
+  // Test 3.1: Shader mathematical coverage
   const smcStart = Date.now();
   const smcResult = await exec('node', ['test/integrity/smt/shader-math-coverage.mjs']);
   const smcDuration = Date.now() - smcStart;
@@ -432,7 +361,7 @@ async function runSMTCoverage() {
     allPassed = false;
   }
 
-  // Test 3.5: Parameter schema validation
+  // Test 3.2: Parameter schema validation
   const psStart = Date.now();
   const psResult = await exec('node', ['test/integrity/smt/parameter-validation.mjs']);
   const psDuration = Date.now() - psStart;

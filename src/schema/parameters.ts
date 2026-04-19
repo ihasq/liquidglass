@@ -39,12 +39,23 @@ interface BaseParameterDef {
  */
 export interface NumericParameterDef extends BaseParameterDef {
   type: 'number';
-  /** Default value */
+  /** Default value (numeric portion; unit is applied separately via `unit`). */
   default: number;
   /** Minimum value (inclusive) */
   min: number;
   /** Maximum value (inclusive) */
   max: number;
+  /**
+   * Canonical CSS unit suffix for this parameter, used when serializing
+   * the default value into the @property `initial-value`. Empty string
+   * means dimensionless (e.g., shininess, refresh interval).
+   *
+   *   '%'   → percentage (use with syntax `<percentage> | <number>`)
+   *   'px'  → length     (use with syntax `<length>     | <number>`)
+   *   'deg' → angle      (use with syntax `<angle>      | <number>`)
+   *   ''    → unitless   (use with syntax `<number>` or `<integer>`)
+   */
+  unit?: '%' | 'px' | 'deg' | '';
   /** Optional value transform function name */
   transform?: 'boolean' | 'integer' | 'positive-integer';
 }
@@ -70,136 +81,160 @@ export const PARAMETERS = {
   refraction: {
     type: 'number',
     cssProperty: 'liquidglass-refraction',
-    syntax: '<number>',
+    // Accept both 50 and 50% so existing CSS keeps working while typed
+    // values are now first-class.
+    syntax: '<percentage> | <number>',
     inherits: true,
     default: 50,
+    unit: '%',
     min: 0,
     max: 100,
-    description: 'Distortion intensity (0-100)',
+    description: 'Distortion intensity (0-100%)',
   },
   thickness: {
     type: 'number',
     cssProperty: 'liquidglass-thickness',
-    syntax: '<number>',
+    syntax: '<percentage> | <number>',
     inherits: true,
     default: 50,
+    unit: '%',
     min: 0,
     max: 100,
-    description: 'Edge steepness (0-100)',
+    description: 'Edge steepness (0-100%)',
   },
   gloss: {
     type: 'number',
     cssProperty: 'liquidglass-gloss',
-    syntax: '<number>',
+    syntax: '<percentage> | <number>',
     inherits: true,
     default: 50,
+    unit: '%',
     min: 0,
     max: 100,
-    description: 'Specular highlight intensity (0-100)',
+    description: 'Specular highlight intensity (0-100%)',
   },
   softness: {
     type: 'number',
     cssProperty: 'liquidglass-softness',
-    syntax: '<number>',
+    syntax: '<percentage> | <number>',
     inherits: true,
     default: 10,
+    unit: '%',
     min: 0,
     max: 100,
-    description: 'Background blur (0-100)',
+    description: 'Background blur (0-100%)',
   },
   saturation: {
     type: 'number',
     cssProperty: 'liquidglass-saturation',
-    syntax: '<number>',
+    syntax: '<percentage> | <number>',
     inherits: true,
     default: 45,
+    unit: '%',
     min: 0,
     max: 100,
-    description: 'Color saturation boost (0-100)',
+    description: 'Color saturation boost (0-100%)',
   },
   dispersion: {
     type: 'number',
     cssProperty: 'liquidglass-dispersion',
-    syntax: '<number>',
+    syntax: '<percentage> | <number>',
     inherits: true,
     default: 30,
+    unit: '%',
     min: 0,
     max: 100,
-    description: 'Edge dispersion blur (0-100)',
+    description: 'Edge dispersion blur (0-100%)',
+  },
+  specularAngle: {
+    type: 'number',
+    cssProperty: 'liquidglass-specular-angle',
+    syntax: '<angle> | <number>',
+    inherits: true,
+    default: -60,
+    unit: 'deg',
+    min: -180,
+    max: 180,
+    description: 'Specular light angle (-180deg to 180deg). Controls highlight direction.',
+  },
+  specularWidth: {
+    type: 'number',
+    cssProperty: 'liquidglass-specular-width',
+    syntax: '<length> | <number>',
+    inherits: true,
+    default: 2,
+    unit: 'px',
+    min: 1,
+    max: 50,
+    description: 'Specular highlight width in pixels. Absolute value, not relative to size.',
+  },
+  specularShininess: {
+    type: 'number',
+    cssProperty: 'liquidglass-specular-shininess',
+    syntax: '<number>',
+    inherits: true,
+    default: 8,
+    unit: '',
+    min: 1,
+    max: 128,
+    description: 'Phong shininess exponent (1-128). Higher = sharper, smaller highlight.',
   },
   displacementResolution: {
     type: 'number',
     cssProperty: 'liquidglass-displacement-resolution',
-    syntax: '<number>',
+    syntax: '<percentage> | <number>',
     inherits: true,
     default: 40,
+    unit: '%',
     min: 0,
     max: 100,
-    description: 'Displacement map resolution (0-100). Lower = less CPU, more GPU smoothing.',
+    description: 'Displacement map resolution (0-100%). Lower = less CPU, more GPU smoothing.',
   },
   displacementMinResolution: {
     type: 'number',
     cssProperty: 'liquidglass-displacement-min-resolution',
-    syntax: '<number>',
+    syntax: '<percentage> | <number>',
     inherits: true,
     default: 10,
+    unit: '%',
     min: 0,
     max: 100,
-    description: 'Minimum resolution during resize (0-100). Progressive rendering preview.',
+    description: 'Minimum resolution during resize (0-100%). Progressive rendering preview.',
   },
   displacementSmoothing: {
     type: 'number',
     cssProperty: 'liquidglass-displacement-smoothing',
-    syntax: '<number>',
+    syntax: '<percentage> | <number>',
     inherits: true,
     default: 0,
+    unit: '%',
     min: 0,
     max: 100,
-    description: 'Displacement map smoothing blur (0-100 maps to 0-5px stdDeviation)',
+    description: 'Displacement map smoothing blur (0-100% maps to 0-5px stdDeviation)',
   },
   enableOptimization: {
     type: 'number',
     cssProperty: 'liquidglass-enable-optimization',
-    syntax: '<number>',
+    syntax: '<integer>',
     inherits: true,
     default: 1,
+    unit: '',
     min: 0,
     max: 1,
     transform: 'boolean',
     description: 'Enable rendering optimizations (0=off, 1=on)',
   },
-  refreshInterval: {
+  displacementRefreshInterval: {
     type: 'number',
-    cssProperty: 'liquidglass-refresh-interval',
-    syntax: '<number>',
+    cssProperty: 'liquidglass-displacement-refresh-interval',
+    syntax: '<integer>',
     inherits: true,
     default: 12,
+    unit: '',
     min: 1,
     max: 60,
     transform: 'positive-integer',
-    description: 'Frame skip interval during resize (1=every frame, higher=less frequent)',
-  },
-  strideWidth: {
-    type: 'number',
-    cssProperty: 'liquidglass-stride-width',
-    syntax: '<number>',
-    inherits: true,
-    default: 64,
-    min: 1,
-    max: 1000,
-    transform: 'positive-integer',
-    description: 'Horizontal pixel stride for re-rendering during resize (normalized Euclidean with strideHeight)',
-  },
-  strideHeight: {
-    type: 'number',
-    cssProperty: 'liquidglass-stride-height',
-    syntax: '<number>',
-    inherits: true,
-    default: 64,
-    min: 1,
-    max: 1000,
-    transform: 'positive-integer',
-    description: 'Vertical pixel stride for re-rendering during resize (normalized Euclidean with strideWidth)',
+    description: 'Frame skip interval for displacement map during resize (1=every frame, higher=less frequent)',
   },
   displacementRenderer: {
     type: 'enum',

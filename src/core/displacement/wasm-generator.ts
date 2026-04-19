@@ -6,6 +6,11 @@
  * This reduces WASM computation to 1/4 while maintaining pixel-perfect accuracy.
  *
  * The output is fully compatible with the existing SVG filter chain.
+ *
+ * MEMORY SAFETY:
+ * - Generation lock prevents concurrent WASM operations
+ * - Fresh memory.buffer reference after each SIMD call
+ * - WASM-exclusive canvas resources (not shared with WebGL2)
  */
 
 // Re-export quadrant-based implementations as the primary API
@@ -15,6 +20,8 @@ export {
   preloadQuadWasm as preloadWasm,
   isQuadWasmSimdSupported as isWasmSimdSupported,
   isQuadWasmReady as isWasmReady,
+  isWasmGenerationInProgress,
+  cleanupWasmResources,
 } from './quad-wasm-generator';
 
 // Also export quadrant-specific APIs for direct access

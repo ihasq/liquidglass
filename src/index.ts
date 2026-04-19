@@ -108,9 +108,10 @@ export { generateWebGL2DisplacementMap, isWebGL2Supported } from './core/displac
 // WebGPU accelerated displacement
 export { generateWebGPUDisplacementMap, isWebGPUSupported } from './core/displacement/webgpu-generator';
 
-// Specular exports
-export { generateSpecularMap, generateDefaultSpecularMap } from './core/specular/highlight';
-export type { SpecularMapOptions, SpecularMapResult } from './core/specular/highlight';
+// Specular exports — main-thread fallback only; primary path is the
+// CSS Paint Worklet at src/core/specular/specular-worklet.js.
+export { generateSpecularMap, drawSpecular } from './core/specular/highlight';
+export type { SpecularMapOptions, SpecularMapResult, SpecularParams } from './core/specular/highlight';
 
 // Renderer exports
 export { createLiquidGlassFilter } from './renderer/svg-filter';

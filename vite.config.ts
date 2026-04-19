@@ -50,8 +50,7 @@ export default defineConfig(({ mode }) => {
       minify: true,
     },
     server: {
-      port: 8788,
-      open: '/demo/parameter-lab/'
+      port: 8788
     }
   };
 });
