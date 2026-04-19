@@ -18,13 +18,15 @@
  *   cache-invalidation state machine.
  */
 
-const CONIC_STOP_COUNT = 64;
+const STOP_COUNT = 64;
 
 function addPhongConicStops(grad, shininess, glossAlpha) {
-  for (let i = 0; i <= CONIC_STOP_COUNT; i++) {
-    const t = i / CONIC_STOP_COUNT;
-    const c = Math.cos(2 * Math.PI * t);
-    const intensity = Math.pow(Math.abs(c), shininess) * glossAlpha;
+  const twoPi = 2 * Math.PI;
+  for (let i = 0; i <= STOP_COUNT; i++) {
+    const t = i / STOP_COUNT;
+    const c = Math.cos(twoPi * t);
+    // Math.pow(Math.abs(c), shininess) inlined for hot path
+    const intensity = (c < 0 ? -c : c) ** shininess * glossAlpha;
     grad.addColorStop(t, `rgba(255,255,255,${intensity})`);
   }
 }
@@ -58,38 +60,46 @@ function addDepthLinearStops(grad, outerAtStart) {
 
 function drawSpecular(ctx, p) {
   const { w, h, lightAngle, shininess, glossAlpha, bezelWidth } = p;
-  if (w <= 0 || h <= 0 || glossAlpha <= 0 || bezelWidth <= 0) return;
+
+  // Early return for invisible or degenerate cases
+  if (w <= 0 || h <= 0 || glossAlpha <= 0.01 || bezelWidth <= 0) return;
+
   const r = Math.max(1, Math.min(p.r, w / 2, h / 2));
   const lightX = Math.cos(lightAngle);
   const lightY = Math.sin(lightAngle);
   const rInner = Math.max(0, r - bezelWidth);
   const rOuter = r;
 
-  // 4 corner regions — conic + radial depth
-  const corners = [
-    { cx: r,     cy: r,     x: 0,     y: 0,     s: r },
-    { cx: w - r, cy: r,     x: w - r, y: 0,     s: r },
-    { cx: w - r, cy: h - r, x: w - r, y: h - r, s: r },
-    { cx: r,     cy: h - r, x: 0,     y: h - r, s: r },
-  ];
-  for (const c of corners) {
-    ctx.save();
-    ctx.beginPath();
-    ctx.rect(c.x, c.y, c.s, c.s);
-    ctx.clip();
+  // Skip corners if bezel is too thin (< 2px) — edges alone suffice
+  const drawCorners = bezelWidth >= 2 && r >= 2;
 
-    const angleGrad = ctx.createConicGradient(lightAngle, c.cx, c.cy);
-    addPhongConicStops(angleGrad, shininess, glossAlpha);
-    ctx.fillStyle = angleGrad;
-    ctx.fillRect(c.x, c.y, c.s, c.s);
+  if (drawCorners) {
+    // 4 corner regions — conic + radial depth
+    const corners = [
+      { cx: r,     cy: r,     x: 0,     y: 0,     s: r },
+      { cx: w - r, cy: r,     x: w - r, y: 0,     s: r },
+      { cx: w - r, cy: h - r, x: w - r, y: h - r, s: r },
+      { cx: r,     cy: h - r, x: 0,     y: h - r, s: r },
+    ];
+    for (const c of corners) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(c.x, c.y, c.s, c.s);
+      ctx.clip();
 
-    ctx.globalCompositeOperation = 'destination-in';
-    const depthGrad = ctx.createRadialGradient(c.cx, c.cy, rInner, c.cx, c.cy, rOuter + 1);
-    addDepthRadialStops(depthGrad, rInner, rOuter);
-    ctx.fillStyle = depthGrad;
-    ctx.fillRect(c.x, c.y, c.s, c.s);
+      const angleGrad = ctx.createConicGradient(lightAngle, c.cx, c.cy);
+      addPhongConicStops(angleGrad, shininess, glossAlpha);
+      ctx.fillStyle = angleGrad;
+      ctx.fillRect(c.x, c.y, c.s, c.s);
 
-    ctx.restore();
+      ctx.globalCompositeOperation = 'destination-in';
+      const depthGrad = ctx.createRadialGradient(c.cx, c.cy, rInner, c.cx, c.cy, rOuter + 1);
+      addDepthRadialStops(depthGrad, rInner, rOuter);
+      ctx.fillStyle = depthGrad;
+      ctx.fillRect(c.x, c.y, c.s, c.s);
+
+      ctx.restore();
+    }
   }
 
   // 4 edge bands — constant-alpha + linear depth
@@ -101,7 +111,9 @@ function drawSpecular(ctx, p) {
   ];
   for (const e of edges) {
     if (e.w <= 0 || e.h <= 0) continue;
-    const alphaA = Math.pow(Math.abs(e.dot), shininess) * glossAlpha;
+    // Inline Math.pow(Math.abs(e.dot), shininess) for hot path
+    const absDot = e.dot < 0 ? -e.dot : e.dot;
+    const alphaA = absDot ** shininess * glossAlpha;
     if (alphaA <= 1e-4) continue;
 
     ctx.save();

@@ -44,8 +44,8 @@ export interface SpecularParams {
   glossAlpha: number;
 }
 
-/** Number of stops used to discretise |cos|^n. 64 → error ≪ 1/255 for n≤128. */
-const CONIC_STOP_COUNT = 64;
+/** Fixed stop count for gradient sampling — 64 ensures < 1/255 error for all shininess. */
+const STOP_COUNT = 64;
 
 /** Minimal Canvas2D surface needed — satisfied by 2D canvas and paint worklet contexts. */
 interface Canvas2DLike {
@@ -71,7 +71,10 @@ interface Canvas2DLike {
  */
 export function drawSpecular(ctx: Canvas2DLike, p: SpecularParams): void {
   const { w, h, lightAngle, shininess, glossAlpha, bezelWidth } = p;
-  if (w <= 0 || h <= 0 || glossAlpha <= 0 || bezelWidth <= 0) return;
+
+  // Early return for invisible or degenerate cases
+  if (w <= 0 || h <= 0 || glossAlpha <= 0.01 || bezelWidth <= 0) return;
+
   // Clamp radius so corners don't overlap; also lower-bound to avoid degenerate gradients.
   const r = Math.max(1, Math.min(p.r, w / 2, h / 2));
 
@@ -81,42 +84,47 @@ export function drawSpecular(ctx: Canvas2DLike, p: SpecularParams): void {
   const rInner = Math.max(0, r - bezelWidth);
   const rOuter = r;
 
+  // Skip corners if bezel is too thin (< 2px) — edges alone suffice
+  const drawCorners = bezelWidth >= 2 && r >= 2;
+
   // ─────── 4 corner regions ───────
   // At a corner pixel p in the top-left quadrant with c = (r, r):
   //   angle_from_c(p) = atan2(p.y−c.y, p.x−c.x)  =  surface normal angle
   // So createConicGradient(lightAngle, c) lets the gradient's t-coordinate
   // be exactly  ((angle − lightAngle) mod 2π) / 2π, and the stops sample
   // |cos(2πt)|^n  = |dot(normal, light)|^n.
-  const corners = [
-    { cx: r,     cy: r,     x: 0,       y: 0,       s: r },  // TL
-    { cx: w - r, cy: r,     x: w - r,   y: 0,       s: r },  // TR
-    { cx: w - r, cy: h - r, x: w - r,   y: h - r,   s: r },  // BR
-    { cx: r,     cy: h - r, x: 0,       y: h - r,   s: r },  // BL
-  ];
+  if (drawCorners) {
+    const corners = [
+      { cx: r,     cy: r,     x: 0,       y: 0,       s: r },  // TL
+      { cx: w - r, cy: r,     x: w - r,   y: 0,       s: r },  // TR
+      { cx: w - r, cy: h - r, x: w - r,   y: h - r,   s: r },  // BR
+      { cx: r,     cy: h - r, x: 0,       y: h - r,   s: r },  // BL
+    ];
 
-  for (const c of corners) {
-    ctx.save();
-    ctx.beginPath();
-    ctx.rect(c.x, c.y, c.s, c.s);
-    ctx.clip();
+    for (const c of corners) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(c.x, c.y, c.s, c.s);
+      ctx.clip();
 
-    // (A) angle component — conic gradient at corner_center
-    const angleGrad = ctx.createConicGradient(lightAngle, c.cx, c.cy);
-    addPhongConicStops(angleGrad, shininess, glossAlpha);
-    ctx.fillStyle = angleGrad;
-    ctx.fillRect(c.x, c.y, c.s, c.s);
+      // (A) angle component — conic gradient at corner_center
+      const angleGrad = ctx.createConicGradient(lightAngle, c.cx, c.cy);
+      addPhongConicStops(angleGrad, shininess, glossAlpha);
+      ctx.fillStyle = angleGrad;
+      ctx.fillRect(c.x, c.y, c.s, c.s);
 
-    // (B) × (C) depth × fade — radial gradient from corner_center
-    ctx.globalCompositeOperation = 'destination-in';
-    const depthGrad = ctx.createRadialGradient(
-      c.cx, c.cy, rInner,
-      c.cx, c.cy, rOuter + 1
-    );
-    addDepthRadialStops(depthGrad, rInner, rOuter);
-    ctx.fillStyle = depthGrad;
-    ctx.fillRect(c.x, c.y, c.s, c.s);
+      // (B) × (C) depth × fade — radial gradient from corner_center
+      ctx.globalCompositeOperation = 'destination-in';
+      const depthGrad = ctx.createRadialGradient(
+        c.cx, c.cy, rInner,
+        c.cx, c.cy, rOuter + 1
+      );
+      addDepthRadialStops(depthGrad, rInner, rOuter);
+      ctx.fillStyle = depthGrad;
+      ctx.fillRect(c.x, c.y, c.s, c.s);
 
-    ctx.restore();
+      ctx.restore();
+    }
   }
 
   // ─────── 4 edge bands ───────
@@ -136,7 +144,9 @@ export function drawSpecular(ctx: Canvas2DLike, p: SpecularParams): void {
 
   for (const e of edges) {
     if (e.w <= 0 || e.h <= 0) continue;
-    const alphaA = Math.pow(Math.abs(e.dot), shininess) * glossAlpha;
+    // Inline Math.pow(Math.abs(e.dot), shininess) for hot path
+    const absDot = e.dot < 0 ? -e.dot : e.dot;
+    const alphaA = absDot ** shininess * glossAlpha;
     if (alphaA <= 1e-4) continue;
 
     ctx.save();
@@ -163,10 +173,12 @@ export function drawSpecular(ctx: Canvas2DLike, p: SpecularParams): void {
 
 /** Conic stops sampling |cos(2πt)|^n × glossAlpha over t ∈ [0, 1]. */
 function addPhongConicStops(grad: CanvasGradient, shininess: number, glossAlpha: number): void {
-  for (let i = 0; i <= CONIC_STOP_COUNT; i++) {
-    const t = i / CONIC_STOP_COUNT;
-    const c = Math.cos(2 * Math.PI * t);
-    const intensity = Math.pow(Math.abs(c), shininess) * glossAlpha;
+  const twoPi = 2 * Math.PI;
+  for (let i = 0; i <= STOP_COUNT; i++) {
+    const t = i / STOP_COUNT;
+    const c = Math.cos(twoPi * t);
+    // Inline Math.pow(Math.abs(c), shininess) for hot path
+    const intensity = (c < 0 ? -c : c) ** shininess * glossAlpha;
     grad.addColorStop(t, `rgba(255,255,255,${intensity})`);
   }
 }
