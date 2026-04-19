@@ -274,8 +274,8 @@ npm install
 npm run dev
 ```
 
-Open `http://localhost:8788/demo/parameter-lab/` to experiment with all
-parameters live (preset library, recorder/replay, renderer switcher).
+Visit [liquidglass-css.pages.dev/labs/](https://liquidglass-css.pages.dev/labs/)
+to experiment with parameters live, or run `cd site && npm run dev` locally.
 
 Quality gates:
 
