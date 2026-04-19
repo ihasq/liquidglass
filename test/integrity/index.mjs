@@ -254,8 +254,9 @@ async function runBuildTest() {
   const shaderStart = Date.now();
   const shaderFiles = [
     'src/shaders/gl2/ubo-fullscreen.vert.glsl',
-    'src/shaders/gl2/ubo-displacement.frag.glsl',
+    'src/shaders/gl2/ubo-displacement-core.frag.glsl',
     'src/shaders/wasm/index.ts',
+    'src/displacement/luts/generated.ts',
   ];
 
   const missingShaders = shaderFiles.filter(f => !existsSync(join(ROOT, f)));
