@@ -327,43 +327,70 @@ function InteractiveElement({ data, selected, onSelect, onDelete, onUpdate, glas
 
   const pos = computePosition();
 
-  useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
-      const state = dragStateRef.current;
-      if (!state.type || !previewAreaRef.current) return;
-      const rect = previewAreaRef.current.getBoundingClientRect();
-      const dx = e.clientX - state.startX, dy = e.clientY - state.startY;
+  // Unified handler for both mouse and touch move
+  const handlePointerMove = useCallback((clientX: number, clientY: number) => {
+    const state = dragStateRef.current;
+    if (!state.type || !previewAreaRef.current) return;
+    const rect = previewAreaRef.current.getBoundingClientRect();
+    const dx = clientX - state.startX, dy = clientY - state.startY;
 
-      if (state.type === 'drag') {
-        onUpdate({ x: `${state.startData.x + dx}px`, y: `${state.startData.y + dy}px` });
-      } else if (state.type === 'resize') {
-        const dir = state.resizeDir || '';
-        let newW = state.startData.w, newH = state.startData.h, newX = state.startData.x, newY = state.startData.y;
-        if (dir.includes('e')) { newW = Math.max(80, state.startData.w + dx); newX = state.startData.x + dx / 2; }
-        if (dir.includes('w')) { newW = Math.max(80, state.startData.w - dx); newX = state.startData.x + dx / 2; }
-        if (dir.includes('s')) { newH = Math.max(60, state.startData.h + dy); newY = state.startData.y + dy / 2; }
-        if (dir.includes('n')) { newH = Math.max(60, state.startData.h - dy); newY = state.startData.y + dy / 2; }
-        onUpdate({ w: newW, h: newH, x: `${newX}px`, y: `${newY}px` });
-      } else if (state.type === 'rotate') {
-        const centerX = rect.left + parseFloat(data.x.includes('%') ? String((parseFloat(data.x) / 100) * rect.width) : data.x);
-        const centerY = rect.top + parseFloat(data.y.includes('%') ? String((parseFloat(data.y) / 100) * rect.height) : data.y);
-        const angle = Math.atan2(e.clientY - centerY, e.clientX - centerX) * (180 / Math.PI) + 90;
-        onUpdate({ r: angle });
-      }
-    };
-    const handleMouseUp = () => { if (dragStateRef.current.type) { dragStateRef.current.type = null; setIsDragging(false); } };
-    window.addEventListener('mousemove', handleMouseMove);
-    window.addEventListener('mouseup', handleMouseUp);
-    return () => { window.removeEventListener('mousemove', handleMouseMove); window.removeEventListener('mouseup', handleMouseUp); };
+    if (state.type === 'drag') {
+      onUpdate({ x: `${state.startData.x + dx}px`, y: `${state.startData.y + dy}px` });
+    } else if (state.type === 'resize') {
+      const dir = state.resizeDir || '';
+      let newW = state.startData.w, newH = state.startData.h, newX = state.startData.x, newY = state.startData.y;
+      if (dir.includes('e')) { newW = Math.max(80, state.startData.w + dx); newX = state.startData.x + dx / 2; }
+      if (dir.includes('w')) { newW = Math.max(80, state.startData.w - dx); newX = state.startData.x + dx / 2; }
+      if (dir.includes('s')) { newH = Math.max(60, state.startData.h + dy); newY = state.startData.y + dy / 2; }
+      if (dir.includes('n')) { newH = Math.max(60, state.startData.h - dy); newY = state.startData.y + dy / 2; }
+      onUpdate({ w: newW, h: newH, x: `${newX}px`, y: `${newY}px` });
+    } else if (state.type === 'rotate') {
+      const centerX = rect.left + parseFloat(data.x.includes('%') ? String((parseFloat(data.x) / 100) * rect.width) : data.x);
+      const centerY = rect.top + parseFloat(data.y.includes('%') ? String((parseFloat(data.y) / 100) * rect.height) : data.y);
+      const angle = Math.atan2(clientY - centerY, clientX - centerX) * (180 / Math.PI) + 90;
+      onUpdate({ r: angle });
+    }
   }, [data, onUpdate, previewAreaRef]);
 
-  const startDrag = (e: MouseEvent, type: 'drag' | 'resize' | 'rotate', resizeDir?: string) => {
-    e.preventDefault(); e.stopPropagation();
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => handlePointerMove(e.clientX, e.clientY);
+    const handleTouchMove = (e: TouchEvent) => {
+      if (dragStateRef.current.type && e.touches.length === 1) {
+        e.preventDefault();
+        handlePointerMove(e.touches[0].clientX, e.touches[0].clientY);
+      }
+    };
+    const handleEnd = () => { if (dragStateRef.current.type) { dragStateRef.current.type = null; setIsDragging(false); } };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleEnd);
+    window.addEventListener('touchmove', handleTouchMove, { passive: false });
+    window.addEventListener('touchend', handleEnd);
+    window.addEventListener('touchcancel', handleEnd);
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleEnd);
+      window.removeEventListener('touchmove', handleTouchMove);
+      window.removeEventListener('touchend', handleEnd);
+      window.removeEventListener('touchcancel', handleEnd);
+    };
+  }, [handlePointerMove]);
+
+  const startDrag = (clientX: number, clientY: number, type: 'drag' | 'resize' | 'rotate', resizeDir?: string) => {
     const rect = previewAreaRef.current?.getBoundingClientRect(); if (!rect) return;
     const currentX = data.x.includes('%') ? (parseFloat(data.x) / 100) * rect.width : parseFloat(data.x);
     const currentY = data.y.includes('%') ? (parseFloat(data.y) / 100) * rect.height : parseFloat(data.y);
-    dragStateRef.current = { type, startX: e.clientX, startY: e.clientY, startData: { x: currentX, y: currentY, w: data.w, h: data.h, r: data.r }, resizeDir };
+    dragStateRef.current = { type, startX: clientX, startY: clientY, startData: { x: currentX, y: currentY, w: data.w, h: data.h, r: data.r }, resizeDir };
     setIsDragging(true); onSelect();
+  };
+
+  const handlePointerDown = (e: MouseEvent | TouchEvent, type: 'drag' | 'resize' | 'rotate', resizeDir?: string) => {
+    e.preventDefault(); e.stopPropagation();
+    if ('touches' in e && e.touches.length === 1) {
+      startDrag(e.touches[0].clientX, e.touches[0].clientY, type, resizeDir);
+    } else if ('clientX' in e) {
+      startDrag(e.clientX, e.clientY, type, resizeDir);
+    }
   };
 
   const glassStyle = useMemo(() => {
@@ -376,16 +403,24 @@ function InteractiveElement({ data, selected, onSelect, onDelete, onUpdate, glas
     return style;
   }, [data, glassParams, tintColor, tintOpacity]);
 
+  const onDragStart = (e: MouseEvent | TouchEvent) => {
+    if ((e.target as HTMLElement).dataset.action) return;
+    handlePointerDown(e, 'drag');
+  };
+
   return (
     <div ref={elementRef} class={`interactive-element ${selected ? 'selected' : ''} ${isDragging ? 'dragging' : ''}`}
-      style={{ left: `${pos.left}px`, top: `${pos.top}px` }}
-      onMouseDown={(e) => { if ((e.target as HTMLElement).dataset.action) return; startDrag(e as unknown as MouseEvent, 'drag'); }}>
+      style={{ left: `${pos.left}px`, top: `${pos.top}px`, touchAction: 'none' }}
+      onMouseDown={onDragStart as any} onTouchStart={onDragStart as any}>
       <div class="glass-panel" style={glassStyle}><h2>{data.title}</h2><p>{data.subtitle}</p></div>
-      <div class="delete-handle" data-action="delete" onClick={onDelete}>x</div>
-      <div class="rotate-handle" data-action="rotate" onMouseDown={(e) => { e.stopPropagation(); startDrag(e as unknown as MouseEvent, 'rotate'); }} />
+      <div class="delete-handle" data-action="delete" onClick={onDelete} onTouchEnd={(e) => { e.preventDefault(); onDelete(); }}>x</div>
+      <div class="rotate-handle" data-action="rotate"
+        onMouseDown={(e) => handlePointerDown(e as any, 'rotate')}
+        onTouchStart={(e) => handlePointerDown(e as any, 'rotate')} />
       {['nw', 'ne', 'sw', 'se', 'n', 's', 'e', 'w'].map((dir) => (
         <div key={dir} class={`resize-handle ${dir}`} data-action="resize" data-dir={dir}
-          onMouseDown={(e) => { e.stopPropagation(); startDrag(e as unknown as MouseEvent, 'resize', dir); }} />
+          onMouseDown={(e) => handlePointerDown(e as any, 'resize', dir)}
+          onTouchStart={(e) => handlePointerDown(e as any, 'resize', dir)} />
       ))}
       <div class="element-label">{`${Math.round(data.w)}x${Math.round(data.h)} @ ${Math.round(data.r)}deg`}</div>
     </div>
@@ -413,7 +448,7 @@ function ParameterLab() {
   const bgRef = useRef<HTMLDivElement>(null);
   const bgAnimRef = useRef({ x: 0, y: 0, lastTime: 0 });
   const [viewMode, setViewMode] = useState<'lens' | 'displacement'>('lens');
-  const [debugVisible, setDebugVisible] = useState(false);
+  const [overlaysVisible, setOverlaysVisible] = useState(true);
   const [fps, setFps] = useState(0);
   const [profilerEnabled, setProfilerEnabled] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false);
@@ -567,25 +602,29 @@ function ParameterLab() {
       </aside>
 
       <main class="preview-area" ref={previewAreaRef}>
-        <div class="bg-control">
-          <div class="bg-control-header">
-            <div class="bg-control-title">Background</div>
-            <button class={`bg-play-btn ${!bgPlaying ? 'paused' : ''}`} onClick={() => { setBgPlaying((p) => !p); bgAnimRef.current.lastTime = 0; }}>
-              {bgPlaying ? '\u23F8' : '\u25B6'}
-            </button>
-          </div>
-          <div class="bg-control-row"><label>Speed</label><input type="range" min={0} max={60} value={bgSpeed} onInput={(e) => setBgSpeed(parseInt((e.target as HTMLInputElement).value))} /><span class="value">{bgSpeed}</span></div>
-          <div class="bg-control-row"><label>Direction</label><input type="range" min={0} max={315} step={45} value={bgDirection} onInput={(e) => setBgDirection(parseInt((e.target as HTMLInputElement).value))} /><span class="value">{directionArrow}</span></div>
-          <div class="bg-control-row"><label>Brightness</label><input type="range" min={0} max={100} value={bgBrightness} onInput={(e) => setBgBrightness(parseInt((e.target as HTMLInputElement).value))} /><span class="value">{bgBrightness}%</span></div>
-        </div>
+        {overlaysVisible && (
+          <>
+            <div class="bg-control">
+              <div class="bg-control-header">
+                <div class="bg-control-title">Background</div>
+                <button class={`bg-play-btn ${!bgPlaying ? 'paused' : ''}`} onClick={() => { setBgPlaying((p) => !p); bgAnimRef.current.lastTime = 0; }}>
+                  {bgPlaying ? '\u23F8' : '\u25B6'}
+                </button>
+              </div>
+              <div class="bg-control-row"><label>Speed</label><input type="range" min={0} max={60} value={bgSpeed} onInput={(e) => setBgSpeed(parseInt((e.target as HTMLInputElement).value))} /><span class="value">{bgSpeed}</span></div>
+              <div class="bg-control-row"><label>Direction</label><input type="range" min={0} max={315} step={45} value={bgDirection} onInput={(e) => setBgDirection(parseInt((e.target as HTMLInputElement).value))} /><span class="value">{directionArrow}</span></div>
+              <div class="bg-control-row"><label>Brightness</label><input type="range" min={0} max={100} value={bgBrightness} onInput={(e) => setBgBrightness(parseInt((e.target as HTMLInputElement).value))} /><span class="value">{bgBrightness}%</span></div>
+            </div>
 
-        <div class="bg-control" style={{ top: '170px' }}>
-          <div class="bg-control-header"><div class="bg-control-title">View Mode</div></div>
-          <div class="view-mode-toggle">
-            <button class={`view-mode-btn ${viewMode === 'lens' ? 'active' : ''}`} onClick={() => setViewMode('lens')}>Lens</button>
-            <button class={`view-mode-btn ${viewMode === 'displacement' ? 'active' : ''}`} onClick={() => setViewMode('displacement')}>Displacement</button>
-          </div>
-        </div>
+            <div class="bg-control" style={{ top: '170px' }}>
+              <div class="bg-control-header"><div class="bg-control-title">View Mode</div></div>
+              <div class="view-mode-toggle">
+                <button class={`view-mode-btn ${viewMode === 'lens' ? 'active' : ''}`} onClick={() => setViewMode('lens')}>Lens</button>
+                <button class={`view-mode-btn ${viewMode === 'displacement' ? 'active' : ''}`} onClick={() => setViewMode('displacement')}>Displacement</button>
+              </div>
+            </div>
+          </>
+        )}
 
         {elements.map((el) => (
           <InteractiveElement key={el.id}
@@ -598,7 +637,7 @@ function ParameterLab() {
         ))}
       </main>
 
-      {debugVisible && (
+      {overlaysVisible && (
         <div class="stats">
           <div class="stat-row"><span class="stat-label">Elements:</span><span class="stat-value">{elements.length}</span></div>
           <div class="stat-row"><span class="stat-label">FPS:</span><span class="stat-value">{fps}</span></div>
@@ -620,17 +659,19 @@ function ParameterLab() {
         </div>
       )}
 
-      {debugVisible && __DEV__ && <PerformanceGraph enabled={profilerEnabled} />}
+      {overlaysVisible && __DEV__ && <PerformanceGraph enabled={profilerEnabled} />}
 
-      <button class="floating-toggle" onClick={() => setDebugVisible((v) => !v)} title={debugVisible ? 'Hide debug info' : 'Show debug info'}>
-        {debugVisible ? '\uD83D\uDC41' : '\uD83D\uDC41\u200D\uD83D\uDDE8'}
+      <button class="floating-toggle" onClick={() => setOverlaysVisible((v) => !v)} title={overlaysVisible ? 'Hide overlays' : 'Show overlays'}>
+        {overlaysVisible ? '\uD83D\uDC41' : '\uD83D\uDC41\u200D\uD83D\uDDE8'}
       </button>
 
-      <div class="code-output">
-        <div class="code-output-title">Generated CSS</div>
-        <code>{codeOutput}</code>
-        <button class="copy-btn" onClick={copyCode}>Copy to Clipboard</button>
-      </div>
+      {overlaysVisible && (
+        <div class="code-output">
+          <div class="code-output-title">Generated CSS</div>
+          <code>{codeOutput}</code>
+          <button class="copy-btn" onClick={copyCode}>Copy to Clipboard</button>
+        </div>
+      )}
     </>
   );
 }
