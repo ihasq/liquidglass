@@ -23,6 +23,7 @@ import {
   type LiquidGlassParams,
   type DisplacementRenderer,
 } from '../schema/parameters';
+import { getAccumulatedZRotation, normalizeAngle } from './transform';
 import type { PropertyDefinition, PropertyCallback } from '../css/engine';
 
 // ============================================================================
@@ -101,8 +102,16 @@ function getManager(): FilterManager {
  */
 const _trackedRadiusElements = new Set<HTMLElement>();
 const _lastSetRadius = new WeakMap<HTMLElement, number>();
+const _lastSetLocalAngle = new WeakMap<HTMLElement, number>();
 let _globalRadiusMO: MutationObserver | null = null;
 let _globalRadiusRO: ResizeObserver | null = null;
+
+// Transform tracking for specular angle compensation
+const _trackedTransformElements = new Set<HTMLElement>();
+let _globalTransformMO: MutationObserver | null = null;
+let _transformRAFId: number | null = null;
+let _lastTransformCheck = 0;
+const TRANSFORM_CHECK_INTERVAL = 16; // ~60fps for animated transforms
 
 function syncElementRadius(element: HTMLElement): void {
   const cs = getComputedStyle(element);
@@ -110,6 +119,38 @@ function syncElementRadius(element: HTMLElement): void {
   if (_lastSetRadius.get(element) === r) return;
   _lastSetRadius.set(element, r);
   element.style.setProperty('--liquidglass-radius', `${r}px`);
+}
+
+/**
+ * Calculate and set the compensated specular angle for an element.
+ *
+ * The specular angle is adjusted to account for the element's accumulated
+ * Z-axis rotation, so the light appears fixed in world space regardless
+ * of how the element is rotated.
+ *
+ * Formula: localAngle = worldAngle - accumulatedZRotation
+ */
+function syncElementSpecularAngle(element: HTMLElement): void {
+  const params = elementParams.get(element);
+  if (!params) return;
+
+  // Get user-specified world-space light angle (default: -60deg)
+  const worldAngle = params.specularAngle ?? DEFAULT_PARAMS.specularAngle;
+
+  // Get accumulated Z rotation from element and ancestors
+  const rotation = getAccumulatedZRotation(element);
+
+  // Calculate local-space angle (compensate for element rotation)
+  const localAngle = normalizeAngle(worldAngle - rotation.degrees);
+
+  // Skip update if unchanged (avoid triggering CSS Paint repaint)
+  const lastAngle = _lastSetLocalAngle.get(element);
+  if (lastAngle !== undefined && Math.abs(lastAngle - localAngle) < 0.01) {
+    return;
+  }
+
+  _lastSetLocalAngle.set(element, localAngle);
+  element.style.setProperty('--liquidglass-specular-angle-local', `${localAngle}deg`);
 }
 
 function ensureGlobalRadiusObservers(): void {
@@ -130,6 +171,123 @@ function ensureGlobalRadiusObservers(): void {
       if (_trackedRadiusElements.has(t)) syncElementRadius(t);
     }
   });
+}
+
+/**
+ * Ensure global transform observer is set up.
+ *
+ * Uses MutationObserver on document.body to detect style/class changes
+ * that might affect transforms. When a change is detected on any element,
+ * we check if it's a tracked element OR an ancestor of a tracked element,
+ * and recalculate specular angles accordingly.
+ */
+function ensureGlobalTransformObservers(): void {
+  if (_globalTransformMO) return;
+
+  _globalTransformMO = new MutationObserver((mutations) => {
+    // Collect elements that might have changed transforms
+    const changedElements = new Set<HTMLElement>();
+
+    for (const m of mutations) {
+      if (m.type !== 'attributes') continue;
+      if (m.attributeName !== 'style' && m.attributeName !== 'class') continue;
+
+      const target = m.target;
+      if (!(target instanceof HTMLElement)) continue;
+
+      changedElements.add(target);
+    }
+
+    if (changedElements.size === 0) return;
+
+    // For each changed element, check if it affects any tracked element
+    // (either the element itself or as an ancestor)
+    for (const tracked of _trackedTransformElements) {
+      let needsUpdate = false;
+
+      // Check if tracked element itself changed
+      if (changedElements.has(tracked)) {
+        needsUpdate = true;
+      } else {
+        // Check if any ancestor changed
+        let ancestor: HTMLElement | null = tracked.parentElement;
+        while (ancestor && !needsUpdate) {
+          if (changedElements.has(ancestor)) {
+            needsUpdate = true;
+          }
+          ancestor = ancestor.parentElement;
+        }
+      }
+
+      if (needsUpdate) {
+        syncElementSpecularAngle(tracked);
+      }
+    }
+  });
+
+  // Observe entire body for style/class changes
+  _globalTransformMO.observe(document.body, {
+    attributes: true,
+    attributeFilter: ['style', 'class'],
+    subtree: true,
+  });
+
+  // Start RAF polling for animated transforms
+  startTransformPolling();
+}
+
+/**
+ * Poll for animated transforms using requestAnimationFrame.
+ *
+ * CSS animations and transitions don't trigger MutationObserver,
+ * so we need to poll periodically to detect rotation changes.
+ * Uses throttling to avoid excessive getComputedStyle calls.
+ */
+function startTransformPolling(): void {
+  if (_transformRAFId !== null) return;
+
+  const poll = () => {
+    const now = performance.now();
+
+    // Throttle to ~60fps
+    if (now - _lastTransformCheck >= TRANSFORM_CHECK_INTERVAL) {
+      _lastTransformCheck = now;
+
+      for (const element of _trackedTransformElements) {
+        syncElementSpecularAngle(element);
+      }
+    }
+
+    _transformRAFId = requestAnimationFrame(poll);
+  };
+
+  _transformRAFId = requestAnimationFrame(poll);
+}
+
+function stopTransformPolling(): void {
+  if (_transformRAFId !== null) {
+    cancelAnimationFrame(_transformRAFId);
+    _transformRAFId = null;
+  }
+}
+
+function trackTransform(element: HTMLElement): void {
+  if (_trackedTransformElements.has(element)) return;
+  ensureGlobalTransformObservers();
+  _trackedTransformElements.add(element);
+  syncElementSpecularAngle(element); // Initial sync
+}
+
+function untrackTransform(element: HTMLElement): void {
+  if (!_trackedTransformElements.has(element)) return;
+  _trackedTransformElements.delete(element);
+  _lastSetLocalAngle.delete(element);
+  element.style.removeProperty('--liquidglass-specular-angle-local');
+
+  // Stop polling if no elements are tracked
+  if (_trackedTransformElements.size === 0) {
+    stopTransformPolling();
+  }
 }
 
 function trackRadius(element: HTMLElement): void {
@@ -188,16 +346,20 @@ function syncElement(element: HTMLElement): void {
 
     if (attachedElements.has(element)) {
       manager.update(element, fullParams);
+      // Re-sync specular angle when params change (user might have changed specularAngle)
+      syncElementSpecularAngle(element);
     } else {
       manager.attach(element, fullParams);
       attachedElements.add(element);
       applySpecularPaint(element);
       trackRadius(element);
+      trackTransform(element);
     }
   } else {
     if (attachedElements.has(element)) {
       removeSpecularPaint(element);
       untrackRadius(element);
+      untrackTransform(element);
       manager.detach(element);
       attachedElements.delete(element);
     }
@@ -300,14 +462,22 @@ function ensureSpecularWorklet(): Promise<void> {
   //     (see initCSSPropertiesV2 → engine.start), which injects an
   //     `@property` <style> rule per param using the schema's `syntax`
   //     and `unit`. The worklet observes those user-facing names directly.
-  //   • The only non-schema CSS variable we need is --liquidglass-radius
-  //     (driver-mirrored from element.borderRadius via MutationObserver),
-  //     so we register just that one here via CSS.registerProperty.
+  //   • Non-schema CSS variables needed:
+  //     - --liquidglass-radius: mirrored from element.borderRadius
+  //     - --liquidglass-specular-angle-local: transform-compensated specular angle
   if (typeof CSS !== 'undefined' && (CSS as { registerProperty?: unknown }).registerProperty) {
+    const registerProp = (CSS as unknown as {
+      registerProperty: (d: { name: string; syntax: string; inherits: boolean; initialValue?: string }) => void
+    }).registerProperty;
+
     try {
-      (CSS as unknown as { registerProperty: (d: { name: string; syntax: string; inherits: boolean; initialValue?: string }) => void })
-        .registerProperty({ name: '--liquidglass-radius', syntax: '<length>', inherits: true, initialValue: '0px' });
+      registerProp({ name: '--liquidglass-radius', syntax: '<length>', inherits: true, initialValue: '0px' });
     } catch { /* already registered (HMR/double-init) */ }
+
+    try {
+      // Transform-compensated specular angle (set by driver, read by worklet)
+      registerProp({ name: '--liquidglass-specular-angle-local', syntax: '<angle>', inherits: false, initialValue: '-60deg' });
+    } catch { /* already registered */ }
   }
 
   // CSS.paintWorklet is part of the Houdini Paint API and not in lib.dom yet.

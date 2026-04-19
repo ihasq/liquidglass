@@ -128,6 +128,7 @@ class LiquidGlassSpecular {
   static get inputProperties() {
     return [
       '--liquidglass-specular-angle',
+      '--liquidglass-specular-angle-local', // Transform-compensated angle (set by driver)
       '--liquidglass-specular-shininess',
       '--liquidglass-specular-width',
       '--liquidglass-gloss',
@@ -142,7 +143,12 @@ class LiquidGlassSpecular {
   paint(ctx, geom, props) {
     const w = geom.width;
     const h = geom.height;
-    const angleDeg = cssNumber(props.get('--liquidglass-specular-angle'), -60);
+    // Prefer local (transform-compensated) angle, fall back to world angle
+    const localAngleRaw = props.get('--liquidglass-specular-angle-local');
+    const worldAngleRaw = props.get('--liquidglass-specular-angle');
+    const angleDeg = localAngleRaw && String(localAngleRaw).trim() !== ''
+      ? cssNumber(localAngleRaw, -60)
+      : cssNumber(worldAngleRaw, -60);
     const shininess = Math.max(1, cssNumber(props.get('--liquidglass-specular-shininess'), 8));
     const bezelWidth = Math.max(1, cssNumber(props.get('--liquidglass-specular-width'), 2));
     const gloss100 = cssNumber(props.get('--liquidglass-gloss'), 50);

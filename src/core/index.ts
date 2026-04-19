@@ -42,3 +42,13 @@ export { supportsBackdropSvgFilter } from '../svg';
 
 // Re-export preload functions from displacement module
 export { preloadWasm, preloadWebGL2, preloadWebGPU } from '../displacement';
+
+// Transform utilities for specular angle compensation
+export {
+  getAccumulatedZRotation,
+  getElementZRotation,
+  hasAnyTransform,
+  normalizeAngle,
+} from './transform';
+
+export type { ZRotationResult } from './transform';
