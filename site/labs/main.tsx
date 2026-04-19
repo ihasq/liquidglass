@@ -448,7 +448,7 @@ function ParameterLab() {
   const bgRef = useRef<HTMLDivElement>(null);
   const bgAnimRef = useRef({ x: 0, y: 0, lastTime: 0 });
   const [viewMode, setViewMode] = useState<'lens' | 'displacement'>('lens');
-  const [overlaysVisible, setOverlaysVisible] = useState(true);
+  const [overlaysVisible, setOverlaysVisible] = useState(false);
   const [fps, setFps] = useState(0);
   const [profilerEnabled, setProfilerEnabled] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false);
