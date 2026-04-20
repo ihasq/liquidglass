@@ -53,6 +53,9 @@
       "default": "./dist/env.js"
     }
   },
+  "workspaces": [
+    "site"
+  ],
   "files": [
     "dist"
   ],
@@ -61,7 +64,7 @@
     "prebuild": "node scripts/generate-displacement-luts.mjs",
     "build": "tsc && vite build",
     "generate-luts": "node scripts/generate-displacement-luts.mjs",
-    "build:site": "npm run build && cd site && npm install && npm run build",
+    "build:site": "npm run build && npm run build -w site",
     "preview": "vite preview",
     "test": "node test/integrity/index.mjs",
     "test:types": "node test/integrity/index.mjs --only=types",
@@ -73,8 +76,7 @@
     "asbuild": "npm run asbuild:debug && npm run asbuild:release",
     "asbuild:debug": "asc src/shaders/wasm/index.ts --target debug",
     "asbuild:release": "asc src/shaders/wasm/index.ts --target release",
-    "start": "npx serve .",
-    "postpublish": "sleep 10 && cd site && npm install liquidglass.css@$npm_package_version && cd .. && git add site/package.json site/package-lock.json && git commit -m \"chore(site): update liquidglass.css to $npm_package_version\""
+    "start": "npx serve ."
   },
   "devDependencies": {
     "@preact/preset-vite": "^2.10.5",
