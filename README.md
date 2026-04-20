@@ -100,6 +100,17 @@ import "liquidglass.css";
 </div>
 ```
 
+### Disable CSS Engine
+
+If you only need Tailwind utilities without the CSS property engine
+(e.g., SSR or custom initialization), disable it declaratively:
+
+```css
+@plugin "liquidglass.css" {
+  disable-css: true;
+}
+```
+
 All parameters are available as utilities:
 
 | Utility | CSS Property |
