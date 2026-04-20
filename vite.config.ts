@@ -68,6 +68,8 @@ export default defineConfig(({ mode }) => {
         entry: {
           liquidglass: resolve(__dirname, 'src/liquidglass.ts'),
           stylex: resolve(__dirname, 'src/stylex.ts'),
+          emotion: resolve(__dirname, 'src/emotion.ts'),
+          'styled-components': resolve(__dirname, 'src/styled-components.ts'),
           schema: resolve(__dirname, 'src/schema/parameters.ts'),
           env: resolve(__dirname, 'src/env.ts'),
         },

@@ -159,6 +159,48 @@ const styles = stylex.create({
 - `glass.refraction()`, `glass.thickness()`, etc. — individual properties
 - `glass.presets.subtle`, `glass.presets.frosted`, etc. — preset styles
 
+## Emotion
+
+Single import — CSS engine auto-initializes.
+
+```tsx
+import { css } from '@emotion/react';
+import { glass } from 'liquidglass.css/emotion';
+
+const cardStyle = css({
+  ...glass({ refraction: '80%', thickness: '50%' }),
+  borderRadius: '20px',
+});
+
+const frostedStyle = css({
+  ...glass.presets.frosted,
+  borderRadius: '16px',
+});
+
+<div css={cardStyle}>Content</div>
+```
+
+## styled-components
+
+Single import — CSS engine auto-initializes.
+
+```tsx
+import styled from 'styled-components';
+import { glass } from 'liquidglass.css/styled-components';
+
+// Object syntax
+const Card = styled.div({
+  ...glass({ refraction: '80%', thickness: '50%' }),
+  borderRadius: '20px',
+});
+
+// Template literal syntax
+const FrostedCard = styled.div`
+  ${glass.presets.frosted}
+  border-radius: 16px;
+`;
+```
+
 ## Parameters
 
 All parameters are registered as typed CSS Custom Properties. Each

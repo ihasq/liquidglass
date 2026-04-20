@@ -17,6 +17,16 @@
       "import": "./dist/stylex.js",
       "default": "./dist/stylex.js"
     },
+    "./emotion": {
+      "types": "./dist/emotion.d.ts",
+      "import": "./dist/emotion.js",
+      "default": "./dist/emotion.js"
+    },
+    "./styled-components": {
+      "types": "./dist/styled-components.d.ts",
+      "import": "./dist/styled-components.js",
+      "default": "./dist/styled-components.js"
+    },
     "./schema": {
       "types": "./dist/schema.d.ts",
       "import": "./dist/schema.js",
