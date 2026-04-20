@@ -127,12 +127,12 @@ function cssNumber(v, fallback) {
 class LiquidGlassSpecular {
   static get inputProperties() {
     return [
-      '--liquidglass-specular-angle',
-      '--liquidglass-specular-angle-local', // Transform-compensated angle (set by driver)
-      '--liquidglass-specular-shininess',
-      '--liquidglass-specular-width',
-      '--liquidglass-gloss',
-      '--liquidglass-radius',
+      '--glass-specular-angle',
+      '--glass-specular-angle-local', // Transform-compensated angle (set by driver)
+      '--glass-specular-shininess',
+      '--glass-specular-width',
+      '--glass-gloss',
+      '--glass-radius',
     ];
   }
 
@@ -144,15 +144,15 @@ class LiquidGlassSpecular {
     const w = geom.width;
     const h = geom.height;
     // Prefer local (transform-compensated) angle, fall back to world angle
-    const localAngleRaw = props.get('--liquidglass-specular-angle-local');
-    const worldAngleRaw = props.get('--liquidglass-specular-angle');
+    const localAngleRaw = props.get('--glass-specular-angle-local');
+    const worldAngleRaw = props.get('--glass-specular-angle');
     const angleDeg = localAngleRaw && String(localAngleRaw).trim() !== ''
       ? cssNumber(localAngleRaw, -60)
       : cssNumber(worldAngleRaw, -60);
-    const shininess = Math.max(1, cssNumber(props.get('--liquidglass-specular-shininess'), 8));
-    const bezelWidth = Math.max(1, cssNumber(props.get('--liquidglass-specular-width'), 2));
-    const gloss100 = cssNumber(props.get('--liquidglass-gloss'), 50);
-    const radius = Math.max(1, cssNumber(props.get('--liquidglass-radius'), 24));
+    const shininess = Math.max(1, cssNumber(props.get('--glass-specular-shininess'), 8));
+    const bezelWidth = Math.max(1, cssNumber(props.get('--glass-specular-width'), 2));
+    const gloss100 = cssNumber(props.get('--glass-gloss'), 50);
+    const radius = Math.max(1, cssNumber(props.get('--glass-radius'), 24));
 
     drawSpecular(ctx, {
       w, h,

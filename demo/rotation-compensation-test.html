@@ -55,13 +55,13 @@
       padding: 20px;
 
       /* LiquidGlass properties */
-      --liquidglass-refraction: 80%;
-      --liquidglass-thickness: 60%;
-      --liquidglass-gloss: 80%;
-      --liquidglass-softness: 15%;
-      --liquidglass-specular-angle: -60deg;
-      --liquidglass-specular-width: 3px;
-      --liquidglass-specular-shininess: 12;
+      --glass-refraction: 80%;
+      --glass-thickness: 60%;
+      --glass-gloss: 80%;
+      --glass-softness: 15%;
+      --glass-specular-angle: -60deg;
+      --glass-specular-width: 3px;
+      --glass-specular-shininess: 12;
     }
 
     /* Rotation examples */
@@ -314,7 +314,7 @@
       lightAngleValue.textContent = angle;
 
       boxes.forEach(box => {
-        box.style.setProperty('--liquidglass-specular-angle', `${angle}deg`);
+        box.style.setProperty('--glass-specular-angle', `${angle}deg`);
       });
     });
 
@@ -332,9 +332,9 @@
 
       const rotation = getAccumulatedZRotation(animatedBox);
       const localAngle = getComputedStyle(animatedBox)
-        .getPropertyValue('--liquidglass-specular-angle-local').trim();
+        .getPropertyValue('--glass-specular-angle-local').trim();
       const worldAngle = getComputedStyle(animatedBox)
-        .getPropertyValue('--liquidglass-specular-angle').trim();
+        .getPropertyValue('--glass-specular-angle').trim();
 
       debugOutput.textContent = `Animated Box:
   World Angle: ${worldAngle}

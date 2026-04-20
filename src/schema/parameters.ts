@@ -80,7 +80,7 @@ export type ParameterDef = NumericParameterDef | EnumParameterDef;
 export const PARAMETERS = {
   refraction: {
     type: 'number',
-    cssProperty: 'liquidglass-refraction',
+    cssProperty: 'glass-refraction',
     // Accept both 100 and 100% so existing CSS keeps working while typed
     // values are now first-class.
     syntax: '<percentage> | <number>',
@@ -93,7 +93,7 @@ export const PARAMETERS = {
   },
   thickness: {
     type: 'number',
-    cssProperty: 'liquidglass-thickness',
+    cssProperty: 'glass-thickness',
     syntax: '<percentage> | <number>',
     inherits: true,
     default: 50,
@@ -104,7 +104,7 @@ export const PARAMETERS = {
   },
   gloss: {
     type: 'number',
-    cssProperty: 'liquidglass-gloss',
+    cssProperty: 'glass-gloss',
     syntax: '<percentage> | <number>',
     inherits: true,
     default: 100,
@@ -115,7 +115,7 @@ export const PARAMETERS = {
   },
   softness: {
     type: 'number',
-    cssProperty: 'liquidglass-softness',
+    cssProperty: 'glass-softness',
     syntax: '<percentage> | <number>',
     inherits: true,
     default: 10,
@@ -126,7 +126,7 @@ export const PARAMETERS = {
   },
   saturation: {
     type: 'number',
-    cssProperty: 'liquidglass-saturation',
+    cssProperty: 'glass-saturation',
     syntax: '<percentage> | <number>',
     inherits: true,
     default: 45,
@@ -137,7 +137,7 @@ export const PARAMETERS = {
   },
   dispersion: {
     type: 'number',
-    cssProperty: 'liquidglass-dispersion',
+    cssProperty: 'glass-dispersion',
     syntax: '<percentage> | <number>',
     inherits: true,
     default: 30,
@@ -148,7 +148,7 @@ export const PARAMETERS = {
   },
   specularAngle: {
     type: 'number',
-    cssProperty: 'liquidglass-specular-angle',
+    cssProperty: 'glass-specular-angle',
     syntax: '<angle> | <number>',
     inherits: true,
     default: -60,
@@ -159,7 +159,7 @@ export const PARAMETERS = {
   },
   specularWidth: {
     type: 'number',
-    cssProperty: 'liquidglass-specular-width',
+    cssProperty: 'glass-specular-width',
     syntax: '<length> | <number>',
     inherits: true,
     default: 2,
@@ -170,7 +170,7 @@ export const PARAMETERS = {
   },
   specularShininess: {
     type: 'number',
-    cssProperty: 'liquidglass-specular-shininess',
+    cssProperty: 'glass-specular-shininess',
     syntax: '<number>',
     inherits: true,
     default: 8,
@@ -181,7 +181,7 @@ export const PARAMETERS = {
   },
   displacementResolution: {
     type: 'number',
-    cssProperty: 'liquidglass-displacement-resolution',
+    cssProperty: 'glass-displacement-resolution',
     syntax: '<percentage> | <number>',
     inherits: true,
     default: 40,
@@ -192,7 +192,7 @@ export const PARAMETERS = {
   },
   displacementMinResolution: {
     type: 'number',
-    cssProperty: 'liquidglass-displacement-min-resolution',
+    cssProperty: 'glass-displacement-min-resolution',
     syntax: '<percentage> | <number>',
     inherits: true,
     default: 10,
@@ -203,7 +203,7 @@ export const PARAMETERS = {
   },
   displacementSmoothing: {
     type: 'number',
-    cssProperty: 'liquidglass-displacement-smoothing',
+    cssProperty: 'glass-displacement-smoothing',
     syntax: '<percentage> | <number>',
     inherits: true,
     default: 0,
@@ -214,7 +214,7 @@ export const PARAMETERS = {
   },
   enableOptimization: {
     type: 'number',
-    cssProperty: 'liquidglass-enable-optimization',
+    cssProperty: 'glass-enable-optimization',
     syntax: '<integer>',
     inherits: true,
     default: 1,
@@ -226,7 +226,7 @@ export const PARAMETERS = {
   },
   displacementRefreshInterval: {
     type: 'number',
-    cssProperty: 'liquidglass-displacement-refresh-interval',
+    cssProperty: 'glass-displacement-refresh-interval',
     syntax: '<integer>',
     inherits: true,
     default: 12,
@@ -238,7 +238,7 @@ export const PARAMETERS = {
   },
   displacementRenderer: {
     type: 'enum',
-    cssProperty: 'liquidglass-displacement-renderer',
+    cssProperty: 'glass-displacement-renderer',
     syntax: 'gpu | gl2 | wasm',
     inherits: true,
     default: 'gpu',

@@ -323,10 +323,10 @@ async function testCSSPropertyConsistency(Z3, parameters) {
     // =========================================================================
     // Test: CSS property name follows convention
     // =========================================================================
-    if (param.cssProperty.startsWith('liquidglass-')) {
+    if (param.cssProperty.startsWith('glass-')) {
       pass(`${name}-css-prefix`, `CSS property '${param.cssProperty}' has correct prefix`);
     } else {
-      fail(`${name}-css-prefix`, `CSS property '${param.cssProperty}' missing 'liquidglass-' prefix`);
+      fail(`${name}-css-prefix`, `CSS property '${param.cssProperty}' missing 'glass-' prefix`);
     }
 
     // =========================================================================

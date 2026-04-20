@@ -1,7 +1,7 @@
 /**
  * Liquid Glass - Auto-initialization entry point
  *
- * Import this file to enable --liquidglass-* CSS Custom Properties
+ * Import this file to enable --glass-* CSS Custom Properties
  *
  * Usage:
  * ```js
@@ -11,7 +11,7 @@
  * Then use:
  * ```css
  * .my-element {
- *   --liquidglass-refraction: 80;
+ *   --glass-refraction: 80;
  *   border-radius: 20px;
  * }
  * ```

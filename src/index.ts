@@ -4,8 +4,8 @@
  * CSS Custom Properties:
  * ```css
  * .glass-panel {
- *   --liquidglass-refraction: 80;
- *   --liquidglass-thickness: 50;
+ *   --glass-refraction: 80;
+ *   --glass-thickness: 50;
  *   border-radius: 20px;
  * }
  * ```

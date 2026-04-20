@@ -67,13 +67,14 @@ export default defineConfig(({ mode }) => {
       lib: {
         entry: {
           liquidglass: resolve(__dirname, 'src/liquidglass.ts'),
+          tailwind: resolve(__dirname, 'src/tailwind.ts'),
           schema: resolve(__dirname, 'src/schema/parameters.ts'),
           env: resolve(__dirname, 'src/env.ts'),
         },
         formats: ['es'],
       },
       rollupOptions: {
-        external: [],
+        external: ['tailwindcss/plugin'],
         output: {
           globals: {},
           entryFileNames: '[name].js',

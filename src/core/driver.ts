@@ -1,7 +1,7 @@
 /**
  * CSS Properties Driver - Built on CSS Property Engine
  *
- * Bridges CSS Custom Properties (--liquidglass-*) with the FilterManager.
+ * Bridges CSS Custom Properties (--glass-*) with the FilterManager.
  * Uses the generic CSS Property Engine for property observation and callbacks.
  *
  * Parameter definitions are derived from the centralized schema.
@@ -79,7 +79,7 @@ function getManager(): FilterManager {
 
 /**
  * Mirror each tracked element's computed border-radius into the
- * `--liquidglass-radius` custom property so the CSS Paint Worklet
+ * `--glass-radius` custom property so the CSS Paint Worklet
  * (which has no DOM/getComputedStyle access) can read it for the
  * specular ring geometry.
  *
@@ -94,7 +94,7 @@ function getManager(): FilterManager {
  *   • ResizeObserver  — catches percentage-based radii that resolve
  *     differently when the box size changes.
  *
- * Re-entrancy: setting `--liquidglass-radius` itself mutates the style
+ * Re-entrancy: setting `--glass-radius` itself mutates the style
  * attribute and would re-fire the MutationObserver. We break the loop
  * by caching the last value we wrote and skipping when unchanged
  * (the new computed border-top-left-radius is the same after our own
@@ -118,7 +118,7 @@ function syncElementRadius(element: HTMLElement): void {
   const r = parseFloat(cs.borderTopLeftRadius) || 0;
   if (_lastSetRadius.get(element) === r) return;
   _lastSetRadius.set(element, r);
-  element.style.setProperty('--liquidglass-radius', `${r}px`);
+  element.style.setProperty('--glass-radius', `${r}px`);
 }
 
 /**
@@ -150,7 +150,7 @@ function syncElementSpecularAngle(element: HTMLElement): void {
   }
 
   _lastSetLocalAngle.set(element, localAngle);
-  element.style.setProperty('--liquidglass-specular-angle-local', `${localAngle}deg`);
+  element.style.setProperty('--glass-specular-angle-local', `${localAngle}deg`);
 }
 
 function ensureGlobalRadiusObservers(): void {
@@ -282,7 +282,7 @@ function untrackTransform(element: HTMLElement): void {
   if (!_trackedTransformElements.has(element)) return;
   _trackedTransformElements.delete(element);
   _lastSetLocalAngle.delete(element);
-  element.style.removeProperty('--liquidglass-specular-angle-local');
+  element.style.removeProperty('--glass-specular-angle-local');
 
   // Stop polling if no elements are tracked
   if (_trackedTransformElements.size === 0) {
@@ -307,7 +307,7 @@ function untrackRadius(element: HTMLElement): void {
   // not (it observes a fixed root). The Set check above causes orphan
   // notifications to be ignored, and the MO is GC'd when the page closes.
   _globalRadiusRO?.unobserve(element);
-  element.style.removeProperty('--liquidglass-radius');
+  element.style.removeProperty('--glass-radius');
 }
 
 /**
@@ -463,20 +463,20 @@ function ensureSpecularWorklet(): Promise<void> {
   //     `@property` <style> rule per param using the schema's `syntax`
   //     and `unit`. The worklet observes those user-facing names directly.
   //   • Non-schema CSS variables needed:
-  //     - --liquidglass-radius: mirrored from element.borderRadius
-  //     - --liquidglass-specular-angle-local: transform-compensated specular angle
+  //     - --glass-radius: mirrored from element.borderRadius
+  //     - --glass-specular-angle-local: transform-compensated specular angle
   if (typeof CSS !== 'undefined' && (CSS as { registerProperty?: unknown }).registerProperty) {
     const registerProp = (CSS as unknown as {
       registerProperty: (d: { name: string; syntax: string; inherits: boolean; initialValue?: string }) => void
     }).registerProperty;
 
     try {
-      registerProp({ name: '--liquidglass-radius', syntax: '<length>', inherits: true, initialValue: '0px' });
+      registerProp({ name: '--glass-radius', syntax: '<length>', inherits: true, initialValue: '0px' });
     } catch { /* already registered (HMR/double-init) */ }
 
     try {
       // Transform-compensated specular angle (set by driver, read by worklet)
-      registerProp({ name: '--liquidglass-specular-angle-local', syntax: '<angle>', inherits: false, initialValue: '-60deg' });
+      registerProp({ name: '--glass-specular-angle-local', syntax: '<angle>', inherits: false, initialValue: '-60deg' });
     } catch { /* already registered */ }
   }
 
@@ -569,7 +569,7 @@ export function destroyCSSPropertiesV2(): void {
  * Then use CSS:
  * ```css
  * .my-element {
- *   --liquidglass-refraction: 80;
+ *   --glass-refraction: 80;
  * }
  * ```
  */

@@ -57,7 +57,7 @@
       <div id="test-el-1" class="test-element"></div>
       <div id="test-el-2" class="test-element"></div>
       <div id="test-el-3" class="test-element"></div>
-      <div id="test-el-4" class="test-element" style="--liquidglass-refraction: 80;"></div>
+      <div id="test-el-4" class="test-element" style="--glass-refraction: 80;"></div>
     </div>
   </div>
 
@@ -210,7 +210,7 @@
 
     test('getCSSPropertyName returns correct format', () => {
       const name = LG.getCSSPropertyName('refraction');
-      assert(name.startsWith('--liquidglass-'), `Should start with --liquidglass-, got ${name}`);
+      assert(name.startsWith('--glass-'), `Should start with --glass-, got ${name}`);
     });
 
     test('getAllCSSPropertyNames returns all properties', () => {
@@ -219,7 +219,7 @@
     });
 
     test('getParameterByCSSProperty finds parameters', () => {
-      const result = LG.getParameterByCSSProperty('liquidglass-refraction');
+      const result = LG.getParameterByCSSProperty('glass-refraction');
       assertDefined(result, 'Should find refraction parameter');
       assertEqual(result.name, 'refraction');
     });
@@ -667,8 +667,8 @@
       await LG.initCSSProperties();
 
       const el = document.getElementById('test-el-4');
-      el.style.setProperty('--liquidglass-refraction', '70');
-      el.style.setProperty('--liquidglass-thickness', '50');
+      el.style.setProperty('--glass-refraction', '70');
+      el.style.setProperty('--glass-thickness', '50');
 
       // Wait for observation
       await new Promise(r => setTimeout(r, 200));
