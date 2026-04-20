@@ -123,4 +123,19 @@ export type { StreamingLutUpdateGL2, StreamingLutResourcesGL2 } from './streamin
 export { smoothstep, smootherstep, clamp } from './math/interpolation';
 export { getProfile } from './math/profiles';
 export type { ProfileType } from './math/profiles';
-export { calculateRefraction, calculateDisplacementVector } from './math/snell';
+export {
+  calculateRefraction,
+  calculateDisplacementVector,
+  // Chromatic dispersion (color aberration)
+  calculateRefractiveIndex,
+  calculateAbbeNumber,
+  calculateChromaticRefraction,
+  calculateChromaticDisplacementVector,
+  GLASS_PRESETS,
+  RGB_WAVELENGTHS,
+} from './math/snell';
+export type {
+  RefractionResult,
+  ChromaticRefractionResult,
+  CauchyCoefficients,
+} from './math/snell';

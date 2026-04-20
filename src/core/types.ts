@@ -55,11 +55,23 @@ export interface FilterElementRefs {
   slopeBlur: SVGFEGaussianBlurElement;
   slopeMagnitude: SVGFEColorMatrixElement;
 
-  // Displacement map application
+  // Displacement map application (standard path)
   displacement: SVGFEDisplacementMapElement;
 
-  // Saturation
-  saturate: SVGFEColorMatrixElement;
+  // Chromatic aberration path (R/G/B channel separation)
+  // Created only when chromaticAberration > 0
+  extractR: SVGFEColorMatrixElement;
+  extractG: SVGFEColorMatrixElement;
+  extractB: SVGFEColorMatrixElement;
+  displaceR: SVGFEDisplacementMapElement;
+  displaceG: SVGFEDisplacementMapElement;
+  displaceB: SVGFEDisplacementMapElement;
+  blendRG: SVGFECompositeElement;         // R+G channel addition (arithmetic k2=1, k3=1)
+  blendRGB: SVGFECompositeElement;        // RG+B channel addition (final chromatic result)
+
+  // Color tint (applied after displacement)
+  colorFlood: SVGFEFloodElement;
+  colorBlend: SVGFEBlendElement;
 
   // NOTE: specular is rendered via CSS Paint API (specular-worklet.js),
   // not via the SVG filter chain. No specular-related filter primitives.

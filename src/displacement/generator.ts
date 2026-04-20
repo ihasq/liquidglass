@@ -323,8 +323,8 @@ export function generateDisplacementMap(options: DisplacementMapOptions): Displa
       // 0 = -1 (max negative), 255 = +1 (max positive)
       data[idx] = clamp(Math.round(128 + dispX * 127), 0, 255);     // R = X
       data[idx + 1] = clamp(Math.round(128 + dispY * 127), 0, 255); // G = Y
-      data[idx + 2] = 0;
-      data[idx + 3] = 255;
+      data[idx + 2] = 0;   // B = unused
+      data[idx + 3] = 255; // A = opaque
     }
   }
 

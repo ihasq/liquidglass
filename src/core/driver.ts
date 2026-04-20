@@ -20,6 +20,7 @@ import {
   getTransformFunction,
   type ParameterName,
   type NumericParameterName,
+  type ColorParameterName,
   type LiquidGlassParams,
   type DisplacementRenderer,
 } from '../schema/parameters';
@@ -475,6 +476,27 @@ const rendererCallback: PropertyCallback = (element, value) => {
   }
 };
 
+function createColorCallback(paramKey: ColorParameterName): PropertyCallback {
+  return (element: HTMLElement, value: string) => {
+    const params = getOrCreateParams(element);
+    // CSS color values are passed through as-is (browser already validated via @property)
+    (params as Record<string, string>)[paramKey] = value.trim();
+    syncElement(element);
+  };
+}
+
+function createColorProperty(paramKey: ColorParameterName): PropertyDefinition {
+  const def = PARAMETERS[paramKey];
+  if (def.type !== 'color') throw new Error(`${paramKey} is not a color parameter`);
+
+  return {
+    syntax: def.syntax,
+    inherits: def.inherits,
+    initialValue: def.default,
+    callback: createColorCallback(paramKey),
+  };
+}
+
 // ============================================================================
 // Build Property Definitions from Schema
 // ============================================================================
@@ -495,6 +517,8 @@ function buildPropertyDefinitions(): Record<string, PropertyDefinition> {
         initialValue: def.default,
         callback: rendererCallback,
       };
+    } else if (def.type === 'color') {
+      definitions[cssProperty] = createColorProperty(name as ColorParameterName);
     }
   }
 

@@ -18,7 +18,7 @@
 /**
  * Parameter type discriminator
  */
-export type ParameterType = 'number' | 'enum';
+export type ParameterType = 'number' | 'enum' | 'color';
 
 /**
  * Base parameter definition
@@ -71,7 +71,16 @@ export interface EnumParameterDef extends BaseParameterDef {
   values: readonly string[];
 }
 
-export type ParameterDef = NumericParameterDef | EnumParameterDef;
+/**
+ * Color parameter definition
+ */
+export interface ColorParameterDef extends BaseParameterDef {
+  type: 'color';
+  /** Default value (CSS color string, e.g., '#ffffff00', 'rgba(255,255,255,0)') */
+  default: string;
+}
+
+export type ParameterDef = NumericParameterDef | EnumParameterDef | ColorParameterDef;
 
 // ============================================================================
 // Parameter Schema Definition
@@ -145,6 +154,26 @@ export const PARAMETERS = {
     min: 0,
     max: 100,
     description: 'Edge dispersion blur (0-100%)',
+  },
+  chromaticAberration: {
+    type: 'number',
+    cssProperty: 'glass-chromatic-aberration',
+    syntax: '<percentage> | <number>',
+    inherits: true,
+    default: 0,
+    unit: '%',
+    min: 0,
+    max: 100,
+    description: 'Chromatic aberration intensity (0-100%). Simulates wavelength-dependent refraction causing color fringing at edges.',
+  },
+  glassType: {
+    type: 'enum',
+    cssProperty: 'glass-type',
+    syntax: 'standard | crown | flint | dense-flint | silica',
+    inherits: true,
+    default: 'standard',
+    values: ['standard', 'crown', 'flint', 'dense-flint', 'silica'] as const,
+    description: 'Glass material type affecting dispersion strength. dense-flint has strongest chromatic aberration, silica has weakest.',
   },
   specularAngle: {
     type: 'number',
@@ -245,6 +274,14 @@ export const PARAMETERS = {
     values: ['gpu', 'gl2', 'wasm'] as const,
     description: 'Displacement map generation backend (auto-fallback: gpu → gl2 → wasm)',
   },
+  color: {
+    type: 'color',
+    cssProperty: 'glass-color',
+    syntax: '<color>',
+    inherits: true,
+    default: '#ffffff00',
+    description: 'Glass tint color with alpha (RGBA). Applied before displacement for colored glass effect.',
+  },
 } as const satisfies Record<string, ParameterDef>;
 
 // ============================================================================
@@ -267,6 +304,11 @@ export type EnumParameterName = {
   [K in ParameterName]: typeof PARAMETERS[K]['type'] extends 'enum' ? K : never;
 }[ParameterName];
 
+/** Color parameter names */
+export type ColorParameterName = {
+  [K in ParameterName]: typeof PARAMETERS[K]['type'] extends 'color' ? K : never;
+}[ParameterName];
+
 /** Displacement renderer type (derived from schema) */
 export type DisplacementRenderer = typeof PARAMETERS.displacementRenderer.values[number];
 
@@ -279,7 +321,9 @@ export type LiquidGlassParams = {
     ? number
     : typeof PARAMETERS[K] extends EnumParameterDef
       ? typeof PARAMETERS[K]['values'][number]
-      : never;
+      : typeof PARAMETERS[K] extends ColorParameterDef
+        ? string
+        : never;
 };
 
 // ============================================================================

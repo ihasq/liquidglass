@@ -92,7 +92,22 @@ export type {
 // === Displacement Engine ===
 export type { ProfileType } from './displacement/math/profiles';
 export { getProfile } from './displacement/math/profiles';
-export { calculateRefraction, calculateDisplacementVector } from './displacement/math/snell';
+export {
+  calculateRefraction,
+  calculateDisplacementVector,
+  // Chromatic dispersion (wavelength-dependent refraction)
+  calculateRefractiveIndex,
+  calculateAbbeNumber,
+  calculateChromaticRefraction,
+  calculateChromaticDisplacementVector,
+  GLASS_PRESETS,
+  RGB_WAVELENGTHS,
+} from './displacement/math/snell';
+export type {
+  RefractionResult,
+  ChromaticRefractionResult,
+  CauchyCoefficients,
+} from './displacement/math/snell';
 export { smoothstep, smootherstep } from './displacement/math/interpolation';
 
 export { generateDisplacementMap, generateSquircleDisplacementMap } from './displacement/generator';

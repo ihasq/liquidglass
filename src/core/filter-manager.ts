@@ -1032,16 +1032,20 @@ export class FilterManager {
     const canMorph = optimizationEnabled && hasFilterElement && hasRefs &&
                      !isLowRes && needDispRegen && dispParamsUnchanged;
 
+    // Check if filter structure needs to be recreated
+    // This happens when chromaticAberration toggles between 0 and non-0
+    const structureChanged = prev && this._filterStructureChanged(prev, params);
+
     if (__DEV__) {
-      logMorph('Render dispatch', { needDispRegen, svgAttrChanged, hasFilterElement, canMorph });
+      logMorph('Render dispatch', { needDispRegen, svgAttrChanged, hasFilterElement, canMorph, structureChanged });
     }
 
     const smoothingBlur = calculateSmoothingBlur(params.displacementSmoothing, resolutionScale);
 
     if (__DEV__) _profilerMarkStep('svgUpdate');
 
-    if (!hasFilterElement || !hasRefs) {
-      // First-time creation: build the displacement-only filter DOM
+    if (!hasFilterElement || !hasRefs || structureChanged) {
+      // First-time creation OR structure change: rebuild the filter DOM
       this._createFilter(element, state, params,
         dispDataUrl!,
         baseWidth, baseHeight, resolutionScale);
@@ -1277,8 +1281,38 @@ export class FilterManager {
       a.softness !== b.softness ||
       a.saturation !== b.saturation ||
       a.dispersion !== b.dispersion ||
-      a.displacementSmoothing !== b.displacementSmoothing
+      a.displacementSmoothing !== b.displacementSmoothing ||
+      a.chromaticAberration !== b.chromaticAberration ||
+      a.glassType !== b.glassType ||
+      a.color !== b.color
     );
+  }
+
+  /**
+   * Check if filter DOM structure needs to be recreated.
+   * This is triggered when parameters that affect DOM structure change:
+   * - chromaticAberration: 0 ↔ non-0 (chromatic path added/removed)
+   * - dispersion: 0 ↔ non-0 (slope-based blur elements added/removed)
+   *
+   * Two possible structures:
+   * 1. chromaticAberration > 0: chromatic aberration path (8 primitives)
+   * 2. chromaticAberration = 0: standard displacement only (1 primitive)
+   *
+   * Structure changes require full filter recreation, not just attribute updates.
+   */
+  private _filterStructureChanged(a: LiquidGlassParams, b: LiquidGlassParams): boolean {
+    const aChromatic = (a.chromaticAberration ?? 0) > 0;
+    const bChromatic = (b.chromaticAberration ?? 0) > 0;
+    const aDispersion = (a.dispersion ?? 0) > 0;
+    const bDispersion = (b.dispersion ?? 0) > 0;
+
+    // Structure changes if chromatic mode changes
+    if (aChromatic !== bChromatic) return true;
+
+    // Structure changes if dispersion toggles (slope-based blur elements)
+    if (aDispersion !== bDispersion) return true;
+
+    return false;
   }
 
   private _paramsEqual(a: LiquidGlassParams, b: LiquidGlassParams): boolean {
@@ -1293,7 +1327,10 @@ export class FilterManager {
       a.displacementSmoothing === b.displacementSmoothing &&
       this._normalizeOptimization(a.enableOptimization) === this._normalizeOptimization(b.enableOptimization) &&
       a.displacementRefreshInterval === b.displacementRefreshInterval &&
-      a.displacementRenderer === b.displacementRenderer
+      a.displacementRenderer === b.displacementRenderer &&
+      a.chromaticAberration === b.chromaticAberration &&
+      a.glassType === b.glassType &&
+      a.color === b.color
     );
   }
 

@@ -11,6 +11,7 @@ export {
   updateFilterParams,
   updateMorphWeights,
   calculateSmoothingBlur,
+  calculateChromaticScales,
   supportsBackdropSvgFilter,
 } from './builder';
 
