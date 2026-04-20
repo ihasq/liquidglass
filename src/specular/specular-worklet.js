@@ -151,7 +151,7 @@ class LiquidGlassSpecular {
       ? cssNumber(localAngleRaw, -60)
       : cssNumber(worldAngleRaw, -60);
     const shininess = Math.max(1, cssNumber(props.get('--glass-specular-shininess'), 8));
-    const bezelWidthRaw = Math.max(0.1, cssNumber(props.get('--glass-specular-width'), 2));
+    const bezelWidthRaw = Math.max(0.1, cssNumber(props.get('--glass-specular-width'), 1));
     const gloss100 = cssNumber(props.get('--glass-gloss'), 50);
     const radius = Math.max(1, cssNumber(props.get('--glass-radius'), 24));
 

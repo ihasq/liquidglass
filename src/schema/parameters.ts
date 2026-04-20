@@ -162,7 +162,7 @@ export const PARAMETERS = {
     cssProperty: 'glass-specular-width',
     syntax: '<length> | <number>',
     inherits: true,
-    default: 2,
+    default: 1,
     unit: 'px',
     min: 0.1,
     max: 50,
