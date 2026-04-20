@@ -39,7 +39,7 @@ function drawSpecular(ctx, p) {
   const effectiveBezelWidth = Math.min(bezelWidth, r);
   const lightX = Math.cos(lightAngle);
   const lightY = Math.sin(lightAngle);
-  const drawCorners = bezelWidth >= 2 && r >= 2;
+  const drawCorners = bezelWidth > 0 && r > 0;
 
   // ─────── STEP 1: DRAW EDGES ───────
   const edges = [

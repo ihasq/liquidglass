@@ -93,7 +93,7 @@ export function drawSpecular(ctx: Canvas2DLike, p: SpecularParams): void {
 
   const edgeW = w - 2 * r;
   const edgeH = h - 2 * r;
-  const drawCorners = bezelWidth >= 2 && r >= 2;
+  const drawCorners = bezelWidth > 0 && r > 0;
 
   // ─────── STEP 1: DRAW EDGES ───────
   // Use data-driven approach matching worklet for consistency
