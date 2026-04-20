@@ -67,12 +67,12 @@ export default defineConfig(({ mode }) => {
       lib: {
         entry: {
           liquidglass: resolve(__dirname, 'src/liquidglass.ts'),
-          stylex: resolve(__dirname, 'src/stylex.ts'),
-          emotion: resolve(__dirname, 'src/emotion.ts'),
-          'styled-components': resolve(__dirname, 'src/styled-components.ts'),
-          'vanilla-extract': resolve(__dirname, 'src/vanilla-extract.ts'),
-          panda: resolve(__dirname, 'src/panda.ts'),
-          unocss: resolve(__dirname, 'src/unocss.ts'),
+          stylex: resolve(__dirname, 'src/ports/stylex.ts'),
+          emotion: resolve(__dirname, 'src/ports/emotion.ts'),
+          'styled-components': resolve(__dirname, 'src/ports/styled-components.ts'),
+          'vanilla-extract': resolve(__dirname, 'src/ports/vanilla-extract.ts'),
+          panda: resolve(__dirname, 'src/ports/panda.ts'),
+          unocss: resolve(__dirname, 'src/ports/unocss.ts'),
           schema: resolve(__dirname, 'src/schema/parameters.ts'),
           env: resolve(__dirname, 'src/env.ts'),
         },

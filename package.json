@@ -13,32 +13,32 @@
       "default": "./dist/liquidglass.js"
     },
     "./stylex": {
-      "types": "./dist/stylex.d.ts",
+      "types": "./dist/ports/stylex.d.ts",
       "import": "./dist/stylex.js",
       "default": "./dist/stylex.js"
     },
     "./emotion": {
-      "types": "./dist/emotion.d.ts",
+      "types": "./dist/ports/emotion.d.ts",
       "import": "./dist/emotion.js",
       "default": "./dist/emotion.js"
     },
     "./styled-components": {
-      "types": "./dist/styled-components.d.ts",
+      "types": "./dist/ports/styled-components.d.ts",
       "import": "./dist/styled-components.js",
       "default": "./dist/styled-components.js"
     },
     "./vanilla-extract": {
-      "types": "./dist/vanilla-extract.d.ts",
+      "types": "./dist/ports/vanilla-extract.d.ts",
       "import": "./dist/vanilla-extract.js",
       "default": "./dist/vanilla-extract.js"
     },
     "./panda": {
-      "types": "./dist/panda.d.ts",
+      "types": "./dist/ports/panda.d.ts",
       "import": "./dist/panda.js",
       "default": "./dist/panda.js"
     },
     "./unocss": {
-      "types": "./dist/unocss.d.ts",
+      "types": "./dist/ports/unocss.d.ts",
       "import": "./dist/unocss.js",
       "default": "./dist/unocss.js"
     },

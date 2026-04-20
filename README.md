@@ -47,6 +47,7 @@
 - **Auto Radius Tracking** — `border-radius` is mirrored to
   `--glass-radius` via a global MutationObserver + ResizeObserver
 - **Tailwind CSS v4** — Native plugin via `@plugin "liquidglass.css"`
+- **CSS-in-JS** — First-class support for Emotion, styled-components, StyleX, Vanilla Extract, Panda CSS, UnoCSS
 - **Framework Agnostic** — Works with React, Vue, Svelte, or vanilla
 - **Adaptive Performance** — Smart throttling at scale
 
@@ -478,6 +479,7 @@ import "liquidglass.css";
 - [x] WebGPU / WebGL2 / WASM-SIMD displacement renderers
 - [x] Typed `@property` registration for all parameters
 - [x] Tailwind CSS v4 native plugin
+- [x] CSS-in-JS integrations (Emotion, styled-components, StyleX, Vanilla Extract, Panda CSS, UnoCSS)
 - [ ] Firefox/Safari support via canvas fallback
 - [ ] Animated displacement maps
 - [ ] Custom displacement textures
