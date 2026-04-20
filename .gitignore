@@ -2,11 +2,11 @@
 node_modules/
 
 # Build output
-dist/
-build/
+**/dist/
+**/build/
 generated/
 
-# Site subproject (redundant with site/.gitignore, but explicit)
+# Site subproject
 site/node_modules/
 site/dist/
 site/dist-ssr/
@@ -25,20 +25,21 @@ e2e/reference/
 
 # Development test environment
 dev/
+demo/
 
 # Analysis scripts output
-scripts/*.json
+**/scripts/*.json
 resize-profile.json
 
 # Screenshots and test outputs
 *.png
-parameter-lab-test.png
 
 # Allow public assets (OGP images, etc.)
 !site/public/*.png
 
 # Vite temp files
 vite.config.ts.timestamp-*.mjs
+.vite/
 
 # OS files
 .DS_Store
@@ -61,5 +62,5 @@ npm-debug.log*
 # History files (Claude conversation logs)
 HISTORY-*.md
 
-# Experimental directories (merged but kept for reference)
+# Experimental directories
 experimental-*/
