@@ -2,7 +2,7 @@
  * Liquid Glass - Main entry point
  *
  * This module:
- * 1. Auto-initializes the CSS property engine on import (unless disabled)
+ * 1. Auto-initializes the CSS property engine on import
  * 2. Exports the Tailwind CSS v4 plugin for @plugin "liquidglass.css"
  *
  * Usage (CSS Custom Properties):
@@ -24,13 +24,6 @@
  * ```html
  * <div class="glass-refraction-[80%] glass-thickness-50 rounded-2xl">
  * ```
- *
- * Disable CSS engine (Tailwind-only mode):
- * ```css
- * @plugin "liquidglass.css" {
- *   disable-css: true;
- * }
- * ```
  */
 
 import { initCSSPropertiesV2 as initCSSProperties } from './core';
@@ -43,38 +36,16 @@ import {
 } from './schema/parameters';
 
 // =============================================================================
-// Auto-initialize CSS Property Engine (respects --glass-no-auto-init)
+// Auto-initialize CSS Property Engine
 // =============================================================================
 
-/**
- * Check if CSS engine is disabled via custom property.
- * This allows Tailwind users to disable CSS engine declaratively:
- * @plugin "liquidglass.css" { disable-css: true; }
- */
-function shouldInitCSS(): boolean {
-  const root = document.documentElement;
-  const value = getComputedStyle(root).getPropertyValue('--glass-var-disable-css').trim();
-  return value !== '1';
-}
-
-// Wait for DOM to check CSS property, then initialize if allowed
-if (typeof window !== 'undefined') {
-  const init = async () => {
-    if (shouldInitCSS()) {
-      await initCSSProperties();
-      window.dispatchEvent(new CustomEvent('liquidglass:ready'));
-    }
-  };
-
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init);
-  } else {
-    init();
-  }
-}
+(async () => {
+  await initCSSProperties();
+  window.dispatchEvent(new CustomEvent('liquidglass:ready'));
+})();
 
 // =============================================================================
-// Tailwind CSS v4 Plugin with Options
+// Tailwind CSS v4 Plugin
 // =============================================================================
 
 function generateNumericValues(def: NumericParameterDef): Record<string, string> {
@@ -98,45 +69,29 @@ function generateEnumValues(def: EnumParameterDef): Record<string, string> {
   return values;
 }
 
-interface PluginOptions {
-  'disable-css'?: boolean;
-}
+const liquidglassPlugin = plugin(({ matchUtilities }) => {
+  for (const paramName of PARAMETER_NAMES) {
+    const def = PARAMETERS[paramName];
+    const cssProperty = `--${def.cssProperty}`;
 
-const liquidglassPlugin = plugin.withOptions<PluginOptions>(
-  (options = {}) => ({ matchUtilities, addBase }) => {
-    // If disable-css is true, inject CSS to prevent runtime CSS engine init
-    if (options['disable-css'] === true) {
-      addBase({
-        ':root': {
-          '--glass-var-disable-css': '1',
-        },
-      });
+    if (def.type === 'number') {
+      matchUtilities(
+        { [def.cssProperty]: (value: string) => ({ [cssProperty]: value }) },
+        { values: generateNumericValues(def as NumericParameterDef), type: ['percentage', 'number', 'length', 'angle'] }
+      );
+    } else if (def.type === 'enum') {
+      matchUtilities(
+        { [def.cssProperty]: (value: string) => ({ [cssProperty]: value }) },
+        { values: generateEnumValues(def as EnumParameterDef), type: ['any'] }
+      );
     }
-
-    // Register utilities for all parameters
-    for (const paramName of PARAMETER_NAMES) {
-      const def = PARAMETERS[paramName];
-      const cssProperty = `--${def.cssProperty}`;
-
-      if (def.type === 'number') {
-        matchUtilities(
-          { [def.cssProperty]: (value: string) => ({ [cssProperty]: value }) },
-          { values: generateNumericValues(def as NumericParameterDef), type: ['percentage', 'number', 'length', 'angle'] }
-        );
-      } else if (def.type === 'enum') {
-        matchUtilities(
-          { [def.cssProperty]: (value: string) => ({ [cssProperty]: value }) },
-          { values: generateEnumValues(def as EnumParameterDef), type: ['any'] }
-        );
-      }
-    }
-
-    // Shorthand: glass-{value}
-    matchUtilities(
-      { glass: (value: string) => ({ '--glass-refraction': value }) },
-      { values: generateNumericValues(PARAMETERS.refraction as NumericParameterDef), type: ['percentage', 'number'] }
-    );
   }
-);
 
-export default liquidglassPlugin as unknown as { handler: unknown };
+  // Shorthand: glass-{value}
+  matchUtilities(
+    { glass: (value: string) => ({ '--glass-refraction': value }) },
+    { values: generateNumericValues(PARAMETERS.refraction as NumericParameterDef), type: ['percentage', 'number'] }
+  );
+});
+
+export default liquidglassPlugin as { handler: unknown };
