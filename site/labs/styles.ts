@@ -201,6 +201,32 @@ input[type="color"] {
   padding: 4px;
 }
 
+/* Color Input Row (color picker + alpha slider) */
+.color-input-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.color-input-row input[type="color"] {
+  width: 48px;
+  min-width: 48px;
+  height: 32px;
+  flex-shrink: 0;
+}
+
+.color-input-row input[type="range"] {
+  flex: 1;
+}
+
+.color-input-row .range-value {
+  width: 40px;
+  text-align: right;
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
 /* Preset Buttons */
 .preset-buttons {
   display: grid;
@@ -533,6 +559,31 @@ input[type="color"] {
   color: var(--accent);
   min-width: 28px;
   text-align: right;
+}
+
+.bg-invert-btn {
+  padding: 4px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  min-width: 40px;
+}
+
+.bg-invert-btn:hover {
+  background: var(--accent-light);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.bg-invert-btn.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: white;
 }
 
 /* Code Output */

@@ -13,6 +13,7 @@ import {
   type ParameterName,
   type NumericParameterDef,
   type EnumParameterDef,
+  type ColorParameterDef,
 } from 'liquidglass.css/schema';
 
 // Import profiler types and production profiler
@@ -60,6 +61,7 @@ function getCSSPropertyName(name: ParameterName): string {
 function formatCSSValue(name: ParameterName, value: number | string): string {
   const def = PARAMETERS[name];
   if (def.type === 'enum') return String(value);
+  if (def.type === 'color') return String(value);
   const unit = (def as NumericParameterDef).unit ?? '';
   return `${value}${unit}`;
 }
@@ -93,25 +95,29 @@ const initialElements: ElementData[] = [
 ];
 
 // ============================================================
-// Background SVG - Black with white grid
+// Background SVG - Configurable grid (black/white or white/black)
 // ============================================================
-function generateBackgroundSVG(): string {
+function generateBackgroundSVG(inverted: boolean = false): string {
   const cellSize = 40;
   const totalW = Math.ceil((window.innerWidth + 600) / cellSize) * cellSize;
   const totalH = Math.ceil((window.innerHeight + 600) / cellSize) * cellSize;
 
-  // Create grid lines - full white, brightness slider controls visibility
+  // Colors: normal = black bg + white lines, inverted = white bg + black lines
+  const bgColor = inverted ? '#fff' : '#000';
+  const lineColor = inverted ? '#000' : '#fff';
+
+  // Create grid lines
   let gridLines = '';
   // Vertical lines
   for (let x = 0; x <= totalW; x += cellSize) {
-    gridLines += `<line x1="${x}" y1="0" x2="${x}" y2="${totalH}" stroke="#fff" stroke-width="1"/>`;
+    gridLines += `<line x1="${x}" y1="0" x2="${x}" y2="${totalH}" stroke="${lineColor}" stroke-width="1"/>`;
   }
   // Horizontal lines
   for (let y = 0; y <= totalH; y += cellSize) {
-    gridLines += `<line x1="0" y1="${y}" x2="${totalW}" y2="${y}" stroke="#fff" stroke-width="1"/>`;
+    gridLines += `<line x1="0" y1="${y}" x2="${totalW}" y2="${y}" stroke="${lineColor}" stroke-width="1"/>`;
   }
 
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${totalW}" height="${totalH}" viewBox="0 0 ${totalW} ${totalH}" style="shape-rendering: crispEdges"><rect width="${totalW}" height="${totalH}" fill="#000"/>${gridLines}</svg>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${totalW}" height="${totalH}" viewBox="0 0 ${totalW} ${totalH}" style="shape-rendering: crispEdges"><rect width="${totalW}" height="${totalH}" fill="${bgColor}"/>${gridLines}</svg>`;
 }
 
 // ============================================================
@@ -307,10 +313,10 @@ function ToggleButtons<T extends string>({ label, description, value, options, o
   );
 }
 
-function InteractiveElement({ data, selected, onSelect, onDelete, onUpdate, glassParams, tintColor, tintOpacity, previewAreaRef }: {
+function InteractiveElement({ data, selected, onSelect, onDelete, onUpdate, glassParams, previewAreaRef }: {
   data: ElementData; selected: boolean; onSelect: () => void; onDelete: () => void;
   onUpdate: (updates: Partial<ElementData>) => void; glassParams: GlassParams;
-  tintColor: string; tintOpacity: number; previewAreaRef: RefObject<HTMLElement | null>;
+  previewAreaRef: RefObject<HTMLElement | null>;
 }) {
   const elementRef = useRef<HTMLDivElement>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -396,12 +402,11 @@ function InteractiveElement({ data, selected, onSelect, onDelete, onUpdate, glas
   const glassStyle = useMemo(() => {
     const style: Record<string, string | number> = {
       width: `${data.w}px`, height: `${data.h}px`, borderRadius: `${data.radius}px`, transform: `rotate(${data.r}deg)`,
-      backgroundColor: `rgba(${parseInt(tintColor.slice(1, 3), 16)}, ${parseInt(tintColor.slice(3, 5), 16)}, ${parseInt(tintColor.slice(5, 7), 16)}, ${tintOpacity / 100})`,
       backgroundImage: 'paint(liquid-glass-specular)',
     };
     for (const name of PARAMETER_NAMES) { style[getCSSPropertyName(name)] = formatCSSValue(name, glassParams[name]); }
     return style;
-  }, [data, glassParams, tintColor, tintOpacity]);
+  }, [data, glassParams]);
 
   const onDragStart = (e: MouseEvent | TouchEvent) => {
     if ((e.target as HTMLElement).dataset.action) return;
@@ -436,8 +441,6 @@ function ParameterLab() {
   const [radius, setRadius] = useState(100);
   const [width, setWidth] = useState(320);
   const [height, setHeight] = useState(200);
-  const [tintColor, setTintColor] = useState('#ffffff');
-  const [tintOpacity, setTintOpacity] = useState(8);
   const [elements, setElements] = useState<ElementData[]>(initialElements);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [activePreset, setActivePreset] = useState<PresetName>('default');
@@ -445,6 +448,7 @@ function ParameterLab() {
   const [bgDirection, setBgDirection] = useState(135);
   const [bgBrightness, setBgBrightness] = useState(30);
   const [bgPlaying, setBgPlaying] = useState(true);
+  const [bgInverted, setBgInverted] = useState(false);
   const bgRef = useRef<HTMLDivElement>(null);
   const bgAnimRef = useRef({ x: 0, y: 0, lastTime: 0 });
   const [viewMode, setViewMode] = useState<'lens' | 'displacement'>('lens');
@@ -480,15 +484,23 @@ function ParameterLab() {
 
   useEffect(() => {
     let animId: number;
+    const cellSize = 40; // Must match generateBackgroundSVG cellSize
+    // Pre-compute trig values outside animation loop (only recomputed when deps change)
+    const rad = (bgDirection * Math.PI) / 180;
+    const velocityX = Math.cos(rad) * bgSpeed * 2;
+    const velocityY = Math.sin(rad) * bgSpeed * 2;
     const animate = (timestamp: number) => {
       const anim = bgAnimRef.current;
       if (!anim.lastTime) anim.lastTime = timestamp;
       const delta = timestamp - anim.lastTime; anim.lastTime = timestamp;
       if (bgPlaying && bgSpeed > 0 && bgRef.current) {
-        const pxPerSec = bgSpeed * 2, rad = (bgDirection * Math.PI) / 180;
-        anim.x += Math.cos(rad) * pxPerSec * (delta / 1000);
-        anim.y += Math.sin(rad) * pxPerSec * (delta / 1000);
-        bgRef.current.style.transform = `translate(${anim.x % 186}px, ${anim.y % 124}px)`;
+        const dt = delta * 0.001; // ms to seconds
+        anim.x += velocityX * dt;
+        anim.y += velocityY * dt;
+        // Use correct modulo for seamless grid loop (handles negative values)
+        const modX = ((anim.x % cellSize) + cellSize) % cellSize;
+        const modY = ((anim.y % cellSize) + cellSize) % cellSize;
+        bgRef.current.style.transform = `translate3d(${modX}px, ${modY}px, 0)`;
       }
       animId = requestAnimationFrame(animate);
     };
@@ -517,7 +529,7 @@ function ParameterLab() {
   return (
     <>
       <style>{styles}</style>
-      <div ref={bgRef} class="background-content" style={{ filter: `brightness(${bgBrightness / 100})` }} dangerouslySetInnerHTML={{ __html: generateBackgroundSVG() }} />
+      <div ref={bgRef} class="background-content" style={{ filter: `brightness(${bgBrightness / 100})` }} dangerouslySetInnerHTML={{ __html: generateBackgroundSVG(bgInverted) }} />
 
       {/* Mobile panel overlay */}
       <div class={`panel-overlay ${!panelOpen ? 'hidden' : ''}`} onClick={handleOverlayClick} />
@@ -573,11 +585,41 @@ function ParameterLab() {
                 min={numDef.min} max={numDef.max} step={step} description={numDef.description}
                 valueDisplay={formatCSSValue(name, params[name] as number)}
                 onChange={(v) => setParams((p) => ({ ...p, [name]: v }))} />;
-            } else {
+            } else if (def.type === 'enum') {
               const enumDef = def as EnumParameterDef;
               return <ToggleButtons key={name} label={formatParameterName(name)} description={enumDef.description}
                 value={params[name] as string} options={enumDef.values.map((v) => ({ value: v, label: v.toUpperCase() }))}
                 onChange={(v) => setParams((p) => ({ ...p, [name]: v }))} />;
+            } else if (def.type === 'color') {
+              const colorDef = def as ColorParameterDef;
+              const colorValue = params[name] as string;
+              const alphaPercent = Math.round(parseInt(colorValue.slice(7) || 'ff', 16) / 255 * 100);
+              return (
+                <div key={name} class="control">
+                  <div class="control-header">
+                    <span class="control-label">{formatParameterName(name)}</span>
+                    <span class="control-value">{colorValue}</span>
+                  </div>
+                  {colorDef.description && <div class="control-desc">{colorDef.description}</div>}
+                  <div class="color-input-row">
+                    <input type="color" value={colorValue.slice(0, 7)}
+                      onInput={(e) => {
+                        const hex = (e.target as HTMLInputElement).value;
+                        const alpha = colorValue.slice(7) || 'ff';
+                        setParams((p) => ({ ...p, [name]: hex + alpha }));
+                      }} />
+                    <input type="range" min={0} max={100} value={alphaPercent}
+                      onInput={(e) => {
+                        const hex = colorValue.slice(0, 7);
+                        const alpha = Math.round(parseInt((e.target as HTMLInputElement).value) * 255 / 100).toString(16).padStart(2, '0');
+                        setParams((p) => ({ ...p, [name]: hex + alpha }));
+                      }} />
+                    <span class="range-value">{alphaPercent}%</span>
+                  </div>
+                </div>
+              );
+            } else {
+              return null;
             }
           })}
         </section>
@@ -590,21 +632,12 @@ function ParameterLab() {
         </section>
 
         <section class="section">
-          <div class="section-title">Visual</div>
-          <div class="control">
-            <div class="control-header"><span class="control-label">Background Tint</span></div>
-            <input type="color" value={tintColor} onInput={(e) => setTintColor((e.target as HTMLInputElement).value)} />
-          </div>
-          <RangeControl label="Tint Opacity" value={tintOpacity} min={0} max={50} onChange={setTintOpacity} />
-        </section>
-
-        <section class="section">
           <div class="section-title">Actions</div>
           <div class="preset-buttons">
             <button class="preset-btn" onClick={() => setElements(initialElements)}>Reset Positions</button>
             <button class="preset-btn" onClick={() => {
-              setElements(initialElements); applyPreset('default'); setTintColor('#ffffff'); setTintOpacity(8);
-              setBgSpeed(30); setBgDirection(135); setBgBrightness(30); setViewMode('lens');
+              setElements(initialElements); applyPreset('default');
+              setBgSpeed(30); setBgDirection(135); setBgBrightness(30); setBgInverted(false); setViewMode('lens');
             }}>Reset All</button>
           </div>
         </section>
@@ -623,6 +656,7 @@ function ParameterLab() {
               <div class="bg-control-row"><label>Speed</label><input type="range" min={0} max={60} value={bgSpeed} onInput={(e) => setBgSpeed(parseInt((e.target as HTMLInputElement).value))} /><span class="value">{bgSpeed}</span></div>
               <div class="bg-control-row"><label>Direction</label><input type="range" min={0} max={315} step={45} value={bgDirection} onInput={(e) => setBgDirection(parseInt((e.target as HTMLInputElement).value))} /><span class="value">{directionArrow}</span></div>
               <div class="bg-control-row"><label>Brightness</label><input type="range" min={0} max={100} value={bgBrightness} onInput={(e) => setBgBrightness(parseInt((e.target as HTMLInputElement).value))} /><span class="value">{bgBrightness}%</span></div>
+              <div class="bg-control-row"><label>Invert</label><button class={`bg-invert-btn ${bgInverted ? 'active' : ''}`} onClick={() => setBgInverted(v => !v)}>{bgInverted ? 'ON' : 'OFF'}</button></div>
             </div>
 
             <div class="bg-control" style={{ top: '170px' }}>
@@ -642,7 +676,7 @@ function ParameterLab() {
             onDelete={() => { setElements((els) => els.filter((e) => e.id !== el.id)); if (selectedId === el.id) setSelectedId(null); }}
             onUpdate={(updates) => { setElements((els) => els.map((e) => (e.id === el.id ? { ...e, ...updates } : e)));
               if (selectedId === el.id) { if (updates.w !== undefined) setWidth(updates.w); if (updates.h !== undefined) setHeight(updates.h); } }}
-            glassParams={params} tintColor={tintColor} tintOpacity={tintOpacity} previewAreaRef={previewAreaRef} />
+            glassParams={params} previewAreaRef={previewAreaRef} />
         ))}
       </main>
 
