@@ -64,3 +64,4 @@ HISTORY-*.md
 
 # Experimental directories
 experimental-*/
+.claude/
