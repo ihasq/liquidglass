@@ -272,9 +272,10 @@ function PerformanceGraph({ enabled }: { enabled: boolean }) {
 // ============================================================
 // Components
 // ============================================================
-function RangeControl({ label, value, min, max, description, onChange, valueDisplay }: {
-  label: string; value: number; min: number; max: number; description?: string; onChange: (v: number) => void; valueDisplay?: string;
+function RangeControl({ label, value, min, max, step, description, onChange, valueDisplay }: {
+  label: string; value: number; min: number; max: number; step?: number; description?: string; onChange: (v: number) => void; valueDisplay?: string;
 }) {
+  const actualStep = step ?? 1;
   return (
     <div class="control">
       <div class="control-header">
@@ -282,7 +283,7 @@ function RangeControl({ label, value, min, max, description, onChange, valueDisp
         <span class="control-value">{valueDisplay ?? value}</span>
       </div>
       {description && <div class="control-desc">{description}</div>}
-      <input type="range" min={min} max={max} value={value} onInput={(e) => onChange(parseInt((e.target as HTMLInputElement).value))} />
+      <input type="range" min={min} max={max} step={actualStep} value={value} onInput={(e) => onChange(parseFloat((e.target as HTMLInputElement).value))} />
     </div>
   );
 }
@@ -559,8 +560,17 @@ function ParameterLab() {
                   value={(params[name] as number) === 1 ? 'ON' : 'OFF'} options={[{ value: 'OFF', label: 'Off' }, { value: 'ON', label: 'On' }]}
                   onChange={(v) => setParams((p) => ({ ...p, [name]: v === 'ON' ? numDef.max : numDef.min }))} />;
               }
+              // Determine step based on parameter characteristics
+              // - Integer transforms: step 1
+              // - Parameters with min < 1 (e.g., specularWidth min: 0.1): step 0.1
+              // - Otherwise: step 1
+              const step = numDef.transform === 'integer' || numDef.transform === 'positive-integer'
+                ? 1
+                : numDef.min < 1 && numDef.min > 0
+                  ? 0.1
+                  : 1;
               return <RangeControl key={name} label={formatParameterName(name)} value={params[name] as number}
-                min={numDef.min} max={numDef.max} description={numDef.description}
+                min={numDef.min} max={numDef.max} step={step} description={numDef.description}
                 valueDisplay={formatCSSValue(name, params[name] as number)}
                 onChange={(v) => setParams((p) => ({ ...p, [name]: v }))} />;
             } else {
