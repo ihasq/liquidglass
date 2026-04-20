@@ -133,6 +133,7 @@ class LiquidGlassSpecular {
       '--glass-specular-width',
       '--glass-gloss',
       '--glass-radius',
+      '--glass-device-pixel-ratio', // Device pixel ratio for physical pixel sizing
     ];
   }
 
@@ -150,9 +151,14 @@ class LiquidGlassSpecular {
       ? cssNumber(localAngleRaw, -60)
       : cssNumber(worldAngleRaw, -60);
     const shininess = Math.max(1, cssNumber(props.get('--glass-specular-shininess'), 8));
-    const bezelWidth = Math.max(1, cssNumber(props.get('--glass-specular-width'), 2));
+    const bezelWidthRaw = Math.max(0.1, cssNumber(props.get('--glass-specular-width'), 2));
     const gloss100 = cssNumber(props.get('--glass-gloss'), 50);
     const radius = Math.max(1, cssNumber(props.get('--glass-radius'), 24));
+
+    // Convert bezelWidth from physical pixels to CSS pixels
+    // bezelWidth is specified in device pixels, divide by dpr to get CSS pixels
+    const dpr = Math.max(1, cssNumber(props.get('--glass-device-pixel-ratio'), 1));
+    const bezelWidth = bezelWidthRaw / dpr;
 
     drawSpecular(ctx, {
       w, h,

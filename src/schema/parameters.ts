@@ -164,7 +164,7 @@ export const PARAMETERS = {
     inherits: true,
     default: 2,
     unit: 'px',
-    min: 1,
+    min: 0.1,
     max: 50,
     description: 'Specular highlight width in pixels. Absolute value, not relative to size.',
   },

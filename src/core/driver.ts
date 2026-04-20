@@ -113,12 +113,58 @@ let _transformRAFId: number | null = null;
 let _lastTransformCheck = 0;
 const TRANSFORM_CHECK_INTERVAL = 16; // ~60fps for animated transforms
 
+// Device pixel ratio tracking for physical pixel sizing
+let _currentDpr = typeof window !== 'undefined' ? window.devicePixelRatio : 1;
+let _dprMediaQuery: MediaQueryList | null = null;
+
 function syncElementRadius(element: HTMLElement): void {
   const cs = getComputedStyle(element);
   const r = parseFloat(cs.borderTopLeftRadius) || 0;
   if (_lastSetRadius.get(element) === r) return;
   _lastSetRadius.set(element, r);
   element.style.setProperty('--glass-radius', `${r}px`);
+}
+
+/**
+ * Set the device pixel ratio CSS variable on an element.
+ * This allows the CSS Paint Worklet to convert physical pixels to CSS pixels.
+ */
+function syncElementDpr(element: HTMLElement): void {
+  element.style.setProperty('--glass-device-pixel-ratio', String(_currentDpr));
+}
+
+/**
+ * Update all tracked elements when device pixel ratio changes.
+ * This happens when moving windows between monitors with different DPR.
+ */
+function onDprChange(): void {
+  const newDpr = window.devicePixelRatio;
+  if (newDpr === _currentDpr) return;
+  _currentDpr = newDpr;
+
+  // Update all tracked elements
+  for (const element of _trackedRadiusElements) {
+    syncElementDpr(element);
+  }
+
+  // Set up new media query listener for the new DPR
+  setupDprListener();
+}
+
+/**
+ * Set up a media query listener to detect DPR changes.
+ * Uses matchMedia with resolution query that matches current DPR.
+ */
+function setupDprListener(): void {
+  // Remove old listener if exists
+  if (_dprMediaQuery) {
+    _dprMediaQuery.removeEventListener('change', onDprChange);
+  }
+
+  // Create new media query for current DPR
+  // When DPR changes, this query will no longer match, triggering the change event
+  _dprMediaQuery = window.matchMedia(`(resolution: ${_currentDpr}dppx)`);
+  _dprMediaQuery.addEventListener('change', onDprChange);
 }
 
 /**
@@ -293,8 +339,15 @@ function untrackTransform(element: HTMLElement): void {
 function trackRadius(element: HTMLElement): void {
   if (_trackedRadiusElements.has(element)) return;
   ensureGlobalRadiusObservers();
+
+  // Set up DPR listener on first tracked element
+  if (_trackedRadiusElements.size === 0 && typeof window !== 'undefined') {
+    setupDprListener();
+  }
+
   _trackedRadiusElements.add(element);
   syncElementRadius(element);  // initial
+  syncElementDpr(element);     // initial DPR
   _globalRadiusMO!.observe(element, { attributes: true, attributeFilter: ['style', 'class'] });
   _globalRadiusRO!.observe(element);
 }
@@ -308,6 +361,13 @@ function untrackRadius(element: HTMLElement): void {
   // notifications to be ignored, and the MO is GC'd when the page closes.
   _globalRadiusRO?.unobserve(element);
   element.style.removeProperty('--glass-radius');
+  element.style.removeProperty('--glass-device-pixel-ratio');
+
+  // Clean up DPR listener when no elements are tracked
+  if (_trackedRadiusElements.size === 0 && _dprMediaQuery) {
+    _dprMediaQuery.removeEventListener('change', onDprChange);
+    _dprMediaQuery = null;
+  }
 }
 
 /**
@@ -478,6 +538,11 @@ function ensureSpecularWorklet(): Promise<void> {
       // Transform-compensated specular angle (set by driver, read by worklet)
       registerProp({ name: '--glass-specular-angle-local', syntax: '<angle>', inherits: false, initialValue: '-60deg' });
     } catch { /* already registered */ }
+
+    try {
+      // Device pixel ratio for physical pixel sizing (set by driver, read by worklet)
+      registerProp({ name: '--glass-device-pixel-ratio', syntax: '<number>', inherits: false, initialValue: '1' });
+    } catch { /* already registered */ }
   }
 
   // CSS.paintWorklet is part of the Houdini Paint API and not in lib.dom yet.
@@ -551,6 +616,12 @@ export function destroyCSSPropertiesV2(): void {
   _engine = null;
   _manager = null;
   _initialized = false;
+
+  // Clean up DPR listener
+  if (_dprMediaQuery) {
+    _dprMediaQuery.removeEventListener('change', onDprChange);
+    _dprMediaQuery = null;
+  }
 }
 
 // ============================================================================
