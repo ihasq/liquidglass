@@ -260,7 +260,6 @@ import {
 } from '../svg/builder';
 import {
   __DEV__,
-  isLogEnabled,
   _profilerStartFrame,
   _profilerMarkStep,
   _profilerEndStep,
@@ -272,73 +271,21 @@ import {
   type FilterState,
   type FilterManagerOptions,
   type FilterCallbacks,
-  type FilterElementRefs,
-  type SizeSample,
-  type PredictedSize,
 } from './types';
-
-// =============================================================================
-// DEBUG LOGGING UTILITIES
-// =============================================================================
-
-const LOG_PREFIX = '[LiquidGlass]';
-const LOG_COLORS = {
-  throttle: 'color: #f59e0b', // amber
-  prediction: 'color: #8b5cf6', // purple
-  morph: 'color: #06b6d4', // cyan
-  progressive: 'color: #10b981', // emerald
-  interval: 'color: #ec4899', // pink
-};
-
-/**
- * Log throttle-related messages
- * Enable with: lgc_dev.debug.log.throttle.enable()
- */
-function logThrottle(message: string, data?: Record<string, unknown>): void {
-  if (__DEV__ && isLogEnabled('throttle')) {
-    console.log(`%c${LOG_PREFIX} [Throttle] ${message}`, LOG_COLORS.throttle, data ?? '');
-  }
-}
-
-/**
- * Log prediction-related messages
- * Enable with: lgc_dev.debug.log.prediction.enable()
- */
-function logPrediction(message: string, data?: Record<string, unknown>): void {
-  if (__DEV__ && isLogEnabled('prediction')) {
-    console.log(`%c${LOG_PREFIX} [Prediction] ${message}`, LOG_COLORS.prediction, data ?? '');
-  }
-}
-
-/**
- * Log morph transition messages
- * Enable with: lgc_dev.debug.log.morph.enable()
- */
-function logMorph(message: string, data?: Record<string, unknown>): void {
-  if (__DEV__ && isLogEnabled('morph')) {
-    console.log(`%c${LOG_PREFIX} [Morph] ${message}`, LOG_COLORS.morph, data ?? '');
-  }
-}
-
-/**
- * Log progressive rendering messages
- * Enable with: lgc_dev.debug.log.progressive.enable()
- */
-function logProgressive(message: string, data?: Record<string, unknown>): void {
-  if (__DEV__ && isLogEnabled('progressive')) {
-    console.log(`%c${LOG_PREFIX} [Progressive] ${message}`, LOG_COLORS.progressive, data ?? '');
-  }
-}
-
-/**
- * Log adaptive interval messages
- * Enable with: lgc_dev.debug.log.interval.enable()
- */
-function logInterval(message: string, data?: Record<string, unknown>): void {
-  if (__DEV__ && isLogEnabled('interval')) {
-    console.log(`%c${LOG_PREFIX} [Interval] ${message}`, LOG_COLORS.interval, data ?? '');
-  }
-}
+import {
+  logThrottle,
+  logPrediction,
+  logMorph,
+  logProgressive,
+  logInterval,
+  getSvgRoot,
+  getStyleSheet,
+  generateFilterId,
+  calculateVelocity,
+  predictSize,
+  getAdaptiveInterval,
+  PREDICTION_HISTORY_SIZE,
+} from './utils';
 
 // Re-export for convenience
 export { supportsBackdropSvgFilter } from '../svg/builder';
@@ -347,164 +294,6 @@ export { preloadWebGL2 } from '../displacement/webgl2-generator';
 export { preloadWebGPU } from '../displacement/webgpu-generator';
 export { DEFAULT_PARAMS } from './types';
 
-// Singleton shared resources
-let _svgRoot: SVGSVGElement | null = null;
-let _styleSheet: CSSStyleSheet | null = null;
-
-function getSvgRoot(): SVGSVGElement {
-  if (_svgRoot && document.body.contains(_svgRoot)) {
-    return _svgRoot;
-  }
-
-  _svgRoot = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-  _svgRoot.setAttribute('style', 'position:absolute;width:0;height:0;overflow:hidden;pointer-events:none');
-  _svgRoot.setAttribute('aria-hidden', 'true');
-
-  const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
-  _svgRoot.appendChild(defs);
-
-  document.body.appendChild(_svgRoot);
-  return _svgRoot;
-}
-
-function getStyleSheet(): CSSStyleSheet {
-  if (_styleSheet) return _styleSheet;
-
-  const style = document.createElement('style');
-  style.setAttribute('data-liquid-glass', 'core');
-  document.head.appendChild(style);
-  _styleSheet = style.sheet!;
-  return _styleSheet;
-}
-
-function generateFilterId(): string {
-  const array = new Uint32Array(2);
-  crypto.getRandomValues(array);
-  return `_lg${array[0].toString(36)}${array[1].toString(36)}`;
-}
-
-// Prediction configuration
-const PREDICTION_HISTORY_SIZE = 5;
-const PREDICTION_HORIZON_BASE_MS = 100;
-const PREDICTION_VARIANCE_K = 0.01;
-
-function calculateVelocity(history: SizeSample[]): { vw: number; vh: number; vr: number } {
-  if (history.length < 2) return { vw: 0, vh: 0, vr: 0 };
-
-  let vw = 0, vh = 0, vr = 0;
-  let count = 0;
-
-  for (let i = 1; i < history.length; i++) {
-    const dt = (history[i].timestamp - history[i - 1].timestamp) / 1000;
-    if (dt > 0 && dt < 1) {
-      vw += (history[i].width - history[i - 1].width) / dt;
-      vh += (history[i].height - history[i - 1].height) / dt;
-      vr += (history[i].radius - history[i - 1].radius) / dt;
-      count++;
-    }
-  }
-
-  if (count === 0) return { vw: 0, vh: 0, vr: 0 };
-  return { vw: vw / count, vh: vh / count, vr: vr / count };
-}
-
-function predictSize(history: SizeSample[]): PredictedSize {
-  if (history.length < 2) {
-    const last = history[history.length - 1] || { width: 0, height: 0, radius: 0 };
-    if (__DEV__) {
-      logPrediction('Insufficient history for prediction', {
-        historyLength: history.length,
-        fallback: { width: last.width, height: last.height, radius: last.radius },
-      });
-    }
-    return { width: last.width, height: last.height, radius: last.radius, confidence: 0 };
-  }
-
-  const { vw, vh, vr } = calculateVelocity(history);
-  const last = history[history.length - 1];
-
-  // Calculate velocity variance for confidence
-  let varianceW = 0, varianceH = 0;
-  for (let i = 1; i < history.length; i++) {
-    const dt = (history[i].timestamp - history[i - 1].timestamp) / 1000;
-    if (dt > 0 && dt < 1) {
-      const instVw = (history[i].width - history[i - 1].width) / dt;
-      const instVh = (history[i].height - history[i - 1].height) / dt;
-      varianceW += (instVw - vw) ** 2;
-      varianceH += (instVh - vh) ** 2;
-    }
-  }
-  const avgVariance = (varianceW + varianceH) / (2 * (history.length - 1));
-
-  // Adaptive horizon based on variance
-  const horizon = PREDICTION_HORIZON_BASE_MS / (1 + PREDICTION_VARIANCE_K * avgVariance);
-  const t = horizon / 1000;
-
-  // Confidence based on history length and variance
-  const historyConfidence = Math.min(history.length / PREDICTION_HISTORY_SIZE, 1);
-  const varianceConfidence = 1 / (1 + avgVariance * 0.001);
-  const confidence = historyConfidence * varianceConfidence;
-
-  const predicted = {
-    width: Math.max(1, Math.round(last.width + vw * t)),
-    height: Math.max(1, Math.round(last.height + vh * t)),
-    radius: Math.max(0, last.radius + vr * t),
-    confidence,
-  };
-
-  if (__DEV__) {
-    logPrediction('Size prediction calculated', {
-      velocity: { vw: vw.toFixed(1), vh: vh.toFixed(1), vr: vr.toFixed(2) },
-      variance: avgVariance.toFixed(2),
-      horizon: `${horizon.toFixed(1)}ms`,
-      confidence: `${(confidence * 100).toFixed(1)}%`,
-      current: { w: last.width, h: last.height, r: last.radius.toFixed(1) },
-      predicted: { w: predicted.width, h: predicted.height, r: predicted.radius.toFixed(1) },
-      delta: {
-        w: predicted.width - last.width,
-        h: predicted.height - last.height,
-        r: (predicted.radius - last.radius).toFixed(1),
-      },
-    });
-  }
-
-  return predicted;
-}
-
-function getAdaptiveInterval(
-  area: number,
-  changeRatio: number,
-  elementCount: number,
-  minInterval: number,
-  maxInterval: number
-): number {
-  const areaScore = Math.min(area / (800 * 600), 1);
-  const changeScore = Math.min(changeRatio / 0.3, 1);
-  const priority = areaScore * 0.6 + changeScore * 0.4;
-  const countPenalty = Math.min(elementCount - 1, 5) * 50;
-  const baseInterval = minInterval + countPenalty;
-  const result = Math.round(baseInterval + (1 - priority) * (maxInterval - baseInterval));
-
-  if (__DEV__) {
-    logInterval('Adaptive interval calculated', {
-      input: {
-        area: `${(area / 1000).toFixed(1)}k px²`,
-        changeRatio: `${(changeRatio * 100).toFixed(1)}%`,
-        elementCount,
-      },
-      scores: {
-        areaScore: `${(areaScore * 100).toFixed(1)}%`,
-        changeScore: `${(changeScore * 100).toFixed(1)}%`,
-        priority: `${(priority * 100).toFixed(1)}%`,
-      },
-      penalty: `${countPenalty}ms (${elementCount} elements)`,
-      baseInterval: `${baseInterval}ms`,
-      result: `${result}ms`,
-    });
-  }
-
-  return result;
-}
 
 /**
  * Core FilterManager class
@@ -659,13 +448,14 @@ export class FilterManager {
     }
 
     // Remove CSS rule
-    if (_styleSheet && state.markerElement) {
+    if (state.markerElement) {
+      const sheet = getStyleSheet();
       const markerClass = state.markerElement.className;
       const selector = `*:has(> .${markerClass})`;
-      for (let i = _styleSheet.cssRules.length - 1; i >= 0; i--) {
-        const rule = _styleSheet.cssRules[i] as CSSStyleRule;
+      for (let i = sheet.cssRules.length - 1; i >= 0; i--) {
+        const rule = sheet.cssRules[i] as CSSStyleRule;
         if (rule.selectorText === selector) {
-          _styleSheet.deleteRule(i);
+          sheet.deleteRule(i);
           break;
         }
       }

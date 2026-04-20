@@ -1,6 +1,6 @@
 {
   "name": "liquidglass.css",
-  "version": "0.0.22",
+  "version": "0.0.23",
   "description": "Physics-based liquid glass refraction effect using CSS and SVG filters",
   "type": "module",
   "main": "dist/liquidglass.js",
@@ -74,7 +74,7 @@
     "asbuild:debug": "asc src/shaders/wasm/index.ts --target debug",
     "asbuild:release": "asc src/shaders/wasm/index.ts --target release",
     "start": "npx serve .",
-    "postpublish": "sleep 10 && cd site && npm install liquidglass.css@$npm_package_version"
+    "postpublish": "sleep 10 && cd site && npm install liquidglass.css@$npm_package_version && cd .. && git add site/package.json site/package-lock.json && git commit -m \"chore(site): update liquidglass.css to $npm_package_version\""
   },
   "devDependencies": {
     "@preact/preset-vite": "^2.10.5",
