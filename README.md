@@ -18,14 +18,14 @@
 
 ```css
 .card {
-  --liquidglass-refraction: 80%;
-  --liquidglass-thickness: 50%;
-  --liquidglass-softness: 15%;
-  --liquidglass-gloss: 60%;
-  --liquidglass-saturation: 45%;
-  --liquidglass-dispersion: 30%;
-  --liquidglass-specular-angle: -60deg;
-  --liquidglass-specular-width: 2px;
+  --glass-refraction: 80%;
+  --glass-thickness: 50%;
+  --glass-softness: 15%;
+  --glass-gloss: 60%;
+  --glass-saturation: 45%;
+  --glass-dispersion: 30%;
+  --glass-specular-angle: -60deg;
+  --glass-specular-width: 2px;
   border-radius: 20px;
 }
 ```
@@ -45,7 +45,8 @@
 - **CSS Paint Worklet Specular** — Phong highlight via Canvas2D, no
   per-pixel loop, repaints on geometry/parameter change automatically
 - **Auto Radius Tracking** — `border-radius` is mirrored to
-  `--liquidglass-radius` via a global MutationObserver + ResizeObserver
+  `--glass-radius` via a global MutationObserver + ResizeObserver
+- **Tailwind CSS v4** — Native plugin via `@plugin "liquidglass.css"`
 - **Framework Agnostic** — Works with React, Vue, Svelte, or vanilla
 - **Adaptive Performance** — Smart throttling at scale
 
@@ -58,20 +59,20 @@ npm install liquidglass.css
 One import. That's it.
 
 ```js
-import "liquidglass.css";
+import "liquidglass.css/css";
 ```
 
 ```css
 .glass-panel {
-  --liquidglass-refraction: 60%;
-  --liquidglass-thickness: 50%;
-  --liquidglass-softness: 15%;
+  --glass-refraction: 60%;
+  --glass-thickness: 50%;
+  --glass-softness: 15%;
   border-radius: 24px;
 }
 ```
 
 `border-radius` is observed automatically — you don't have to keep
-`--liquidglass-radius` in sync. Bare numbers (e.g. `60` instead of
+`--glass-radius` in sync. Bare numbers (e.g. `60` instead of
 `60%`) are also accepted for backward compatibility.
 
 ```html
@@ -80,10 +81,44 @@ import "liquidglass.css";
 </div>
 ```
 
+## Tailwind CSS v4
+
+Native plugin support — no wrapper needed.
+
+```css
+@import "tailwindcss";
+@plugin "liquidglass.css";
+```
+
+```html
+<div class="glass-refraction-[80%] glass-thickness-50 glass-softness-[15%] rounded-2xl">
+  Your content here
+</div>
+```
+
+All parameters are available as utilities:
+
+| Utility | CSS Property |
+|---------|--------------|
+| `glass-refraction-{value}` | `--glass-refraction` |
+| `glass-thickness-{value}` | `--glass-thickness` |
+| `glass-softness-{value}` | `--glass-softness` |
+| `glass-gloss-{value}` | `--glass-gloss` |
+| `glass-saturation-{value}` | `--glass-saturation` |
+| `glass-dispersion-{value}` | `--glass-dispersion` |
+| `glass-specular-angle-{value}` | `--glass-specular-angle` |
+| `glass-specular-width-{value}` | `--glass-specular-width` |
+| `glass-specular-shininess-{value}` | `--glass-specular-shininess` |
+| `glass-{value}` | `--glass-refraction` (shorthand) |
+
+Arbitrary values work: `glass-refraction-[73%]`, `glass-specular-angle-[-45deg]`.
+
+> **Note:** The Tailwind plugin only registers utilities. You still need to initialize the renderer — either by importing `liquidglass.css/css` in your JS entry, or by adding the auto-init script to your HTML.
+
 ## Parameters
 
 All parameters are registered as typed CSS Custom Properties. Each
-prefix is `--liquidglass-`.
+prefix is `--glass-`.
 
 ### Surface
 
@@ -122,28 +157,28 @@ Parameters respond to any CSS change:
 ```css
 /* Hover state */
 .glass-panel:hover {
-  --liquidglass-refraction: 80%;
+  --glass-refraction: 80%;
 }
 
 /* Media queries */
 @media (prefers-reduced-motion: reduce) {
   .glass-panel {
-    --liquidglass-refraction: 0%;
+    --glass-refraction: 0%;
   }
 }
 
 /* Complex selectors */
 .container > div:nth-child(2) {
-  --liquidglass-refraction: 60%;
+  --glass-refraction: 60%;
 }
 ```
 
 Or via JavaScript:
 
 ```js
-element.style.setProperty('--liquidglass-refraction', '90%');
-element.style.setProperty('--liquidglass-specular-angle', '45deg');
-element.style.setProperty('--liquidglass-specular-width', '3px');
+element.style.setProperty('--glass-refraction', '90%');
+element.style.setProperty('--glass-specular-angle', '45deg');
+element.style.setProperty('--glass-specular-width', '3px');
 ```
 
 ## How It Works
@@ -171,7 +206,7 @@ The displacement map encodes refraction vectors:
 - **Blue channel** → Edge mask for dispersion
 
 Specular runs on its own paint worklet, so changing
-`--liquidglass-specular-*` does not invalidate the displacement
+`--glass-specular-*` does not invalidate the displacement
 bitmap — and resizing does not rerun the specular path.
 
 ## Framework Examples
@@ -179,7 +214,7 @@ bitmap — and resizing does not rerun the specular path.
 ### React
 
 ```tsx
-import "liquidglass.css";
+import "liquidglass.css/css";
 
 function GlassCard({ children }) {
   return (
@@ -192,8 +227,8 @@ function GlassCard({ children }) {
 
 ```css
 .glass-card {
-  --liquidglass-refraction: 70%;
-  --liquidglass-gloss: 60%;
+  --glass-refraction: 70%;
+  --glass-gloss: 60%;
   border-radius: 20px;
 }
 ```
@@ -202,7 +237,7 @@ function GlassCard({ children }) {
 
 ```vue
 <script setup>
-import "liquidglass.css";
+import "liquidglass.css/css";
 </script>
 
 <template>
@@ -213,8 +248,8 @@ import "liquidglass.css";
 
 <style scoped>
 .glass-panel {
-  --liquidglass-refraction: 70%;
-  --liquidglass-gloss: 60%;
+  --glass-refraction: 70%;
+  --glass-gloss: 60%;
   border-radius: 16px;
 }
 </style>
@@ -224,12 +259,12 @@ import "liquidglass.css";
 
 ```html
 <script type="module">
-  import "https://unpkg.com/liquidglass.css";
+  import "https://unpkg.com/liquidglass.css/dist/liquidglass.js";
 </script>
 
 <div style="
-  --liquidglass-refraction: 80%;
-  --liquidglass-softness: 20%;
+  --glass-refraction: 80%;
+  --glass-softness: 20%;
   border-radius: 24px;
 ">
   Content
@@ -249,7 +284,7 @@ import "liquidglass.css";
 
 ## Performance
 
-- **GPU-First Renderer** — WebGPU when available, WebGL2 next, WASM-SIMD as last resort. Switch explicitly via `--liquidglass-displacement-renderer: gl2;` etc.
+- **GPU-First Renderer** — WebGPU when available, WebGL2 next, WASM-SIMD as last resort. Switch explicitly via `--glass-displacement-renderer: gl2;` etc.
 - **CSS Paint API Specular** — The browser caches and re-invokes the worklet only when a registered `@property` value or geometry changes. No JS render loop for highlights.
 - **Adaptive Throttling** — Rendering intervals scale with element count
 - **Viewport Culling** — Off-screen elements pause updates
@@ -261,6 +296,7 @@ import "liquidglass.css";
 - [x] CSS Houdini paint worklet (specular)
 - [x] WebGPU / WebGL2 / WASM-SIMD displacement renderers
 - [x] Typed `@property` registration for all parameters
+- [x] Tailwind CSS v4 native plugin
 - [ ] Firefox/Safari support via canvas fallback
 - [ ] Animated displacement maps
 - [ ] Custom displacement textures
