@@ -73,7 +73,8 @@
     "asbuild": "npm run asbuild:debug && npm run asbuild:release",
     "asbuild:debug": "asc src/shaders/wasm/index.ts --target debug",
     "asbuild:release": "asc src/shaders/wasm/index.ts --target release",
-    "start": "npx serve ."
+    "start": "npx serve .",
+    "postpublish": "cd site && npm install liquidglass.css@$npm_package_version"
   },
   "devDependencies": {
     "@preact/preset-vite": "^2.10.5",
