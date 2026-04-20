@@ -67,6 +67,7 @@ export default defineConfig(({ mode }) => {
       lib: {
         entry: {
           liquidglass: resolve(__dirname, 'src/liquidglass.ts'),
+          stylex: resolve(__dirname, 'src/stylex.ts'),
           schema: resolve(__dirname, 'src/schema/parameters.ts'),
           env: resolve(__dirname, 'src/env.ts'),
         },

@@ -12,6 +12,11 @@
       "import": "./dist/liquidglass.js",
       "default": "./dist/liquidglass.js"
     },
+    "./stylex": {
+      "types": "./dist/stylex.d.ts",
+      "import": "./dist/stylex.js",
+      "default": "./dist/stylex.js"
+    },
     "./schema": {
       "types": "./dist/schema.d.ts",
       "import": "./dist/schema.js",

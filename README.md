@@ -117,6 +117,48 @@ All parameters are available as utilities:
 
 Arbitrary values work: `glass-refraction-[73%]`, `glass-specular-angle-[-45deg]`.
 
+## StyleX
+
+Type-safe glass styles for Meta's StyleX.
+
+```js
+import "liquidglass.css";
+```
+
+```tsx
+import * as stylex from '@stylexjs/stylex';
+import { glass } from 'liquidglass.css/stylex';
+
+const styles = stylex.create({
+  // Composite styles
+  card: {
+    ...glass({
+      refraction: '80%',
+      thickness: '50%',
+      softness: '15%',
+    }),
+    borderRadius: '20px',
+  },
+  // Presets
+  frosted: {
+    ...glass.presets.frosted,
+    borderRadius: '16px',
+  },
+  // Individual properties
+  custom: {
+    ...glass.refraction('60%'),
+    ...glass.thickness('40%'),
+  }
+});
+
+<div {...stylex.props(styles.card)}>Content</div>
+```
+
+**API:**
+- `glass({ ... })` — composite styles
+- `glass.refraction()`, `glass.thickness()`, etc. — individual properties
+- `glass.presets.subtle`, `glass.presets.frosted`, etc. — preset styles
+
 ## Parameters
 
 All parameters are registered as typed CSS Custom Properties. Each
