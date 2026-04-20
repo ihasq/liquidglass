@@ -8,11 +8,6 @@
   "types": "dist/liquidglass.d.ts",
   "exports": {
     ".": {
-      "types": "./dist/tailwind.d.ts",
-      "import": "./dist/tailwind.js",
-      "default": "./dist/tailwind.js"
-    },
-    "./css": {
       "types": "./dist/liquidglass.d.ts",
       "import": "./dist/liquidglass.js",
       "default": "./dist/liquidglass.js"

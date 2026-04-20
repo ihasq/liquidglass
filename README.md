@@ -59,7 +59,7 @@ npm install liquidglass.css
 One import. That's it.
 
 ```js
-import "liquidglass.css/css";
+import "liquidglass.css";
 ```
 
 ```css
@@ -83,7 +83,11 @@ import "liquidglass.css/css";
 
 ## Tailwind CSS v4
 
-Native plugin support — no wrapper needed.
+Native plugin support — same import, just add `@plugin` in CSS.
+
+```js
+import "liquidglass.css";
+```
 
 ```css
 @import "tailwindcss";
@@ -112,8 +116,6 @@ All parameters are available as utilities:
 | `glass-{value}` | `--glass-refraction` (shorthand) |
 
 Arbitrary values work: `glass-refraction-[73%]`, `glass-specular-angle-[-45deg]`.
-
-> **Note:** The Tailwind plugin only registers utilities. You still need to initialize the renderer — either by importing `liquidglass.css/css` in your JS entry, or by adding the auto-init script to your HTML.
 
 ## Parameters
 
@@ -214,7 +216,7 @@ bitmap — and resizing does not rerun the specular path.
 ### React
 
 ```tsx
-import "liquidglass.css/css";
+import "liquidglass.css";
 
 function GlassCard({ children }) {
   return (
@@ -237,7 +239,7 @@ function GlassCard({ children }) {
 
 ```vue
 <script setup>
-import "liquidglass.css/css";
+import "liquidglass.css";
 </script>
 
 <template>
