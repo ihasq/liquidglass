@@ -201,6 +201,101 @@ const FrostedCard = styled.div`
 `;
 ```
 
+## Vanilla Extract
+
+Build-time CSS — import the runtime separately.
+
+```js
+import "liquidglass.css";
+```
+
+```ts
+// styles.css.ts
+import { style } from '@vanilla-extract/css';
+import { glass } from 'liquidglass.css/vanilla-extract';
+
+export const card = style({
+  ...glass({ refraction: '80%', thickness: '50%' }),
+  borderRadius: '20px',
+});
+
+export const frosted = style({
+  ...glass.presets.frosted,
+  borderRadius: '16px',
+});
+```
+
+## Panda CSS
+
+Build-time CSS — import the runtime separately.
+
+```js
+import "liquidglass.css";
+```
+
+```ts
+// panda.config.ts
+import { defineConfig } from '@pandacss/dev';
+import { glassPreset } from 'liquidglass.css/panda';
+
+export default defineConfig({
+  presets: ['@pandacss/preset-base', glassPreset],
+  // ...
+});
+```
+
+```tsx
+// app.tsx
+import { css } from '../styled-system/css';
+
+<div className={css({
+  glassRefraction: '80%',
+  glassThickness: '50%',
+  borderRadius: '20px',
+})}>
+  Content
+</div>
+
+// Or use preset recipes
+<div className={css({ glass: 'frosted', borderRadius: 'xl' })}>
+  Content
+</div>
+```
+
+## UnoCSS
+
+Build-time CSS — import the runtime separately.
+
+```js
+import "liquidglass.css";
+```
+
+```ts
+// uno.config.ts
+import { defineConfig } from 'unocss';
+import { presetGlass } from 'liquidglass.css/unocss';
+
+export default defineConfig({
+  presets: [presetGlass()],
+});
+```
+
+```html
+<div class="glass-refraction-80 glass-thickness-50 rounded-2xl">
+  Content
+</div>
+
+<!-- Arbitrary values -->
+<div class="glass-refraction-[73%] glass-specular-angle-[-45deg]">
+  Content
+</div>
+
+<!-- Presets -->
+<div class="glass-preset-frosted rounded-xl">
+  Content
+</div>
+```
+
 ## Parameters
 
 All parameters are registered as typed CSS Custom Properties. Each

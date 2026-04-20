@@ -27,6 +27,21 @@
       "import": "./dist/styled-components.js",
       "default": "./dist/styled-components.js"
     },
+    "./vanilla-extract": {
+      "types": "./dist/vanilla-extract.d.ts",
+      "import": "./dist/vanilla-extract.js",
+      "default": "./dist/vanilla-extract.js"
+    },
+    "./panda": {
+      "types": "./dist/panda.d.ts",
+      "import": "./dist/panda.js",
+      "default": "./dist/panda.js"
+    },
+    "./unocss": {
+      "types": "./dist/unocss.d.ts",
+      "import": "./dist/unocss.js",
+      "default": "./dist/unocss.js"
+    },
     "./schema": {
       "types": "./dist/schema.d.ts",
       "import": "./dist/schema.js",
