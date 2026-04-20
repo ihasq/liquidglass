@@ -24,6 +24,8 @@
   --glass-gloss: 60%;
   --glass-saturation: 45%;
   --glass-dispersion: 30%;
+  --glass-chromatic-aberration: 50%;
+  --glass-type: dense-flint;
   --glass-specular-angle: -60deg;
   --glass-specular-width: 2px;
   border-radius: 20px;
@@ -40,7 +42,8 @@
 
 - **Typed CSS Custom Properties** — Registered via `@property` so values
   accept their canonical units (`<length>`, `<percentage>`, `<angle>`)
-- **Physics-Based** — Snell's law refraction, not blur approximation
+- **Physics-Based** — Snell's law refraction + Cauchy chromatic dispersion
+- **Chromatic Aberration** — Wavelength-dependent RGB displacement with glass material presets
 - **GPU-First Renderer** — WebGPU → WebGL2 → WASM-SIMD auto-fallback
 - **CSS Paint Worklet Specular** — Phong highlight via Canvas2D, no
   per-pixel loop, repaints on geometry/parameter change automatically
@@ -111,12 +114,14 @@ All parameters are available as utilities:
 | `glass-gloss-{value}` | `--glass-gloss` |
 | `glass-saturation-{value}` | `--glass-saturation` |
 | `glass-dispersion-{value}` | `--glass-dispersion` |
+| `glass-chromatic-aberration-{value}` | `--glass-chromatic-aberration` |
+| `glass-type-{value}` | `--glass-type` |
 | `glass-specular-angle-{value}` | `--glass-specular-angle` |
 | `glass-specular-width-{value}` | `--glass-specular-width` |
 | `glass-specular-shininess-{value}` | `--glass-specular-shininess` |
 | `glass-{value}` | `--glass-refraction` (shorthand) |
 
-Arbitrary values work: `glass-refraction-[73%]`, `glass-specular-angle-[-45deg]`.
+Arbitrary values work: `glass-refraction-[73%]`, `glass-specular-angle-[-45deg]}`, `glass-type-[dense-flint]`.
 
 ## StyleX
 
@@ -306,12 +311,26 @@ prefix is `--glass-`.
 
 | Property | Unit | Range | Default | Description |
 |----------|------|-------|---------|-------------|
-| `refraction` | `<percentage>` | 0–100 | 50 | Lens distortion intensity |
+| `refraction` | `<percentage>` | 0–100 | 100 | Lens distortion intensity |
 | `thickness` | `<percentage>` | 0–100 | 50 | Edge steepness / glass depth |
 | `softness` | `<percentage>` | 0–100 | 10 | Background blur amount |
-| `gloss` | `<percentage>` | 0–100 | 50 | Specular highlight intensity |
+| `gloss` | `<percentage>` | 0–100 | 100 | Specular highlight intensity |
 | `saturation` | `<percentage>` | 0–100 | 45 | Color saturation boost |
-| `dispersion` | `<percentage>` | 0–100 | 30 | Chromatic edge blur |
+| `dispersion` | `<percentage>` | 0–100 | 30 | Slope-based edge blur |
+
+### Chromatic Aberration
+
+| Property | Unit | Range | Default | Description |
+|----------|------|-------|---------|-------------|
+| `chromatic-aberration` | `<percentage>` | 0–100 | 0 | Color fringing intensity (Cauchy dispersion) |
+| `type` | `<ident>` | see below | `standard` | Glass material preset |
+
+**Glass Types** (ordered by dispersion strength):
+- `silica` — Fused silica, minimal aberration
+- `crown` — Crown glass, low dispersion
+- `standard` — Standard optical glass
+- `flint` — Flint glass, moderate dispersion
+- `dense-flint` — Dense flint, strongest aberration
 
 ### Specular (CSS Paint Worklet)
 
@@ -371,8 +390,9 @@ element.style.setProperty('--glass-specular-width', '3px');
 │   1. Renderer (WebGPU / WebGL2 / WASM-SIMD) generates the        │
 │      displacement map from border-radius                         │
 │                              ↓                                   │
-│   2. SVG filter chain (feImage → feDisplacementMap → output)     │
-│      refracts the backdrop, with optional slope-blur dispersion  │
+│   2. SVG filter chain applies displacement:                      │
+│      • Standard: single feDisplacementMap                        │
+│      • Chromatic: RGB separation → 3× displacement → recombine   │
 │                              ↓                                   │
 │   3. CSS Paint Worklet draws the Phong specular bezel directly   │
 │      onto the element via Canvas2D — no SVG primitive            │
@@ -385,7 +405,10 @@ element.style.setProperty('--glass-specular-width', '3px');
 The displacement map encodes refraction vectors:
 - **Red channel** → X displacement
 - **Green channel** → Y displacement
-- **Blue channel** → Edge mask for dispersion
+
+**Chromatic Aberration** uses Cauchy's dispersion equation `n(λ) = A + B/λ²`
+to calculate wavelength-dependent displacement for R/G/B channels, creating
+physically accurate color fringing at glass edges.
 
 Specular runs on its own paint worklet, so changing
 `--glass-specular-*` does not invalidate the displacement
@@ -480,6 +503,7 @@ import "liquidglass.css";
 - [x] Typed `@property` registration for all parameters
 - [x] Tailwind CSS v4 native plugin
 - [x] CSS-in-JS integrations (Emotion, styled-components, StyleX, Vanilla Extract, Panda CSS, UnoCSS)
+- [x] Chromatic aberration with Cauchy dispersion
 - [ ] Firefox/Safari support via canvas fallback
 - [ ] Animated displacement maps
 - [ ] Custom displacement textures
